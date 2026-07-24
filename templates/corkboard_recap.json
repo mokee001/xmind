@@ -1,0 +1,43 @@
+{
+  "id": "corkboard_recap",
+  "name": "软木板手帐·月度回顾",
+  "description": "小红书软木板拼贴风：暖木纹底 + 拍立得(加重下白边)照片 + 和纸胶带 + 迷你日历 + 手写标注，配夹子/图钉贴纸出效果",
+  "canvas": {
+    "width": 960,
+    "height": 1280,
+    "background": { "type": "gradient", "from": "#CBA96C", "to": "#A9834A", "angle": 75 }
+  },
+  "slots": [
+    { "x": 70,  "y": 190, "w": 300, "h": 300, "rotation": -5, "border": { "top": 16, "right": 16, "bottom": 58, "left": 16, "color": "#FBF8F0" }, "shadow": true },
+    { "x": 470, "y": 160, "w": 320, "h": 300, "rotation": 4,  "border": { "top": 16, "right": 16, "bottom": 58, "left": 16, "color": "#FBF8F0" }, "shadow": true },
+    { "x": 100, "y": 590, "w": 300, "h": 270, "rotation": 3,  "border": { "top": 16, "right": 16, "bottom": 52, "left": 16, "color": "#FBF8F0" }, "shadow": true },
+    { "x": 500, "y": 600, "w": 330, "h": 300, "rotation": -4, "border": { "top": 16, "right": 16, "bottom": 58, "left": 16, "color": "#FBF8F0" }, "shadow": true },
+    { "x": 150, "y": 960, "w": 360, "h": 270, "rotation": 2,  "border": { "top": 16, "right": 16, "bottom": 52, "left": 16, "color": "#FBF8F0" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "text", "text": "recap", "font": "script", "x": 60, "y": 24, "size": 92, "color": "#4B3A24" },
+    { "type": "text", "text": "~ June pict!", "font": "marker", "x": 340, "y": 76, "size": 44, "color": "#6E4B22" },
+
+    { "type": "tape", "x": 150, "y": 176, "w": 130, "h": 40, "rotation": -18, "color": "#E7C489", "alpha": 205 },
+    { "type": "tape", "x": 560, "y": 148, "w": 130, "h": 40, "rotation": 14,  "color": "#D9A7A0", "alpha": 205 },
+    { "type": "tape", "x": 560, "y": 588, "w": 130, "h": 40, "rotation": -12, "color": "#B7C9A0", "alpha": 205 },
+    { "type": "tape", "x": 210, "y": 946, "w": 130, "h": 40, "rotation": 10,  "color": "#E7C489", "alpha": 205 },
+
+    { "type": "rect", "x": 630, "y": 950, "w": 280, "h": 290, "radius": 14, "color": "#F3ECD6", "outline": "#B99B63", "outline_width": 3 },
+    { "type": "text", "text": "JUNE", "font": "marker", "x": 630, "y": 966, "w": 280, "align": "center", "size": 40, "color": "#6B5230" },
+    { "type": "text", "text": "2026", "font": "hand", "x": 630, "y": 1012, "w": 280, "align": "center", "size": 22, "color": "#8A6E3E" },
+    { "type": "dots", "x": 656, "y": 1058, "count": 7, "gap": 34, "size": 12, "shape": "circle", "color": "#C4A25E" },
+    { "type": "dots", "x": 656, "y": 1096, "count": 7, "gap": 34, "size": 12, "shape": "circle", "color": "#C4A25E" },
+    { "type": "dots", "x": 656, "y": 1134, "count": 7, "gap": 34, "size": 12, "shape": "circle", "color": "#C4A25E" },
+    { "type": "dots", "x": 656, "y": 1172, "count": 7, "gap": 34, "size": 12, "shape": "circle", "color": "#C4A25E" },
+
+    { "type": "text", "text": "good days", "font": "hand", "x": 400, "y": 500, "size": 30, "color": "#4B3A24" },
+    { "type": "arrow", "x1": 452, "y1": 500, "cx": 500, "cy": 520, "x2": 540, "y2": 560, "color": "#5A4326", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "sunny", "font": "hand", "x": 40, "y": 520, "size": 30, "color": "#4B3A24" },
+    { "type": "arrow", "x1": 70, "y1": 556, "cx": 120, "cy": 590, "x2": 170, "y2": 600, "color": "#5A4326", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "little joys", "font": "hand", "x": 40, "y": 900, "size": 30, "color": "#4B3A24" },
+    { "type": "arrow", "x1": 96, "y1": 934, "cx": 140, "cy": 960, "x2": 180, "y2": 976, "color": "#5A4326", "width": 3, "head": 15 }
+  ]
+}

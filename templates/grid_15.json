@@ -1,0 +1,267 @@
+{
+  "id": "grid_15",
+  "name": "十五格记",
+  "description": "15张照片 5×3 拼贴，16:9 宽屏",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": {
+      "type": "color",
+      "value": "#F6F1EC"
+    }
+  },
+  "slots": [
+    {
+      "x": 45,
+      "y": 121,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 287,
+      "y": 121,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 528,
+      "y": 121,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 770,
+      "y": 121,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 1011,
+      "y": 121,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 45,
+      "y": 321,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 287,
+      "y": 321,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 528,
+      "y": 321,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 770,
+      "y": 321,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 1011,
+      "y": 321,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 45,
+      "y": 521,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 287,
+      "y": 521,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 528,
+      "y": 521,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 770,
+      "y": 521,
+      "w": 212,
+      "h": 170,
+      "rotation": -2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 1011,
+      "y": 521,
+      "w": 212,
+      "h": 170,
+      "rotation": 2,
+      "border": {
+        "top": 6,
+        "right": 6,
+        "bottom": 6,
+        "left": 6,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    }
+  ],
+  "decorations": [
+    {
+      "type": "tape",
+      "x": 40,
+      "y": 22,
+      "w": 200,
+      "h": 56,
+      "rotation": -7,
+      "color": "#C9B8DA",
+      "alpha": 200
+    },
+    {
+      "type": "title",
+      "text": "{{title}}",
+      "x": 60,
+      "y": 18,
+      "size": 52,
+      "color": "#463C52"
+    },
+    {
+      "type": "date",
+      "x": 64,
+      "y": 92,
+      "size": 34,
+      "color": "#7C7186"
+    }
+  ]
+}

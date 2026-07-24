@@ -1,0 +1,22 @@
+{
+  "id": "monthly_collage",
+  "name": "月度手帐",
+  "description": "1张主图 + 4张小图，16:9 宽屏，适合一个月的精选回顾",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": { "type": "color", "value": "#F6F1EC" }
+  },
+  "slots": [
+    { "x": 70,  "y": 180, "w": 440, "h": 440, "rotation": -2, "border": { "top": 20, "right": 20, "bottom": 70, "left": 20, "color": "#FFFFFF" }, "shadow": true, "caption": "highlight" },
+    { "x": 620, "y": 185, "w": 220, "h": 220, "rotation": 4,  "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 880, "y": 185, "w": 220, "h": 220, "rotation": -5, "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 620, "y": 455, "w": 220, "h": 220, "rotation": 3,  "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 880, "y": 455, "w": 220, "h": 220, "rotation": -3, "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "tape", "x": 70, "y": 66, "w": 240, "h": 60, "rotation": -6, "color": "#C9B8DA", "alpha": 200 },
+    { "type": "title", "text": "{{title}}", "x": 90, "y": 60, "size": 72, "color": "#463C52" },
+    { "type": "date", "x": 94, "y": 152, "size": 38, "color": "#7C7186" }
+  ]
+}

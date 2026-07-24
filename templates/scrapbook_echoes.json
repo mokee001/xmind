@@ -1,0 +1,37 @@
+{
+  "id": "scrapbook_echoes",
+  "name": "拼贴手帐·城市回声",
+  "description": "小红书手帐拼贴风：深绿底 + 散落白边旋转照片 + 花体标题 + 手写标注 + 手绘箭头，配合贴纸(票根/星星)出效果",
+  "canvas": {
+    "width": 960,
+    "height": 1280,
+    "background": { "type": "color", "value": "#3C4A3A" }
+  },
+  "slots": [
+    { "x": 64,  "y": 150, "w": 372, "h": 430, "rotation": -4, "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#F6F1E7" }, "shadow": true },
+    { "x": 556, "y": 205, "w": 330, "h": 390, "rotation": 3,  "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#F6F1E7" }, "shadow": true },
+    { "x": 150, "y": 632, "w": 300, "h": 176, "rotation": -2, "border": { "top": 10, "right": 10, "bottom": 10, "left": 10, "color": "#F6F1E7" }, "shadow": true },
+    { "x": 560, "y": 636, "w": 320, "h": 248, "rotation": 2,  "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#F6F1E7" }, "shadow": true },
+    { "x": 80,  "y": 852, "w": 300, "h": 326, "rotation": -3, "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#F6F1E7" }, "shadow": true },
+    { "x": 418, "y": 946, "w": 452, "h": 300, "rotation": 2,  "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#F6F1E7" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "text", "text": "ins-style", "font": "script", "x": 560, "y": 40, "size": 64, "color": "#F1E9D7" },
+    { "type": "text", "text": "\u2018city of echoes\u2019", "font": "script", "x": 470, "y": 100, "size": 54, "color": "#EBCF94" },
+
+    { "type": "text", "text": "city life", "font": "hand", "x": 462, "y": 330, "size": 28, "color": "#EFE6D2" },
+    { "type": "arrow", "x1": 468, "y1": 322, "cx": 452, "cy": 288, "x2": 432, "y2": 250, "color": "#E7DCC2", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "records", "font": "hand", "x": 588, "y": 600, "size": 28, "color": "#EFE6D2" },
+    { "type": "arrow", "x1": 640, "y1": 596, "cx": 650, "cy": 616, "x2": 648, "y2": 636, "color": "#E7DCC2", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "memories", "font": "hand", "x": 20, "y": 610, "size": 28, "color": "#EFE6D2" },
+    { "type": "arrow", "x1": 60, "y1": 648, "cx": 96, "cy": 760, "x2": 162, "y2": 856, "color": "#E7DCC2", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "taste of the night", "font": "hand", "x": 420, "y": 902, "size": 28, "color": "#EFE6D2" },
+    { "type": "arrow", "x1": 470, "y1": 896, "cx": 540, "cy": 852, "x2": 604, "y2": 812, "color": "#E7DCC2", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "indulge\u2026", "font": "script", "x": 120, "y": 1198, "size": 46, "color": "#F1E9D7" },
+    { "type": "arrow", "x1": 260, "y1": 1196, "cx": 360, "cy": 1168, "x2": 440, "y2": 1120, "color": "#E7DCC2", "width": 3, "head": 15 }
+  ]
+}

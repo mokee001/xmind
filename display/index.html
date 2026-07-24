@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>家庭相框 · 展示屏</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #201c17;
+      overflow: hidden;
+      font-family: -apple-system, "PingFang SC", sans-serif;
+    }
+    #stage {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #wall {
+      max-height: 92vh;
+      max-width: 92vw;
+      border-radius: 14px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      transition: opacity 0.6s ease;
+    }
+    #empty {
+      color: #8a7e6c;
+      text-align: center;
+    }
+    #status {
+      position: fixed;
+      bottom: 16px;
+      right: 20px;
+      color: #6e6455;
+      font-size: 13px;
+    }
+    #meta {
+      position: fixed;
+      top: 18px;
+      left: 22px;
+      color: #cbbfa8;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <div id="empty">等待手机端生成画面…</div>
+    <img id="wall" style="display:none" alt="photo wall" />
+  </div>
+  <div id="meta"></div>
+  <div id="status">连接中…</div>
+  <script src="display.js"></script>
+</body>
+</html>

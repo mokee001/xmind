@@ -1,0 +1,23 @@
+{
+  "id": "minimal_gallery",
+  "name": "美术馆三联",
+  "description": "极简留白 + 三联等距挂画 + 展签编号，安静高级",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": { "type": "color", "value": "#FAF7F1" }
+  },
+  "slots": [
+    { "x": 60,  "y": 180, "w": 340, "h": 300, "radius": 6, "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 470, "y": 180, "w": 340, "h": 300, "radius": 6, "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 880, "y": 180, "w": 340, "h": 300, "radius": 6, "border": { "top": 14, "right": 14, "bottom": 14, "left": 14, "color": "#FFFFFF" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "title", "text": "{{title}}", "x": 0, "y": 68, "w": 1280, "align": "center", "size": 56, "color": "#33302A", "letter_spacing": 4 },
+    { "type": "text", "text": "{{date}}", "x": 0, "y": 138, "w": 1280, "align": "center", "size": 28, "color": "#A79C88", "letter_spacing": 3 },
+    { "type": "line", "x1": 40, "y1": 548, "x2": 1240, "y2": 548, "width": 2, "color": "#E2DACB" },
+    { "type": "text", "text": "01", "x": 60,  "y": 566, "w": 340, "align": "center", "size": 26, "color": "#B3A892", "letter_spacing": 2 },
+    { "type": "text", "text": "02", "x": 470, "y": 566, "w": 340, "align": "center", "size": 26, "color": "#B3A892", "letter_spacing": 2 },
+    { "type": "text", "text": "03", "x": 880, "y": 566, "w": 340, "align": "center", "size": 26, "color": "#B3A892", "letter_spacing": 2 }
+  ]
+}
