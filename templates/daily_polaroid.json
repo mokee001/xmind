@@ -1,0 +1,20 @@
+{
+  "id": "daily_polaroid",
+  "name": "每日拍立得",
+  "description": "3张拍立得风格照片横向排列，16:9 宽屏，适合记录一天",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": { "type": "color", "value": "#F3EEE4" }
+  },
+  "slots": [
+    { "x": 90,  "y": 250, "w": 320, "h": 320, "rotation": -6, "border": { "top": 22, "right": 22, "bottom": 96, "left": 22, "color": "#FFFFFF" }, "shadow": true, "caption": "morning" },
+    { "x": 470, "y": 290, "w": 320, "h": 320, "rotation": 5,  "border": { "top": 22, "right": 22, "bottom": 96, "left": 22, "color": "#FFFFFF" }, "shadow": true, "caption": "noon" },
+    { "x": 850, "y": 250, "w": 320, "h": 320, "rotation": 3,  "border": { "top": 22, "right": 22, "bottom": 96, "left": 22, "color": "#FFFFFF" }, "shadow": true, "caption": "night" }
+  ],
+  "decorations": [
+    { "type": "tape", "x": 70, "y": 70, "w": 220, "h": 64, "rotation": -8, "color": "#E7B7A8", "alpha": 200 },
+    { "type": "title", "text": "{{title}}", "x": 90, "y": 60, "size": 70, "color": "#4A4034" },
+    { "type": "date", "x": 94, "y": 158, "size": 38, "color": "#8A7E6C" }
+  ]
+}

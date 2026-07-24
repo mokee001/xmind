@@ -1,0 +1,25 @@
+{
+  "id": "collage_pop",
+  "name": "撞色拼贴",
+  "description": "明亮渐变 + 几何撞色 + 圆角照片俏皮散布，活力波普风",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": { "type": "gradient", "from": "#FCE3C7", "to": "#F6C6DA", "angle": 35 }
+  },
+  "slots": [
+    { "x": 90,  "y": 120, "w": 330, "h": 250, "radius": 20, "rotation": -5, "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 470, "y": 90,  "w": 300, "h": 300, "radius": 20, "rotation": 4,  "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 820, "y": 140, "w": 340, "h": 250, "radius": 20, "rotation": -3, "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 150, "y": 410, "w": 320, "h": 250, "radius": 20, "rotation": 5,  "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 520, "y": 420, "w": 330, "h": 250, "radius": 20, "rotation": -4, "border": { "top": 12, "right": 12, "bottom": 12, "left": 12, "color": "#FFFFFF" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "circle", "layer": "back", "x": -90, "y": -90, "w": 360, "h": 360, "color": "#FFD6A5", "alpha": 170 },
+    { "type": "circle", "layer": "back", "x": 1040, "y": 470, "w": 300, "h": 300, "outline": "#7FB5B5", "outline_width": 10 },
+    { "type": "rect", "layer": "back", "x": 540, "y": -40, "w": 240, "h": 240, "radius": 24, "color": "#B5EAD7", "alpha": 160, "rotation": 20 },
+    { "type": "dots", "x": 92, "y": 62, "count": 6, "gap": 34, "size": 18, "shape": "circle", "color": "#E5606B" },
+    { "type": "title", "text": "{{title}}", "x": 900, "y": 440, "size": 64, "color": "#E5606B" },
+    { "type": "date", "x": 906, "y": 528, "size": 30, "color": "#7A6E86" }
+  ]
+}

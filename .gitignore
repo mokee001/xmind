@@ -1,0 +1,53 @@
+# ============================================================
+#  手帐照片墙 · .gitignore
+#  规则：代码 / 模板(JSON) / 贴纸(种子素材) 进 git；
+#        照片、生成图、运行状态、依赖包、模型权重 不进 git。
+# ============================================================
+
+# --- 用户数据 & 生成物（超大 / 随时重建 / 隐私）---
+photos/
+output/
+backend/data/
+*.jpg
+*.jpeg
+*.heic
+*.HEIC
+
+# 例外：模板缩略图占位目录不需要，忽略即可（上面 output/ 已含）
+
+# --- 运行时 / 缓存 ---
+*.log
+/tmp/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+
+# --- 依赖包（各自 install，不入库）---
+node_modules/
+.expo/
+dist/
+web-build/
+
+# --- 模型权重（大二进制，另行下载，见 README）---
+*.pt
+*.onnx
+*.pth
+
+# --- Python 虚拟环境 ---
+.venv/
+venv/
+env/
+
+# --- 编辑器 / 系统 ---
+.idea/
+*.swp
+.vscode/settings.json
+
+# ============================================================
+#  下面这些「要」进 git（默认就会被追踪，这里只是提醒，不要忽略）：
+#    backend/*.py   engine.py   main.py   requirements.txt
+#    templates/*.json           <- B 的模板成果，文本、必须共享
+#    stickers/*.png             <- B 的贴纸种子素材（如太大可改为忽略）
+#    photo-wall-app/  webapp/  studio/  display/  firmware/  README.md
+# ============================================================

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>照片墙 · 创作平台</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>照片墙 · 创作平台</h1>
+      <p class="sub">上传贴纸与模板 → 系统达标校验 → 自动匹配组合 → 预览多样有惊喜感的照片墙效果</p>
+    </div>
+    <span id="conn" class="pill">连接中…</span>
+  </header>
+
+  <main>
+    <!-- 自动匹配预览：平台核心 -->
+    <section class="card hero">
+      <h2>🎞 自动匹配预览</h2>
+      <p class="hint">系统会自动挑一套<strong>达标模板</strong>、从相册取样片、并把<strong>主题相符的贴纸</strong>贴上去，
+        合成一张照片墙效果。点「换一批」不断刷新，感受多样与惊喜。</p>
+      <div class="row">
+        <select id="previewTpl"><option value="">🎲 随机模板（推荐）</option></select>
+        <input id="previewTitle" placeholder="标题" value="我的一天" />
+        <button id="btnPreview" class="primary">✨ 生成 / 换一批</button>
+      </div>
+      <div id="previewMeta" class="meta"></div>
+      <div id="previewStage" class="stage"><span class="muted">点上方「生成 / 换一批」开始预览</span></div>
+    </section>
+
+    <div class="two-col">
+      <!-- 贴纸上传 -->
+      <section class="card">
+        <h2>🌟 贴纸上传</h2>
+        <p class="hint">上传<strong>透明抠图贴纸</strong>（PNG / WEBP）。系统会<strong>达标校验</strong>（是抠图、尺寸/比例合理）并打<strong>主题标签</strong>。</p>
+        <input id="stickerThemes" placeholder="主题（逗号分隔，如 美食,清新；留空=通用）" />
+        <div id="stickerDrop" class="drop">
+          点击或拖拽贴纸到这里上传
+          <input id="stickerInput" type="file" accept="image/png,image/webp" multiple hidden />
+        </div>
+        <div id="stickerReject" class="reject"></div>
+        <div class="sechead"><span id="stickerCount" class="muted"></span></div>
+        <div id="stickerGrid" class="grid"></div>
+      </section>
+
+      <!-- 模板上传 -->
+      <section class="card">
+        <h2>🧩 模板上传</h2>
+        <p class="hint">上传<strong>模板 JSON</strong>。系统会<strong>达标校验</strong>（结构合法、槽位在画布内、能成功渲染）。
+          <a href="#" id="tplHelp">查看模板格式</a></p>
+        <div id="tplDrop" class="drop">
+          点击或拖拽模板 .json 到这里上传
+          <input id="tplInput" type="file" accept="application/json,.json" multiple hidden />
+        </div>
+        <div id="tplReject" class="reject"></div>
+        <div class="sechead"><span id="tplCount" class="muted"></span></div>
+        <div id="tplGrid" class="grid tpl"></div>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="tplHelpDlg">
+    <h3>模板 JSON 格式</h3>
+    <pre id="tplHelpBody"></pre>
+    <form method="dialog"><button>知道了</button></form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

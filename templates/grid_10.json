@@ -1,0 +1,192 @@
+{
+  "id": "grid_10",
+  "name": "拾光十宫",
+  "description": "10张照片 5×2 拼贴，16:9 宽屏",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": {
+      "type": "color",
+      "value": "#EDE9E0"
+    }
+  },
+  "slots": [
+    {
+      "x": 47,
+      "y": 163,
+      "w": 206,
+      "h": 244,
+      "rotation": 2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 289,
+      "y": 163,
+      "w": 206,
+      "h": 244,
+      "rotation": -2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 530,
+      "y": 163,
+      "w": 206,
+      "h": 244,
+      "rotation": 2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 772,
+      "y": 163,
+      "w": 206,
+      "h": 244,
+      "rotation": -2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 1013,
+      "y": 163,
+      "w": 206,
+      "h": 244,
+      "rotation": 2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 47,
+      "y": 443,
+      "w": 206,
+      "h": 244,
+      "rotation": -2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 289,
+      "y": 443,
+      "w": 206,
+      "h": 244,
+      "rotation": 2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 530,
+      "y": 443,
+      "w": 206,
+      "h": 244,
+      "rotation": -2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 772,
+      "y": 443,
+      "w": 206,
+      "h": 244,
+      "rotation": 2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 1013,
+      "y": 443,
+      "w": 206,
+      "h": 244,
+      "rotation": -2,
+      "border": {
+        "top": 7,
+        "right": 7,
+        "bottom": 7,
+        "left": 7,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    }
+  ],
+  "decorations": [
+    {
+      "type": "tape",
+      "x": 40,
+      "y": 22,
+      "w": 200,
+      "h": 56,
+      "rotation": -7,
+      "color": "#A9C4A2",
+      "alpha": 200
+    },
+    {
+      "type": "title",
+      "text": "{{title}}",
+      "x": 60,
+      "y": 18,
+      "size": 60,
+      "color": "#3C4A3A"
+    },
+    {
+      "type": "date",
+      "x": 64,
+      "y": 100,
+      "size": 34,
+      "color": "#6E7A6A"
+    }
+  ]
+}
