@@ -38,7 +38,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
-from . import dedup, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
+from . import dedup, faces, insight, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
 PHOTOS_DIR = os.path.join(_ROOT, "photos")
@@ -389,6 +389,25 @@ async def generate(req: GenerateReq) -> dict:
     if wall is None:
         return JSONResponse({"error": "相册为空，请先授权/上传照片"}, status_code=400)
     return wall
+
+
+class InsightReq(BaseModel):
+    filters: list[str] = []   # 可选：只对命中筛选维度的照片做洞察
+    limit: int = 40           # 最多喂给洞察引擎的照片数
+
+
+@app.post("/api/insight")
+def make_insight(req: InsightReq) -> dict:
+    """照片洞察（验证版）：从当前相册的标签+EXIF 里挖藏在背后的故事，产出心声腔标题。
+    没配大模型时走离线桩（纯本地规则化），配了 INSIGHT_API_KEY/OPENAI_API_KEY 走真模型
+    （只上传标签+时间，不传原图）。返回结构含 nodes/connections/storylines/insights，
+    并用 engine 字段标明本次是 llm / stub / stub_fallback / empty。"""
+    photos = store.load("photos", [])
+    if req.filters:
+        matched = selector.filter_photos(photos, req.filters)
+        if matched:
+            photos = matched
+    return insight.generate(photos, max_photos=max(1, min(int(req.limit or 40), 100)))
 
 
 # 智能推荐用的筛选词表（和 App 的 FILTER_GROUPS 对齐），按大类归类。
