@@ -452,10 +452,16 @@ def tag_photo(path: str) -> dict:
     phash = _dhash(img)  # 感知哈希，供去重使用
     csig = _content_sig(img)  # 内容签名（低分辨率色块），供去重识别「同一场景/主体」
 
-    # 画质分：清晰 + 曝光合适 + 有对比 加分（用于筛掉糊图/废片）
-    quality = 0.45
-    if "sharp" in tags:
-        quality += 0.35
+    # 画质分：清晰度(连续) + 曝光合适 + 有对比 加分（用于筛掉糊图/废片）
+    # 清晰度改用 edge_var 连续映射，而非「sharp/blurry」一刀切：
+    #   · 110(废片线)~300(旧 sharp 阈值) 之间给 0~0.35 的渐进加分——
+    #     让「差一点没到 sharp」的照片也能按真实清晰度拉开差距，不再全挤在最低分；
+    #   · 300 以上再最多 +0.10，把「很锐」和「刚好及格」区分开，最锐的照片排最前。
+    #   · 在 edge_var=300 这一点上，加分恰为 0.35，与旧逻辑完全一致（平滑升级不跳变）。
+    ev = float(metrics.get("edge_var", 0.0))
+    sharp_bonus = 0.35 * min(max((ev - 110.0) / (300.0 - 110.0), 0.0), 1.0) \
+        + 0.10 * min(max((ev - 300.0) / (1500.0 - 300.0), 0.0), 1.0)
+    quality = 0.45 + sharp_bonus
     if "bright" in tags:
         quality += 0.10
     if "high_contrast" in tags:
