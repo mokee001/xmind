@@ -792,6 +792,55 @@ def frame(w: int = 320, h: int = 480) -> Response:
     return Response(content=buf.getvalue(), media_type="image/jpeg")
 
 
+def _spectra6_palette() -> Image.Image:
+    """创建 E Ink Spectra 6 的六色调色板：黑、白、红、黄、绿、蓝。
+    面板不是连续 RGB 彩屏；后端先收敛颜色，固件只需按厂商色码送屏即可。
+    """
+    palette = Image.new("P", (1, 1))
+    colors = [
+        (0, 0, 0),        # black
+        (255, 255, 255),  # white
+        (220, 30, 30),    # red
+        (242, 201, 32),   # yellow
+        (35, 142, 70),    # green
+        (35, 92, 184),    # blue
+    ]
+    raw = [value for color in colors for value in color]
+    palette.putpalette(raw + [0] * (768 - len(raw)))
+    return palette
+
+
+@app.get("/api/frame_eink.png")
+def frame_eink() -> Response:
+    """给 13.3 寸 E Ink Spectra 6 用的原生画面。
+
+    固定输出 1600×1200 横屏 PNG，并用 Floyd-Steinberg 抖动压到 E6 的六种可显示
+    颜色。它和 /api/frame.jpg 完全独立，保留旧 LCD 的 800×480 JPEG 传输路径。
+    """
+    w, h = 1600, 1200
+    last = store.load("last_wall", None)
+    if not last:
+        img = Image.new("RGB", (w, h), "#FFFFFF")
+    else:
+        src_path = os.path.join(OUTPUT_DIR, os.path.basename(last["image_url"]))
+        if not os.path.exists(src_path):
+            img = Image.new("RGB", (w, h), "#FFFFFF")
+        else:
+            src = Image.open(src_path).convert("RGB")
+            from PIL import ImageOps
+            # 先保持原图比例，避免把现有 16:9 模板拉伸；4:3 墨水屏多出的区域用模板背景补齐。
+            pad_color = src.getpixel((0, 0))
+            fitted = ImageOps.contain(src, (w, h), method=Image.LANCZOS)
+            img = Image.new("RGB", (w, h), pad_color)
+            img.paste(fitted, ((w - fitted.width) // 2, (h - fitted.height) // 2))
+
+    # Spectra 6 是有限色面板；抖动能让照片的明暗/细节在六色中保留得更自然。
+    eink = img.quantize(palette=_spectra6_palette(), dither=Image.Dither.FLOYDSTEINBERG)
+    buf = io.BytesIO()
+    eink.save(buf, format="PNG", optimize=True)
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
 @app.get("/photos/{name}")
 def serve_photo(name: str) -> FileResponse:
     return FileResponse(os.path.join(PHOTOS_DIR, name))
