@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import glob
 import io
+import ipaddress
 import json
 import os
 import random
@@ -38,7 +39,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
-from . import dedup, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
+from . import dedup, eink_push, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
 PHOTOS_DIR = os.path.join(_ROOT, "photos")
@@ -46,6 +47,7 @@ OUTPUT_DIR = os.path.join(_ROOT, "output")
 TEMPLATES_DIR = os.path.join(_ROOT, "templates")
 WEBAPP_DIR = os.path.join(_ROOT, "webapp")
 DISPLAY_DIR = os.path.join(_ROOT, "display")
+EINK_UI_DIR = os.path.join(_ROOT, "eink")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(stickers.STICKERS_DIR, exist_ok=True)
@@ -841,6 +843,54 @@ def frame_eink() -> Response:
     return Response(content=buf.getvalue(), media_type="image/png")
 
 
+@app.post("/api/eink/upload")
+async def eink_upload(
+    file: UploadFile,
+    host: str = "192.168.1.200",
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+) -> dict:
+    """上传单张照片，并通过微雪官方 Wi-Fi Loader 协议直接刷新 13.3E6。"""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "墨水屏地址必须是局域网 IP"})
+    if not address.is_private:
+        return JSONResponse(status_code=400, content={"error": "只允许局域网墨水屏地址"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.verify()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别该图片格式"})
+
+    preview_name = "eink_live_preview.png"
+    try:
+        return eink_push.start_upload(
+            image_bytes,
+            host=host,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            preview_path=os.path.join(OUTPUT_DIR, preview_name),
+            preview_url=f"/output/{preview_name}",
+        )
+    except RuntimeError as exc:
+        return JSONResponse(status_code=409, content={"error": str(exc)})
+
+
+@app.get("/api/eink/status")
+def eink_status() -> dict:
+    """查询当前照片转换、传输与全刷进度。"""
+    return eink_push.status()
+
+
 @app.get("/photos/{name}")
 def serve_photo(name: str) -> FileResponse:
     return FileResponse(os.path.join(PHOTOS_DIR, name))
@@ -870,6 +920,7 @@ def thumb(name: str, s: int = 160) -> Response:
 app.include_router(content.router)
 
 
+app.mount("/eink", StaticFiles(directory=EINK_UI_DIR, html=True), name="eink")
 app.mount("/studio", StaticFiles(directory=os.path.join(_ROOT, "studio"), html=True), name="studio")
 app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="app")
 app.mount("/screen", StaticFiles(directory=DISPLAY_DIR, html=True), name="screen")

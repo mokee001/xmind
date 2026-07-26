@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>墨水屏实时验证</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <span class="eyebrow">SPECTRA 6 · LOCAL LAB</span>
+        <h1>墨水屏实时验证</h1>
+        <p>上传一张真实照片，自动转换并直接刷新 13.3E6。</p>
+      </div>
+      <div id="connection" class="connection"><i></i><span>检查设备</span></div>
+    </header>
+
+    <section class="workspace">
+      <form id="uploadForm" class="panel controls">
+        <label id="dropzone" class="dropzone">
+          <input id="file" name="file" type="file" accept="image/*" required>
+          <span class="plus">＋</span>
+          <strong>选择或拖入一张照片</strong>
+          <small>JPEG / PNG / HEIC（浏览器支持时）· 最大 30MB</small>
+        </label>
+
+        <div class="field">
+          <label for="host">墨水屏 IP</label>
+          <input id="host" value="192.168.1.200" inputmode="decimal" autocomplete="off">
+        </div>
+
+        <div class="settings">
+          <div class="field">
+            <label for="fit">画面适配</label>
+            <select id="fit">
+              <option value="contain">完整显示（白边）</option>
+              <option value="cover">铺满屏幕（裁切）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="rotation">旋转</label>
+            <select id="rotation">
+              <option value="0">不旋转</option>
+              <option value="90">顺时针 90°</option>
+              <option value="180">旋转 180°</option>
+              <option value="270">逆时针 90°</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="toggle">
+          <input id="dither" type="checkbox" checked>
+          <span></span>
+          <div><strong>真实照片模式</strong><small>使用六色抖动保留明暗层次；关闭后色块更干净但失真明显</small></div>
+        </label>
+
+        <button id="submit" class="primary" type="submit" disabled>推送到墨水屏</button>
+        <p class="hint">一次传输约 1–3 分钟；全刷期间闪烁属于正常现象。</p>
+      </form>
+
+      <section class="panel monitor">
+        <div class="screen-wrap">
+          <div class="screen">
+            <img id="preview" alt="照片预览">
+            <div id="emptyPreview" class="empty-preview">1200 × 1600</div>
+          </div>
+        </div>
+
+        <div class="status-row">
+          <div>
+            <span class="status-label">当前状态</span>
+            <strong id="stage">等待选择照片</strong>
+          </div>
+          <strong id="percent">0%</strong>
+        </div>
+        <div class="progress"><i id="progressBar"></i></div>
+        <div id="error" class="error" hidden></div>
+        <ol class="steps">
+          <li id="stepProcess">转换为原生六色画面</li>
+          <li id="stepLeft">发送左半屏数据</li>
+          <li id="stepRight">发送右半屏数据</li>
+          <li id="stepRefresh">执行约 19 秒全刷</li>
+        </ol>
+      </section>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
