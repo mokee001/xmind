@@ -97,6 +97,7 @@ form.addEventListener("submit", async (event) => {
     dither: $("dither").checked,
     fit: $("fit").value,
     rotation: $("rotation").value,
+    enhancement: $("enhancement").value,
   });
   const body = new FormData();
   body.append("file", file);

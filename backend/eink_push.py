@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Any, Union
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageEnhance, ImageOps
 
 WIDTH = 1200
 HEIGHT = 1600
@@ -64,12 +64,32 @@ def _palette() -> Image.Image:
     return palette
 
 
+def _enhance_for_panel(source: Image.Image, enhancement: str) -> Image.Image:
+    """Compensate for the panel's pale highlights before six-color quantization."""
+    if enhancement == "none":
+        return source
+
+    if enhancement == "strong":
+        cutoff, contrast, color, gamma = 2.0, 1.32, 1.24, 1.12
+    else:
+        cutoff, contrast, color, gamma = 1.0, 1.18, 1.12, 1.07
+
+    # Stretch weak black/white points first, then darken mid-tones slightly. Applying
+    # this before fitting keeps the optional white letterbox border truly white.
+    enhanced = ImageOps.autocontrast(source, cutoff=cutoff)
+    enhanced = ImageEnhance.Contrast(enhanced).enhance(contrast)
+    enhanced = ImageEnhance.Color(enhanced).enhance(color)
+    lut = [round(255 * ((value / 255) ** gamma)) for value in range(256)]
+    return enhanced.point(lut * 3)
+
+
 def prepare_image(
     image_bytes: bytes,
     *,
     dither: bool = True,
     fit: str = "contain",
     rotation: int = 0,
+    enhancement: str = "standard",
 ) -> tuple[Image.Image, bytearray]:
     """Convert an uploaded image to the native 1200x1600 six-color panel image."""
     with Image.open(io.BytesIO(image_bytes)) as opened:
@@ -77,6 +97,8 @@ def prepare_image(
 
     if rotation in (90, 180, 270):
         source = source.rotate(-rotation, expand=True)
+
+    source = _enhance_for_panel(source, enhancement)
 
     if fit == "cover":
         canvas = ImageOps.fit(source, (WIDTH, HEIGHT), method=Image.Resampling.LANCZOS)
@@ -170,6 +192,7 @@ def _worker(
     dither: bool,
     fit: str,
     rotation: int,
+    enhancement: str,
     preview_path: str,
     preview_url: str,
 ) -> None:
@@ -180,6 +203,7 @@ def _worker(
             dither=dither,
             fit=fit,
             rotation=rotation,
+            enhancement=enhancement,
         )
         preview.save(preview_path, format="PNG", optimize=True)
         _set_state(state="uploading", preview_url=preview_url, stage="连接墨水屏")
@@ -198,6 +222,7 @@ def start_upload(
     dither: bool,
     fit: str,
     rotation: int,
+    enhancement: str,
     preview_path: str,
     preview_url: str,
 ) -> dict[str, Any]:
@@ -215,7 +240,7 @@ def start_upload(
     )
     thread = threading.Thread(
         target=_worker,
-        args=(image_bytes, host, dither, fit, rotation, preview_path, preview_url),
+        args=(image_bytes, host, dither, fit, rotation, enhancement, preview_path, preview_url),
         daemon=True,
         name="eink-uploader",
     )

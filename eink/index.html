@@ -50,6 +50,16 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="enhancement">显色增强</label>
+          <select id="enhancement">
+            <option value="none">原片（不补偿）</option>
+            <option value="standard" selected>标准增强（推荐）</option>
+            <option value="strong">强增强（原片较灰时）</option>
+          </select>
+          <small class="field-help">拉开黑白场并适度压暗中间调，补偿 Spectra 6 实际显示偏白。</small>
+        </div>
+
         <label class="toggle">
           <input id="dither" type="checkbox" checked>
           <span></span>

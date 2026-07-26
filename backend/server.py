@@ -850,6 +850,7 @@ async def eink_upload(
     dither: bool = True,
     fit: str = "contain",
     rotation: int = 0,
+    enhancement: str = "standard",
 ) -> dict:
     """上传单张照片，并通过微雪官方 Wi-Fi Loader 协议直接刷新 13.3E6。"""
     try:
@@ -860,6 +861,8 @@ async def eink_upload(
         return JSONResponse(status_code=400, content={"error": "只允许局域网墨水屏地址"})
     if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
         return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
 
     image_bytes = await file.read()
     if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
@@ -878,6 +881,7 @@ async def eink_upload(
             dither=dither,
             fit=fit,
             rotation=rotation,
+            enhancement=enhancement,
             preview_path=os.path.join(OUTPUT_DIR, preview_name),
             preview_url=f"/output/{preview_name}",
         )
