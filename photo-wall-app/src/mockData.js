@@ -24,15 +24,6 @@ export const people = [
   { id: 'p4', name: '不展示人物', count: 18, policy: 'block', file: 'IMG_1090.PNG', color: '#7B7771' },
 ];
 
-export const candidates = [
-  { id: 'c1', file: 'IMG_1067.JPG', selected: true },
-  { id: 'c2', file: 'IMG_1077.JPG', selected: true },
-  { id: 'c3', file: 'IMG_1080.JPG', selected: true },
-  { id: 'c4', file: 'IMG_1081.JPG', selected: true },
-  { id: 'c5', file: 'IMG_1100.JPG', selected: false },
-  { id: 'c6', file: 'IMG_1042.PNG', selected: true },
-];
-
 export const initialMembers = [
   { id: 'm1', name: '我', detail: '所有者 · 当前账号', role: 'owner', initials: 'WH', color: '#C65D3B' },
   { id: 'm2', name: '家人', detail: '管理员 · 已加入', role: 'admin', initials: '家', color: '#5E7E73' },
