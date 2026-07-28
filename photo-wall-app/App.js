@@ -10,8 +10,7 @@ const API = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://HJFG3FGM46
 const photoUrl = (file) => `${API}/api/thumb/${encodeURIComponent(file)}?s=640`;
 const TABS = [
   { id: 'home', label: '首页', icon: '⌂' }, { id: 'albums', label: '相册', icon: '▧' },
-  { id: 'compose', label: '创作', icon: '＋' }, { id: 'people', label: '人物', icon: '◎' },
-  { id: 'settings', label: '设置', icon: '☷' },
+  { id: 'compose', label: '创作', icon: '＋' }, { id: 'settings', label: '设置', icon: '☷' },
 ];
 const POLICY = {
   allow: { label: '允许展示', color: colors.moss, soft: colors.mossSoft },
@@ -43,8 +42,6 @@ function Home({ connected, setTab, show }) {
     <View style={s.stats}>{[['558','已同步照片'],['4','已识别人物'],['12','本月画面']].map(([value,label]) => <View key={label} style={s.stat}><Text style={s.statValue}>{value}</Text><Text style={s.meta}>{label}</Text></View>)}</View>
     <Heading title="需要处理"/>
     <TouchableOpacity style={s.notice} onPress={() => setTab('people')}><View style={s.noticeIcon}><Text style={s.noticeIconText}>◎</Text></View><View style={s.flex}><Text style={s.itemTitle}>发现 1 位新人物</Text><Text style={s.meta}>确认是否允许这个人物出现在照片墙。</Text></View><Text style={s.chevron}>›</Text></TouchableOpacity>
-    <Heading title="最近展示" action="查看全部" onAction={() => show('history')}/>
-    <View style={s.history}>{['IMG_1067.JPG','IMG_1077.JPG','IMG_1080.JPG'].map((file,i) => <View key={file} style={s.historyItem}><Image source={{uri: photoUrl(file)}} style={s.historyImage}/><Text style={s.historyName}>{['周末散步','家常味道','盛夏球场'][i]}</Text><Text style={s.meta}>{['今天','昨天','7 月 25 日'][i]}</Text></View>)}</View>
   </>;
 }
 
@@ -61,12 +58,12 @@ function Albums({ albums, setAlbums, show }) {
   </>;
 }
 
-function People({ people, setPeople }) {
+function People({ people, setPeople, setTab }) {
   const [filter,setFilter] = useState('all');
   const shown = people.filter(x => filter === 'all' || x.policy === filter);
   const change = (id,policy) => setPeople(current => current.map(x => x.id === id ? {...x,policy} : x));
   return <>
-    <Heading eyebrow="隐私与展示" title="人物管理"/><Text style={s.intro}>设置每位人物是否可以出现在自动生成的画面中。策略由家庭管理员统一管理。</Text>
+    <Heading eyebrow="设置 · 隐私与展示" title="人物管理" action="返回设置" onAction={() => setTab('settings')}/><Text style={s.intro}>设置每位人物是否可以出现在自动生成的画面中。策略由家庭管理员统一管理。</Text>
     <View style={s.segments}>{[['all','全部'],['allow','允许'],['review','待审核'],['block','不展示']].map(([id,label]) => <TouchableOpacity key={id} style={[s.segment,filter===id&&s.segmentOn]} onPress={()=>setFilter(id)}><Text style={[s.segmentText,filter===id&&s.strong]}>{label}</Text></TouchableOpacity>)}</View>
     <View style={s.list}>{shown.map(person => { const meta=POLICY[person.policy]; return <View key={person.id} style={s.person}><Image source={{uri:photoUrl(person.file)}} style={s.personImage}/><View style={s.personCopy}><Text style={s.itemTitle}>{person.name}</Text><Text style={s.meta}>{person.count} 张相关照片</Text><View style={s.policyChoices}>{Object.keys(POLICY).map(policy => <TouchableOpacity key={policy} onPress={()=>change(person.id,policy)} style={[s.policyChoice,person.policy===policy&&{backgroundColor:POLICY[policy].soft,borderColor:POLICY[policy].color}]}><Text style={[s.policyText,person.policy===policy&&{color:POLICY[policy].color}]}>{POLICY[policy].label}</Text></TouchableOpacity>)}</View></View><View style={[s.policyBadge,{backgroundColor:meta.soft}]}><Text style={[s.policyBadgeText,{color:meta.color}]}>{meta.label}</Text></View></View>})}</View>
     <View style={s.info}><Text style={[s.itemTitle,{color:colors.moss}]}>策略如何生效？</Text><Text style={[s.meta,{color:colors.moss}]}>包含“不展示”人物的照片会由后端直接排除；包含“每次审核”人物的照片只能进入草稿，确认后才可发布。</Text></View>
@@ -87,13 +84,14 @@ function Compose({ candidates, setCandidates, show }) {
   </>;
 }
 
-function Settings({ members, setMembers, show }) {
+function Settings({ members, setMembers, show, setTab }) {
   const [auto,setAuto]=useState(true),[approval,setApproval]=useState(true);
   return <>
     <Heading eyebrow="家庭空间" title="账号与设置"/><View style={s.profile}><View style={s.avatar}><Text style={s.avatarText}>WH</Text></View><View style={s.flex}><Text style={s.profileName}>王欢的家庭</Text><Text style={s.meta}>家庭编号 PW-0726 · 所有者</Text></View><Button small secondary onPress={()=>show('profile')}>编辑</Button></View>
     <Heading title={`家庭成员 · ${members.length}`} action="邀请成员" onAction={()=>show('invite')}/><View style={s.memberList}>{members.map(m=><View key={m.id} style={s.member}><View style={[s.memberAvatar,{backgroundColor:m.color}]}><Text style={s.memberAvatarText}>{m.initials}</Text></View><View style={s.flex}><Text style={s.itemTitle}>{m.name}</Text><Text style={s.meta}>{m.detail}</Text></View><TouchableOpacity onPress={()=>m.role!=='owner'&&setMembers(current=>current.filter(x=>x.id!==m.id))}><Text style={m.role==='owner'?s.owner:s.action}>{m.role==='owner'?'Owner':'管理'}</Text></TouchableOpacity></View>)}</View>
     <Heading title="设备与自动化"/><View style={s.settingGroup}><TouchableOpacity style={s.setting} onPress={()=>show('device')}><View style={s.settingIcon}><Text>▣</Text></View><View style={s.flex}><Text style={s.itemTitle}>客厅照片墙</Text><Text style={s.meta}>在线 · 192.168.1.200</Text></View><Text style={s.chevron}>›</Text></TouchableOpacity><View style={s.divider}/><View style={s.setting}><View style={s.settingIcon}><Text>↻</Text></View><View style={s.flex}><Text style={s.itemTitle}>自动更新</Text><Text style={s.meta}>每天从允许内容中生成新画面</Text></View><Switch value={auto} onValueChange={setAuto} trackColor={{true:colors.moss}}/></View><View style={s.divider}/><View style={s.setting}><View style={s.settingIcon}><Text>✓</Text></View><View style={s.flex}><Text style={s.itemTitle}>投稿需要管理员确认</Text><Text style={s.meta}>投稿者的草稿不会直接上屏</Text></View><Switch value={approval} onValueChange={setApproval} trackColor={{true:colors.moss}}/></View></View>
     <Heading title="账号"/><View style={s.settingGroup}>{['登录与安全','通知设置','隐私与数据','帮助与反馈'].map((item,i)=><React.Fragment key={item}>{i?<View style={s.divider}/>:null}<TouchableOpacity style={s.simpleSetting} onPress={()=>show('generic')}><Text style={s.itemTitle}>{item}</Text><Text style={s.chevron}>›</Text></TouchableOpacity></React.Fragment>)}</View>
+    <Heading title="内容与隐私"/><View style={s.settingGroup}><TouchableOpacity style={s.setting} onPress={()=>setTab('people')}><View style={[s.settingIcon,{backgroundColor:colors.terracottaSoft}]}><Text style={{color:colors.terracotta}}>◎</Text></View><View style={s.flex}><Text style={s.itemTitle}>人物与展示权限</Text><Text style={s.meta}>管理允许展示、每次审核和不展示人物</Text></View><Pill tone="amber">1 待审核</Pill><Text style={s.chevron}>›</Text></TouchableOpacity></View>
   </>;
 }
 
@@ -117,10 +115,10 @@ function Nav({ item, active, onPress, wide }) {
 export default function App() {
   const {width}=useWindowDimensions(),wide=width>=900;
   const [tab,setTab]=useState('home'),[connected,setConnected]=useState(true),[albums,setAlbums]=useState(seedAlbums),[people,setPeople]=useState(seedPeople),[candidates,setCandidates]=useState(seedCandidates),[members,setMembers]=useState(initialMembers),[dialog,setDialog]=useState(null),[toast,setToast]=useState('');
-  const title=useMemo(()=>TABS.find(x=>x.id===tab)?.label,[tab]);
+  const title=useMemo(()=>tab==='people'?'人物管理':TABS.find(x=>x.id===tab)?.label,[tab]);
   const notify=text=>{setToast(text);setTimeout(()=>setToast(''),2300)};
   const invite=(name,role)=>{const roleName={admin:'管理员',contributor:'投稿者',viewer:'仅查看'}[role];setMembers(current=>[...current,{id:`m${Date.now()}`,name,detail:`${roleName} · 等待加入`,role,initials:name[0],color:colors.terracotta}]);notify(`已生成给“${name}”的邀请`)};
-  const screens={home:<Home connected={connected} setTab={setTab} show={setDialog}/>,albums:<Albums albums={albums} setAlbums={setAlbums} show={setDialog}/>,people:<People people={people} setPeople={setPeople}/>,compose:<Compose candidates={candidates} setCandidates={setCandidates} show={setDialog}/>,settings:<Settings members={members} setMembers={setMembers} show={setDialog}/>};
+  const screens={home:<Home connected={connected} setTab={setTab} show={setDialog}/>,albums:<Albums albums={albums} setAlbums={setAlbums} show={setDialog}/>,people:<People people={people} setPeople={setPeople} setTab={setTab}/>,compose:<Compose candidates={candidates} setCandidates={setCandidates} show={setDialog}/>,settings:<Settings members={members} setMembers={setMembers} show={setDialog} setTab={setTab}/>};
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content"/><View style={[s.app,wide&&s.appWide]}>
     {wide?<View style={s.sidebar}><View style={s.brand}><Text style={s.brandText}>P</Text></View><View style={s.sideTabs}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)} wide/>)}</View><View style={s.sideAccount}><View style={s.miniAvatar}><Text style={s.miniText}>WH</Text></View><View><Text style={s.accountName}>王欢的家庭</Text><Text style={s.meta}>所有者</Text></View></View></View>:null}
     <View style={s.main}><View style={s.topbar}><View><Text style={wide?s.topTitle:s.mobileBrand}>{wide?title:'PhotoWall'}</Text>{!wide?<Text style={s.meta}>{title}</Text>:null}</View><View style={s.topActions}><View style={s.online}/><TouchableOpacity style={s.avatarButton} onPress={()=>setTab('settings')}><Text style={s.avatarText}>WH</Text></TouchableOpacity></View></View><ScrollView style={s.scroll} contentContainerStyle={[s.content,!wide&&s.contentMobile]} showsVerticalScrollIndicator={false}>{screens[tab]}</ScrollView>{!wide?<View style={s.bottom}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)}/>)}</View>:null}</View>
