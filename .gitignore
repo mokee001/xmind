@@ -39,6 +39,11 @@ web-build/
 .venv/
 venv/
 env/
+.env
+.env.*
+*.key
+*.secret
+credentials.json
 
 # --- 编辑器 / 系统 ---
 .idea/

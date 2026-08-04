@@ -1,0 +1,99 @@
+{
+  "version": "1.3",
+  "style_id": "journal_line_doodle_v1",
+  "name": "手帐线描涂鸦",
+  "reference_files": {
+    "illustration_only": "references/illustration_only.png",
+    "illustration_with_text": "references/illustration_with_text.png",
+    "text_only": "references/text_only.png",
+    "illustration_only_cases": "references/illustration_only_cases.png",
+    "illustration_with_text_cases": "references/illustration_with_text_cases.png",
+    "text_only_cases": "references/text_only_cases.png",
+    "closeup_single_focus_reference": "references/closeup_single_focus_reference.png"
+  },
+  "geometry": {
+    "illustration_only": {
+      "width": 54,
+      "height": 63,
+      "cell_padding": 1
+    },
+    "illustration_with_text": {
+      "illustration_width": 54,
+      "illustration_height": 50,
+      "text_width": 52,
+      "text_height": 14
+    },
+    "text_only": {
+      "width": 52,
+      "height": 62,
+      "cell_padding": 2
+    }
+  },
+  "text_styles": {
+    "illustration_with_text": {
+      "font": "momozhuanji",
+      "font_size": 8,
+      "font_weight": 600,
+      "maximum_chinese_characters": 14
+    },
+    "text_only": {
+      "font": "momozhuanji",
+      "font_size": 10,
+      "font_weight": 600,
+      "maximum_chinese_characters": 24
+    }
+  },
+  "illustration_style": {
+    "background": "transparent",
+    "line_color": "#202020",
+    "monochrome": true,
+    "primary_subject_limit": 1,
+    "tiny_accessory_limit": 1,
+    "minimum_whitespace_ratio": 0.35,
+    "framing": "close_up_or_single_focus",
+    "human_full_body_allowed": false,
+    "human_allowed_framing": [
+      "头像或面部特写",
+      "头肩或上半身",
+      "手、脚、耳朵等动作相关局部",
+      "能代表事件的单一人物细节"
+    ],
+    "object_scene_policy": "突出一个核心物件或动作关键部位，不绘制完整环境场景",
+    "keywords": [
+      "单色线描",
+      "手绘",
+      "轮廓优先",
+      "低细节",
+      "局部特写",
+      "单一视觉焦点",
+      "人物不画全身",
+      "物品突出核心形态",
+      "自然略不均匀",
+      "允许少量实心黑色块",
+      "允许少量附属性手写标签",
+      "明显留白",
+      "小尺寸可读"
+    ],
+    "negative_keywords": [
+      "写实",
+      "3D",
+      "黏土",
+      "复杂彩色填充",
+      "渐变",
+      "阴影",
+      "高密度背景",
+      "人物全身构图",
+      "完整环境叙事场景",
+      "品牌 Logo",
+      "二维码",
+      "条形码"
+    ],
+    "important_calendar_text_must_remain_in_text_region": true
+  },
+  "execution": {
+    "asset_strategy": "designer_library_first",
+    "generation_fallback_allowed": false,
+    "illustration_only_requires_consecutive_blank_run": true,
+    "minimum_consecutive_blank_run_length": 2
+  }
+}
