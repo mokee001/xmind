@@ -8,6 +8,7 @@
 photos/
 output/
 backend/data/
+calendar_runs/
 *.jpg
 *.jpeg
 *.heic

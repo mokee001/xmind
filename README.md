@@ -1,5 +1,9 @@
 # 手帐照片墙 · 排版引擎原型 (阶段0 核心验证)
 
+> 2026 年 7 月 AI 手帐日历独立引擎见
+> [docs/calendar/README.md](docs/calendar/README.md)。当前分支仅增加可调用模块，
+> 不修改现有照片墙 API。
+
 > 👥 **团队协作看这里** → [CONTRIBUTING.md](CONTRIBUTING.md)（分工、目录归属、每周 Git 流程、踩坑清单）
 > 🔌 **前后端对接看这里** → [API.md](API.md)（接口路径、入参出参、字段归属）
 
