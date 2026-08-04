@@ -7,8 +7,10 @@ The board must already be running that loader firmware.
 from __future__ import annotations
 
 import http.client
+import hashlib
 import io
 import os
+import struct
 import threading
 import time
 from typing import Any, Union
@@ -19,6 +21,9 @@ WIDTH = 1200
 HEIGHT = 1600
 HALF_WIDTH = WIDTH // 2
 CHUNK_PIXELS = 1000
+FRAME_MAGIC = b"PWE6"
+FRAME_VERSION = 1
+FRAME_HEADER = struct.Struct(">4sBHHI32s")
 
 # Compact quantization palette and the corresponding panel color codes.
 # Panel codes: 0 black, 1 white, 2 yellow, 3 red, 5 blue, 6 green.
@@ -112,6 +117,27 @@ def prepare_image(
     compact_indices = compact.tobytes()
     panel_codes = bytearray(_PANEL_CODES[index] for index in compact_indices)
     return compact, panel_codes
+
+
+def build_panel_frame(panel_codes: bytearray) -> bytes:
+    """Pack two 4-bit panel color codes per byte into a portable PWE6 frame."""
+    if len(panel_codes) != WIDTH * HEIGHT:
+        raise ValueError(f"像素数量错误: {len(panel_codes)}")
+    payload = bytearray((len(panel_codes) + 1) // 2)
+    for offset in range(0, len(panel_codes), 2):
+        payload[offset // 2] = panel_codes[offset] & 0x0F
+        if offset + 1 < len(panel_codes):
+            payload[offset // 2] |= (panel_codes[offset + 1] & 0x0F) << 4
+    digest = hashlib.sha256(payload).digest()
+    header = FRAME_HEADER.pack(
+        FRAME_MAGIC,
+        FRAME_VERSION,
+        WIDTH,
+        HEIGHT,
+        len(payload),
+        digest,
+    )
+    return header + payload
 
 
 def _byte_to_str(value: int) -> str:

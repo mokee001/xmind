@@ -889,6 +889,48 @@ async def eink_upload(
         return JSONResponse(status_code=409, content={"error": str(exc)})
 
 
+@app.post("/api/eink/prepare")
+async def eink_prepare(
+    file: UploadFile,
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+) -> Response:
+    """把照片转换为手机可下载并直传屏幕的 PWE6 六色帧，不连接局域网设备。"""
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        preview, panel_codes = eink_push.prepare_image(
+            image_bytes,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            enhancement=enhancement,
+        )
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别或转换该图片"})
+
+    preview.save(os.path.join(OUTPUT_DIR, "eink_direct_preview.png"), format="PNG", optimize=True)
+    frame = eink_push.build_panel_frame(panel_codes)
+    return Response(
+        content=frame,
+        media_type="application/vnd.photowall.pwe6",
+        headers={
+            "Content-Disposition": 'attachment; filename="display.pwe6"',
+            "X-Panel-Width": str(eink_push.WIDTH),
+            "X-Panel-Height": str(eink_push.HEIGHT),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @app.get("/api/eink/status")
 def eink_status() -> dict:
     """查询当前照片转换、传输与全刷进度。"""

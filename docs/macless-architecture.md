@@ -28,6 +28,123 @@ Expo 手机 App
 
 这样手机、服务器和屏幕都不依赖 Mac，也不要求手机与屏幕在同一 Wi-Fi。
 
+## 手机授权后直连屏幕模式
+
+如果产品要求“手机完成云端授权后，数据由手机直接发给屏幕”，采用混合架构：
+
+```text
+                                                            HTTPS
+Expo 手机 ─────────────────────→ 云端 API
+       │                              │
+       │ ① 登录、设备归属校验          │ 账号/家庭/设备
+       │ ② 上传照片                    │ 图片处理/六色帧
+       │ ③ 下载六色帧和短时授权令牌     │
+       │                              │
+       └──── 同一局域网 HTTPS/HTTP ───→ ESP32 屏幕
+                              ④ 直传帧、提交刷新
+                              ⑤ 屏幕校验令牌与帧摘要
+```
+
+这个模式不需要本地 Python 后端，但**手机与屏幕必须处于同一可互访局域网**。蜂窝网络、访客 Wi-Fi、启用客户端隔离的路由器或 VPN 接管局域网路由时，手机无法直连屏幕。
+
+### 云端授权流程
+
+1. 用户登录云端，选择家庭和目标设备。
+2. App 请求 `POST /api/v1/devices/{device_id}/transfer-ticket`。
+3. 云端校验用户是否为该家庭的 owner/admin，以及设备是否属于该家庭。
+4. 云端签发 2–5 分钟有效的单次 transfer ticket，至少绑定：
+       - `device_id`
+       - `account_id`
+       - `display_revision_id`
+       - `frame_sha256`
+       - `exp`
+       - 随机 `jti`
+5. ESP32 内置云端公钥，可离线验证 ticket 签名，不需要在局域网内再次访问 Mac。
+6. ESP32 拒绝过期、设备不匹配、摘要不匹配或已经使用过的 ticket。
+
+正式版不要只在 App 中保存一个固定密码；App 可被逆向，固定共享密钥无法形成可靠设备权限。
+
+### 局域网发现
+
+推荐顺序：
+
+1. BLE：首次配网与安全配对。
+2. mDNS/Bonjour：正常使用时发现 `_photowall._tcp.local`。
+3. 云端保存的最后局域网地址：仅作为加速缓存，不能作为设备身份。
+4. 手动 IP：只保留开发者入口。
+
+iOS 需要：
+
+- `NSLocalNetworkUsageDescription`
+- `NSBonjourServices` 中声明 `_photowall._tcp`
+- 本地网络权限被拒绝时的设置引导
+- 如果设备使用局域网 HTTP，需要配置 `NSAllowsLocalNetworking`；正式版优先设备 HTTPS 或使用签名帧加 ticket 降低明文控制风险
+
+Android 需要局域网/附近设备相关权限，并适配不同系统版本的 Wi-Fi 与 mDNS 限制。
+
+### 手机直传 API（正式固件）
+
+屏幕提供简单的局域网 API：
+
+```text
+GET  /v1/device
+      → device_id, model, firmware, panel, state, current_revision
+
+POST /v1/transfers
+Authorization: Bearer <single-use-transfer-ticket>
+Content-Type: application/octet-stream
+X-Frame-SHA256: ...
+X-Revision-ID: ...
+      body: PWE6 frame
+      → transfer_id
+
+GET  /v1/transfers/{transfer_id}
+      → receiving / verified / refreshing / done / error
+```
+
+设备应先写入 staging 区，收完并校验 SHA-256 后才替换 pending revision。下载中断不能破坏当前显示画面。
+
+### 数据路径
+
+手机不做人物识别、模板渲染和复杂六色量化：
+
+1. 手机上传照片或提交草稿到云端。
+2. 云端 worker 生成 1200×1600 六色 PWE6 帧。
+3. 手机下载约 960 KB 的 PWE6 帧到临时缓存。
+4. 手机携带 transfer ticket 将文件流式发给 ESP32。
+5. ESP32 校验并刷新。
+6. App 把结果回报云端，屏幕也可在联网时独立上报，云端以设备上报为最终状态。
+
+不要让手机把原始 JPEG 直接交给 ESP32 做量化；不同手机实现会造成效果不一致，ESP32 资源也不适合复杂模板处理。
+
+### 离开局域网时的降级
+
+“手机直连”不能覆盖远程发布。建议同一个 display revision 支持两条传输路径：
+
+- App 发现设备在线且可达：优先手机直传。
+- App 不在同一局域网：创建 cloud device job，由 ESP32 主动从对象存储拉取。
+
+两条路径使用同一 PWE6 文件、revision 和摘要，设备通过 revision 幂等去重。这样既满足家中手机直连，也支持远程更新和自动换图。
+
+### 当前官方 Loader 可实现的 MVP
+
+当前 Loader 可以暂时由 Expo 复刻 Python `eink_push.py` 的协议：
+
+1. App 从云端下载面板色码。
+2. App 对左右 600 列重排。
+3. 调用 `EPDY_` 初始化。
+4. 每 1000 像素编码成 URL path 并发送 `LOAD_`。
+5. 左侧完成后发送 `NEXT_`，右侧完成后发送 `SHOW_`。
+
+但它有明确限制：
+
+- Loader 不验证云端 transfer ticket，局域网内任何客户端都可能控制屏幕。
+- 约 1920 个小请求，iOS 必须保持前台，切后台可能中断。
+- 没有 staging、摘要校验、幂等 revision 和可靠状态恢复。
+- 不能作为量产安全方案。
+
+因此 MVP 可用来证明“无 Mac、手机局域网直传”，正式版仍需自定义固件和二进制流式 API。
+
 ## 设备端目标流程
 
 1. ESP32 首次启动进入配网模式。
