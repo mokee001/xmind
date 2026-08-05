@@ -22,7 +22,10 @@ import {
   DEFAULT_PROVISION_URL,
   provisionDisplay,
   publishDisplayPhoto,
+  publishJulyCalendar,
+  readDisplayStatus,
   readProvisionStatus,
+  syncJuly2026Photos,
 } from './src/deviceApi';
 import { loadDeviceSession, saveDeviceSession } from './src/sessionStore';
 
@@ -31,6 +34,27 @@ const C = {
   line: '#DED8CC', green: '#47695D', greenSoft: '#E2ECE6', orange: '#BC6348',
   orangeSoft: '#F4E1D8', red: '#A84D45', redSoft: '#F4DFDC', white: '#FFFFFF',
 };
+
+function deliveryStatus(device) {
+  if (!device) return null;
+  const state = String(device.state || '').toLowerCase();
+  if (device.error || state === 'error' || state === 'failed') {
+    return { state: 'failed', progress: Number(device.progress) || 0, message: device.error || '屏幕刷新失败' };
+  }
+  if (device.revision && device.displayed_revision === device.revision) {
+    return { state: 'done', progress: 100, message: '墨水屏已完成刷新' };
+  }
+  if (state === 'downloading') {
+    return { state, progress: Number(device.progress) || 0, message: '墨水屏正在下载画面' };
+  }
+  if (state === 'displaying' || state === 'refreshing') {
+    return { state: 'displaying', progress: Number(device.progress) || 0, message: '墨水屏正在刷新画面' };
+  }
+  if (device.revision) {
+    return { state: 'queued', progress: 100, message: '发布已排队，等待墨水屏下载' };
+  }
+  return { state: 'idle', progress: 0, message: '设备在线，尚无发布任务' };
+}
 
 function ActionButton({ children, onPress, secondary = false, disabled = false }) {
   return (
@@ -181,6 +205,8 @@ export default function App() {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [deviceModal, setDeviceModal] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [operation, setOperation] = useState({ state: 'idle', progress: 0, message: '尚未开始发布' });
+  const [lastAction, setLastAction] = useState(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -229,6 +255,37 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!session?.device?.device_id || !session.accountToken) return undefined;
+    let active = true;
+    const refreshDevice = async () => {
+      try {
+        const device = await readDisplayStatus({
+          apiBase: DEFAULT_API_BASE,
+          deviceId: session.device.device_id,
+          accountToken: session.accountToken,
+        });
+        if (!active) return;
+        const nextSession = { ...session, apiBase: DEFAULT_API_BASE, device };
+        setSession(nextSession);
+        saveDeviceSession(nextSession).catch(() => {});
+        const status = deliveryStatus(device);
+        if (status) setOperation(current => (
+          current.state === 'uploading' || current.state === 'scanning'
+            ? current
+            : { ...current, ...status }
+        ));
+      } catch (caught) {
+        if (active) setOperation(current => current.state === 'idle'
+          ? { ...current, message: `暂时无法读取设备状态：${caught.message}` }
+          : current);
+      }
+    };
+    refreshDevice();
+    const timer = setInterval(refreshDevice, 5000);
+    return () => { active = false; clearInterval(timer); };
+  }, [session?.device?.device_id, session?.accountToken]);
+
+  useEffect(() => {
     if (Platform.OS === 'web') return undefined;
     const subscription = AppState.addEventListener('change', state => {
       if (state === 'active') refreshPermission().catch(() => {});
@@ -247,16 +304,73 @@ export default function App() {
 
   const publish = async () => {
     if (!selectedPhoto || !session) return;
+    setLastAction('photo');
     setPublishing(true); setError(''); setNotice('');
+    setOperation({ state: 'uploading', progress: 0, message: '正在上传照片' });
     try {
-      await publishDisplayPhoto({
+      const result = await publishDisplayPhoto({
         apiBase: DEFAULT_API_BASE,
         deviceId: session.device.device_id,
         accountToken: session.accountToken,
         asset: selectedPhoto,
+        onProgress: fraction => setOperation({
+          state: 'uploading',
+          progress: Math.round(fraction * 100),
+          message: `正在上传照片 · ${Math.round(fraction * 100)}%`,
+        }),
       });
-      setNotice('照片已发送。墨水屏会自动下载并刷新。');
-    } catch (e) { setError(`发送失败：${e.message}`); } finally { setPublishing(false); }
+      const nextSession = { ...session, device: result.device || session.device, apiBase: DEFAULT_API_BASE };
+      setSession(nextSession);
+      await saveDeviceSession(nextSession);
+      setOperation({ state: 'queued', progress: 100, message: '发布已排队，等待墨水屏下载' });
+      setNotice('照片已交给线上服务，手机可以离开当前页面。');
+    } catch (e) {
+      setOperation({ state: 'failed', progress: 0, message: e.message });
+      setError(`发送失败：${e.message}`);
+    } finally { setPublishing(false); }
+  };
+
+  const publishCalendar = async () => {
+    if (!session || publishing) return;
+    const allowed = photoAllowed || await requestPhotoPermission();
+    if (!allowed) return;
+    setLastAction('calendar');
+    setPublishing(true); setError(''); setNotice('');
+    setOperation({ state: 'scanning', progress: 0, message: '正在查找 2026 年 7 月照片' });
+    try {
+      const synced = await syncJuly2026Photos({
+        apiBase: DEFAULT_API_BASE,
+        onProgress: update => {
+          const scanning = update.stage === 'scanning';
+          setOperation({
+            state: scanning ? 'scanning' : 'uploading',
+            progress: update.progress || 0,
+            message: scanning
+              ? `正在读取已授权照片 · 已找到 ${update.scanned || 0} 张`
+              : `正在上传 2026 年 7 月照片 · ${update.progress || 0}%`,
+          });
+        },
+      });
+      setOperation({ state: 'generating', progress: 100, message: '照片上传完成，云端正在生成日历' });
+      const result = await publishJulyCalendar({
+        apiBase: DEFAULT_API_BASE,
+        deviceId: session.device.device_id,
+        accountToken: session.accountToken,
+      });
+      const nextSession = { ...session, device: result.device || session.device, apiBase: DEFAULT_API_BASE };
+      setSession(nextSession);
+      await saveDeviceSession(nextSession);
+      setOperation({ state: 'queued', progress: 100, message: '七月日历已排队，等待墨水屏下载' });
+      setNotice(`已同步 ${synced.synced} 张照片；日历使用 ${result.calendar?.selected_day_count || 0} 天的代表照片。`);
+    } catch (caught) {
+      setOperation({ state: 'failed', progress: 0, message: caught.message });
+      setError(`七月日历发布失败：${caught.message}`);
+    } finally { setPublishing(false); }
+  };
+
+  const retry = () => {
+    if (lastAction === 'calendar') publishCalendar();
+    else if (lastAction === 'photo') publish();
   };
 
   const onConnected = async next => {
@@ -306,6 +420,36 @@ export default function App() {
           ) : null}
         </StepCard>
 
+        <StepCard
+          number="4"
+          title="一键发布 2026 年 7 月日历"
+          description="读取已授权范围内拍摄于 2026 年 7 月的照片；选图、去重、日历生成和 PWE6 转码都由现有云端完成。"
+          ok={operation.state === 'done' && lastAction === 'calendar'}
+        >
+          <ActionButton disabled={!photoAllowed || !connected || publishing} onPress={publishCalendar}>
+            {publishing && lastAction === 'calendar' ? '正在同步并发布…' : connected ? '一键同步并发布七月日历' : '请先连接墨水屏'}
+          </ActionButton>
+        </StepCard>
+
+        <View style={styles.statusCard}>
+          <View style={styles.statusHeader}>
+            <View>
+              <Text style={styles.statusLabel}>真实发布状态</Text>
+              <Text style={styles.statusTitle}>{operation.message}</Text>
+            </View>
+            <StatusBadge ok={operation.state === 'done'}>
+              {{
+                idle: '待发布', scanning: '读取中', uploading: '上传中', generating: '生成中',
+                queued: '已排队', downloading: '下载中', displaying: '刷新中', done: '已完成', failed: '失败',
+              }[operation.state] || operation.state}
+            </StatusBadge>
+          </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, operation.progress || 0))}%` }]} />
+          </View>
+          {operation.state === 'failed' && lastAction ? <ActionButton secondary onPress={retry}>重试上一次操作</ActionButton> : null}
+        </View>
+
         {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
         {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
         <Text style={styles.footer}>照片仅在你主动选择并发送时上传。</Text>
@@ -349,6 +493,12 @@ const styles = StyleSheet.create({
   error: { backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginTop: 2 },
   errorText: { color: C.red, fontSize: 12, lineHeight: 19, marginTop: 10 },
   footer: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 22 },
+  statusCard: { backgroundColor: C.paper, borderRadius: 20, borderWidth: 1, borderColor: C.line, padding: 17, marginBottom: 14 },
+  statusHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  statusLabel: { color: C.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  statusTitle: { color: C.ink, fontSize: 14, fontWeight: '800', marginTop: 5, maxWidth: 250 },
+  progressTrack: { height: 7, borderRadius: 4, overflow: 'hidden', backgroundColor: C.line, marginTop: 15 },
+  progressFill: { height: '100%', borderRadius: 4, backgroundColor: C.green },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(20,22,19,.55)', justifyContent: 'flex-end' },
   modalSheet: { maxHeight: '92%', backgroundColor: C.paper, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 22, paddingBottom: 36 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
