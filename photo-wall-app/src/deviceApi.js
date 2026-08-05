@@ -3,6 +3,7 @@ import * as MediaLibrary from 'expo-media-library/legacy';
 
 export const DEFAULT_API_BASE = 'https://api.mokeedesign.cn';
 export const DEFAULT_PROVISION_URL = 'http://192.168.4.1';
+const PHOTO_UPLOAD_BATCH_SIZE = 1;
 
 function baseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -139,8 +140,11 @@ export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, onProgres
   }
 
   let synced = 0;
-  for (let index = 0; index < assets.length; index += 20) {
-    const batch = assets.slice(index, index + 20);
+  // React Native assembles multipart bodies in memory. Uploading a group of
+  // full-resolution iPhone photos can exceed iOS' foreground memory limit, so
+  // keep each request bounded while leaving cloud selection/deduplication intact.
+  for (let index = 0; index < assets.length; index += PHOTO_UPLOAD_BATCH_SIZE) {
+    const batch = assets.slice(index, index + PHOTO_UPLOAD_BATCH_SIZE);
     const result = await uploadAssets({
       apiBase,
       assets: batch,
