@@ -10,10 +10,13 @@ import hashlib
 import json
 import os
 import struct
+import tempfile
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+from PIL import Image, ImageDraw
 
 BASE = os.environ.get("PHOTOWALL_TEST_BASE", "http://127.0.0.1:8000").rstrip("/")
 RUN_ID = str(time.time_ns())
@@ -50,6 +53,27 @@ def publish_photo(photo: Path, account_token: str) -> dict:
         return json.loads(response.read())
 
 
+def test_photo() -> tuple[Path, bool]:
+    """Return an existing sample, or make a disposable image for clean checkouts."""
+    photos_dir = Path("photos")
+    if photos_dir.is_dir():
+        existing = next(
+            (path for path in photos_dir.iterdir()
+             if path.suffix.lower() in (".jpg", ".jpeg", ".png")),
+            None,
+        )
+        if existing:
+            return existing, False
+
+    path = Path(tempfile.gettempdir()) / f"photowall-device-flow-{RUN_ID}.jpg"
+    image = Image.new("RGB", (960, 720), "#5e8ab6")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((180, 120, 780, 650), fill="#f4c95d", outline="white", width=12)
+    draw.text((360, 350), "PhotoWall", fill="#24344d", stroke_width=2, stroke_fill="white")
+    image.save(path, format="JPEG", quality=92)
+    return path, True
+
+
 def main() -> None:
     _, _, raw = request("/api/devices/bootstrap", "POST", {
         "device_id": DEVICE_ID,
@@ -68,8 +92,12 @@ def main() -> None:
     claim = json.loads(raw)
     account_token = claim["account_token"]
 
-    photo = next(path for path in Path("photos").iterdir() if path.suffix.lower() in (".jpg", ".jpeg", ".png"))
-    revision = publish_photo(photo, account_token)["revision"]
+    photo, disposable_photo = test_photo()
+    try:
+        revision = publish_photo(photo, account_token)["revision"]
+    finally:
+        if disposable_photo:
+            photo.unlink(missing_ok=True)
 
     query = urllib.parse.urlencode({"revision": "", "token": device_token})
     _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{query}")
