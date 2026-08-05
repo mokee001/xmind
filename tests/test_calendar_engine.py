@@ -70,6 +70,13 @@ class GenerationApiTest(unittest.TestCase):
 
             self.assertEqual(result.qa_report["status"], "PASS")
             self.assertTrue(result.calendar_path.exists())
+            decoration_plan = json.loads(
+                (run_dir / "decoration_plan.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                decoration_plan["decision_backend"],
+                "deterministic_semantic_sticker_rules_v1",
+            )
             with Image.open(result.calendar_path) as output:
                 self.assertEqual(output.size, (1500, 2001))
 

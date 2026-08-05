@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .decoration import build_decoration_plan
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TEMPLATE_DIR = Path(__file__).resolve().parent / "templates" / "calendar_template_v1"
@@ -69,12 +71,16 @@ def generate_july_calendar(
     final_name: str = "2026年7月_AI手帐日历.png",
     preview_name: str = "2026年7月_AI手帐日历_预览.jpg",
     require_qa_pass: bool = True,
+    auto_decoration: bool = True,
 ) -> GenerationResult:
     """Render a prepared July 2026 run and return only a QA-approved result."""
 
     resolved_run_dir = Path(run_dir).expanduser().resolve()
     resolved_template_dir = Path(template_dir or DEFAULT_TEMPLATE_DIR).expanduser().resolve()
     _validate_run(resolved_run_dir, resolved_template_dir)
+    decoration_plan_path = resolved_run_dir / "decoration_plan.json"
+    if auto_decoration and not decoration_plan_path.exists():
+        build_decoration_plan(resolved_run_dir)
 
     command = [
         sys.executable,

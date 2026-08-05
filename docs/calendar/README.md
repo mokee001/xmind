@@ -26,6 +26,7 @@
 - 决策请求读取同一份规则、校准案例和 Pydantic Schema，不合规结果会被本地拦截并纠正。
 - 可选使用 `qwen-image-3.0-pro` 生成空白格线描插画；普通照片处理与渲染不调用生成模型。
 - 使用月度艺术指导约束整月矩形、有机轮廓和安静格的节奏，单日模型不能越过日期归属和产品硬规则。
+- 内置一组由用户贴纸库校准出的透明动态贴纸；本地语义规则会为纸张、人物/宠物、风景、音乐影视和独立空白格生成稀疏装饰计划。
 - 提供本地素材导入、批量决策、处理计划、透明线稿、抠图和图文报告工具。
 
 ## 不包含的内容
@@ -55,9 +56,14 @@ prepared-run/
 python3 tools/import_real_user_july.py INPUT_PHOTO_FOLDER calendar_runs/july --year 2026 --month 7
 python3 tools/run_qwen_treatment_batch.py calendar_runs/july
 python3 tools/build_treatment_plan_from_qwen.py --run-dir calendar_runs/july
+python3 tools/build_decoration_plan.py --run-dir calendar_runs/july
 python3 -m calendar_engine --run-dir calendar_runs/july
 python3 tools/render_run_reports.py --run-dir calendar_runs/july
 ```
+
+动态装饰步骤不会调用模型。它读取 `treatment_plan.json` 中已经确认的内容语义，从内置透明贴纸库选择素材并生成 `decoration_plan.json`。默认每个语义类别只选一个代表日期、每月最多装饰 5 个日期格；硬上限仍是每格 2 个视觉贴纸、每月 8 个装饰日期格、所属格遮挡不超过 25%。日期数字、人物和动物面部、重要文字与票据信息不能被遮挡，空白格只允许抽象贴纸。
+
+直接执行 `python3 -m calendar_engine` 时，如果运行目录尚无 `decoration_plan.json`，引擎也会自动执行这一步。人工已经调整过的装饰计划不会被覆盖；明确需要无动态贴纸的调试成图时可增加 `--no-auto-decoration`。
 
 需要异形抠图时，可在 macOS 编译并调用：
 

@@ -23,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--preview-name",
         default="2026年7月_AI手帐日历_预览.jpg",
     )
+    parser.add_argument(
+        "--no-auto-decoration",
+        action="store_true",
+        help="保留运行目录中的空装饰状态，不自动生成动态贴纸计划",
+    )
     return parser
 
 
@@ -35,6 +40,7 @@ def main() -> int:
             output_path=args.output,
             final_name=args.final_name,
             preview_name=args.preview_name,
+            auto_decoration=not args.no_auto_decoration,
         )
     except GenerationError as error:
         print(json.dumps({"status": "FAIL", "error": str(error)}, ensure_ascii=False))
