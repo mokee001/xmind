@@ -64,9 +64,11 @@ prepared-run/
   --resume
 ```
 
-它会执行连接检查、逐日决策、整月艺术指导、资产盘点、动态装饰、渲染、QA 和
-图文报告，并写入 `reports/local_workflow_report.json`。若计划引用的抠图或插画
-尚不存在，状态为 `NEEDS_ASSETS`；补齐报告列出的资产后使用同一命令继续。
+它会执行连接检查、逐日决策、整月艺术指导、本地资产执行、动态装饰、渲染、QA
+和图文报告，并写入 `reports/local_workflow_report.json`。异形抠图默认由 macOS
+Vision 生成，失败时回退保留比例图片；`health.comfort` 使用内置透明线描种子。
+只有遇到尚未配置的插画类型时才返回 `NEEDS_ASSETS`，补齐报告列出的素材后使用
+同一命令继续。
 
 分步调试命令仍保留：
 

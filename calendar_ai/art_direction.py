@@ -40,6 +40,7 @@ def _semantic_text(selected: dict[str, Any], decision: dict[str, Any]) -> str:
         decision.get("content_type", ""),
         decision.get("main_subject", ""),
         analysis.get("content_type", ""),
+        analysis.get("main_subject", ""),
         analysis.get("main_subject_hint", ""),
     ]
     return " ".join(str(part) for part in parts if part)

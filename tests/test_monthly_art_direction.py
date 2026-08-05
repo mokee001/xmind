@@ -71,6 +71,32 @@ class MonthlyArtDirectionTest(unittest.TestCase):
         self.assertLess(directive["box"][0], 0)
         self.assertGreater(directive["box"][2], 1)
 
+    def test_japanese_meal_becomes_organic_food_cutout(self) -> None:
+        selected = {
+            "day": 21,
+            "sources": ["photo.jpg"],
+            "analysis_context": {"content_type": "日料聚餐"},
+        }
+        decision = {
+            "treatment_mode": "proportional_full_image",
+            "content_type": "食物组合",
+        }
+        directive = direct_day(selected, decision, self.rules)
+        self.assertEqual(directive["treatment_mode"], "irregular_cutout")
+
+    def test_selected_main_subject_can_trigger_handheld_cutout(self) -> None:
+        selected = {
+            "day": 3,
+            "sources": ["photo.jpg"],
+            "analysis_context": {
+                "content_type": "纸质手写卡片",
+                "main_subject": "手持手写卡片",
+            },
+        }
+        decision = {"treatment_mode": "proportional_full_image"}
+        directive = direct_day(selected, decision, self.rules)
+        self.assertEqual(directive["treatment_mode"], "irregular_cutout")
+
     def test_confirmed_july_reference_has_no_long_rectangular_run(self) -> None:
         selection = []
         decisions = {}

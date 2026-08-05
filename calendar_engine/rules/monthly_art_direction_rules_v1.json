@@ -76,7 +76,7 @@
     },
     {
       "id": "paper_and_handheld_cutout",
-      "keywords": ["纸质记录", "手持卡片", "阅读记录", "手持 Kindle", "手持玩偶", "手持饮品"],
+      "keywords": ["纸质记录", "纸质手写卡片", "手持卡片", "手持手写卡片", "阅读记录", "手持 Kindle", "玩偶小物", "手持玩偶", "手持饮品", "手持黄色果茶"],
       "treatment_mode": "irregular_cutout",
       "placement_profile": "handheld_cutout",
       "reason": "纸张、设备或饮品连同手部作为一个整体抠出，保留真实拿取动作。"
@@ -97,7 +97,7 @@
     },
     {
       "id": "food_object_cutout",
-      "keywords": ["聚餐食物", "食物日常", "刺身拼盘", "蛋饼"],
+      "keywords": ["聚餐食物", "日料聚餐", "食物日常", "食物特写", "刺身拼盘", "蛋饼"],
       "treatment_mode": "irregular_cutout",
       "placement_profile": "food_cutout",
       "reason": "餐盘或多道菜作为一个食物组合抠出，用有机轮廓代替连续矩形餐桌照。"

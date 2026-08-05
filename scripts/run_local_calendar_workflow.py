@@ -41,6 +41,11 @@ def main() -> int:
         action="store_true",
         help="生成处理计划和待准备资产清单后停止。",
     )
+    parser.add_argument(
+        "--skip-asset-preparation",
+        action="store_true",
+        help="不运行 macOS 本地抠图和内置线描插画资产准备。",
+    )
     args = parser.parse_args()
 
     run_dir = args.run_dir.expanduser().resolve()
@@ -76,6 +81,18 @@ def main() -> int:
             ],
             stages,
         )
+
+        if not args.stop_after_plan and not args.skip_asset_preparation:
+            run_step(
+                "本地生成抠图与插画资产",
+                [
+                    sys.executable,
+                    "tools/prepare_local_assets.py",
+                    "--run-dir",
+                    str(run_dir),
+                ],
+                stages,
+            )
 
         plan = read_json(run_dir / "treatment_plan.json")
         missing = pending_assets(run_dir, plan)
