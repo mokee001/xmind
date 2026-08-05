@@ -1,151 +1,369 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
 import {
-  Image, Modal, Platform, Pressable, SafeAreaView, ScrollView, StatusBar,
-  StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View,
+  AppState,
+  Image,
+  Linking,
+  Modal,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { albums as seedAlbums, devices, initialMembers, people as seedPeople } from './src/mockData';
 import {
-  claimDisplay, DEFAULT_API_BASE, DEFAULT_PROVISION_URL, provisionDisplay,
-  publishDisplayPhoto, publishJulyCalendar, readProvisionStatus, syncJuly2026Photos,
+  claimDisplay,
+  DEFAULT_API_BASE,
+  DEFAULT_PROVISION_URL,
+  provisionDisplay,
+  publishDisplayPhoto,
+  readProvisionStatus,
 } from './src/deviceApi';
 import { loadDeviceSession, saveDeviceSession } from './src/sessionStore';
-import { colors, shadow } from './src/theme';
 
-const API = DEFAULT_API_BASE;
-const photoUrl = (file) => `${API}/api/thumb/${encodeURIComponent(file)}?s=640`;
-const TABS = [
-  { id: 'home', label: '首页', icon: '⌂' }, { id: 'albums', label: '相册', icon: '▧' },
-  { id: 'settings', label: '设置', icon: '☷' },
-];
-const POLICY = {
-  allow: { label: '允许展示', color: colors.moss, soft: colors.mossSoft },
-  review: { label: '每次审核', color: '#95651F', soft: colors.amberSoft },
-  block: { label: '不展示', color: colors.danger, soft: colors.dangerSoft },
+const C = {
+  canvas: '#F5F1E8', paper: '#FFFCF6', ink: '#242822', muted: '#70776D',
+  line: '#DED8CC', green: '#47695D', greenSoft: '#E2ECE6', orange: '#BC6348',
+  orangeSoft: '#F4E1D8', red: '#A84D45', redSoft: '#F4DFDC', white: '#FFFFFF',
 };
 
-function Button({ children, onPress, secondary, disabled, small }) {
-  return <TouchableOpacity disabled={disabled} onPress={onPress} activeOpacity={0.82} style={[s.button, secondary && s.buttonSecondary, small && s.buttonSmall, disabled && s.disabled]}><Text style={[s.buttonText, secondary && s.buttonTextDark]}>{children}</Text></TouchableOpacity>;
-}
-function Pill({ children, tone = 'green' }) {
-  const meta = tone === 'red' ? [colors.dangerSoft, colors.danger] : tone === 'amber' ? [colors.amberSoft, '#95651F'] : [colors.mossSoft, colors.moss];
-  return <View style={[s.pill, { backgroundColor: meta[0] }]}><Text style={[s.pillText, { color: meta[1] }]}>{children}</Text></View>;
-}
-function Heading({ eyebrow, title, action, onAction }) {
-  return <View style={s.heading}><View>{eyebrow ? <Text style={s.eyebrow}>{eyebrow}</Text> : null}<Text style={s.headingTitle}>{title}</Text></View>{action ? <TouchableOpacity onPress={onAction}><Text style={s.action}>{action}</Text></TouchableOpacity> : null}</View>;
-}
-function DeviceArt({ small }) {
-  return <View style={[s.device, small && s.deviceSmall]}><View style={s.deviceScreen}><View style={s.sky}/><View style={s.sun}/><View style={s.mountain1}/><View style={s.mountain2}/><View style={s.artLabel}><Text style={s.artLabelText}>夏日记忆</Text></View></View></View>;
+function ActionButton({ children, onPress, secondary = false, disabled = false }) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.82}
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.button, secondary && styles.buttonSecondary, disabled && styles.disabled]}
+    >
+      <Text style={[styles.buttonText, secondary && styles.buttonTextSecondary]}>{children}</Text>
+    </TouchableOpacity>
+  );
 }
 
-function Home({ connected, setTab, show }) {
-  return <>
-    <View style={s.hero}><Text style={s.eyebrow}>TUESDAY · JUL 28</Text><Text style={s.heroTitle}>下午好，王欢</Text><Text style={s.intro}>把值得记住的时刻，留在每天都能看见的地方。</Text></View>
-    <View style={s.deviceCard}>
-      <View style={s.between}><Pill tone={connected ? 'green' : 'red'}>{connected ? '● 在线' : '● 未连接'}</Pill><TouchableOpacity onPress={() => show('device')}><Text style={s.more}>•••</Text></TouchableOpacity></View>
-      <View style={s.deviceBody}><DeviceArt/><View style={s.deviceCopy}><Text style={s.kicker}>当前画面</Text><Text style={s.deviceName}>{connected ? devices[0].name : '还没有连接设备'}</Text><Text style={s.meta}>{connected ? `${devices[0].model}\n更新于 2 分钟前` : '连接你的墨水屏，开始展示家庭照片。'}</Text><Button small onPress={() => connected ? show('create') : show('device')}>{connected ? '创建新画面' : '连接设备'}</Button></View></View>
+function StatusBadge({ ok, children }) {
+  return (
+    <View style={[styles.badge, { backgroundColor: ok ? C.greenSoft : C.redSoft }]}>
+      <Text style={[styles.badgeText, { color: ok ? C.green : C.red }]}>{children}</Text>
     </View>
-    <View style={s.stats}>{[['558','已同步照片'],['4','已识别人物'],['12','本月画面']].map(([value,label]) => <View key={label} style={s.stat}><Text style={s.statValue}>{value}</Text><Text style={s.meta}>{label}</Text></View>)}</View>
-    <Heading title="需要处理"/>
-    <TouchableOpacity style={s.notice} onPress={() => setTab('people')}><View style={s.noticeIcon}><Text style={s.noticeIconText}>◎</Text></View><View style={s.flex}><Text style={s.itemTitle}>发现 1 位新人物</Text><Text style={s.meta}>确认是否允许这个人物出现在照片墙。</Text></View><Text style={s.chevron}>›</Text></TouchableOpacity>
-  </>;
+  );
 }
 
-function Albums({ albums, setAlbums, show }) {
-  const selected = albums.filter(x => x.selected);
-  const toggle = id => setAlbums(current => current.map(x => x.id === id ? {...x, selected: !x.selected} : x));
-  return <>
-    <Heading eyebrow="照片来源" title="选择同步相册" action="权限设置" onAction={() => show('permission')}/>
-    <Text style={s.intro}>只会同步你明确选择的相册。原始照片保留在手机中，设备使用经过筛选的展示版本。</Text>
-    <View style={s.notice}><View style={[s.noticeIcon,{backgroundColor:colors.mossSoft}]}><Text style={[s.noticeIconText,{color:colors.moss}]}>▧</Text></View><View style={s.flex}><Text style={s.itemTitle}>照片访问权限</Text><Text style={s.meta}>当前为“所有照片”，可随时在系统设置中修改。</Text></View><Pill>已授权</Pill></View>
-    <View style={s.summary}><Text style={s.meta}>已选 <Text style={s.strong}>{selected.length} 个相册</Text></Text><Text style={s.meta}>约 <Text style={s.strong}>{selected.reduce((a,x)=>a+x.count,0)} 张照片</Text></Text></View>
-    <View style={s.albumGrid}>{albums.map((album,i) => <TouchableOpacity key={album.id} style={s.albumCard} onPress={() => toggle(album.id)}><View style={[s.albumCover,{backgroundColor:album.accent}]}><Image source={{uri:photoUrl(['IMG_1067.JPG','IMG_1077.JPG','IMG_1080.JPG','IMG_1081.JPG'][i])}} style={s.coverImage}/><View style={[s.check,album.selected&&s.checkOn]}><Text style={s.checkText}>{album.selected?'✓':''}</Text></View></View><Text style={s.albumName}>{album.name}</Text><Text style={s.meta}>{album.count} 张照片</Text></TouchableOpacity>)}</View>
-    <View style={s.sync}><View style={s.between}><View><Text style={s.itemTitle}>同步状态</Text><Text style={s.meta}>上次同步：今天 14:32</Text></View><Pill>已完成</Pill></View><View style={s.track}><View style={s.fill}/></View><Text style={s.meta}>558 张已处理 · 12 张重复照片已跳过</Text></View>
-  </>;
+function StepCard({ number, title, description, ok, action, actionLabel, children }) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <View style={[styles.stepNumber, ok && styles.stepNumberDone]}>
+          <Text style={[styles.stepNumberText, ok && styles.stepNumberTextDone]}>{ok ? '✓' : number}</Text>
+        </View>
+        <View style={styles.cardCopy}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <Text style={styles.cardDescription}>{description}</Text>
+        </View>
+        <StatusBadge ok={ok}>{ok ? '已完成' : '未完成'}</StatusBadge>
+      </View>
+      {children}
+      {actionLabel ? <ActionButton onPress={action}>{actionLabel}</ActionButton> : null}
+    </View>
+  );
 }
 
-function People({ people, setPeople, setTab }) {
-  const [filter,setFilter] = useState('all');
-  const shown = people.filter(x => filter === 'all' || x.policy === filter);
-  const change = (id,policy) => setPeople(current => current.map(x => x.id === id ? {...x,policy} : x));
-  return <>
-    <Heading eyebrow="设置 · 隐私与展示" title="人物管理" action="返回设置" onAction={() => setTab('settings')}/><Text style={s.intro}>设置每位人物是否可以出现在自动生成的画面中。策略由家庭管理员统一管理。</Text>
-    <View style={s.segments}>{[['all','全部'],['allow','允许'],['review','待审核'],['block','不展示']].map(([id,label]) => <TouchableOpacity key={id} style={[s.segment,filter===id&&s.segmentOn]} onPress={()=>setFilter(id)}><Text style={[s.segmentText,filter===id&&s.strong]}>{label}</Text></TouchableOpacity>)}</View>
-    <View style={s.list}>{shown.map(person => { const meta=POLICY[person.policy]; return <View key={person.id} style={s.person}><Image source={{uri:photoUrl(person.file)}} style={s.personImage}/><View style={s.personCopy}><Text style={s.itemTitle}>{person.name}</Text><Text style={s.meta}>{person.count} 张相关照片</Text><View style={s.policyChoices}>{Object.keys(POLICY).map(policy => <TouchableOpacity key={policy} onPress={()=>change(person.id,policy)} style={[s.policyChoice,person.policy===policy&&{backgroundColor:POLICY[policy].soft,borderColor:POLICY[policy].color}]}><Text style={[s.policyText,person.policy===policy&&{color:POLICY[policy].color}]}>{POLICY[policy].label}</Text></TouchableOpacity>)}</View></View><View style={[s.policyBadge,{backgroundColor:meta.soft}]}><Text style={[s.policyBadgeText,{color:meta.color}]}>{meta.label}</Text></View></View>})}</View>
-    <View style={s.info}><Text style={[s.itemTitle,{color:colors.moss}]}>策略如何生效？</Text><Text style={[s.meta,{color:colors.moss}]}>包含“不展示”人物的照片会由后端直接排除；包含“每次审核”人物的照片只能进入草稿，确认后才可发布。</Text></View>
-  </>;
+function DeviceModal({ visible, session, onClose, onConnected }) {
+  const [provisionUrl, setProvisionUrl] = useState(DEFAULT_PROVISION_URL);
+  const [ssid, setSsid] = useState('');
+  const [wifiPassword, setWifiPassword] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+  const claim = async (code = pairingCode) => {
+    const result = await claimDisplay({ apiBase: DEFAULT_API_BASE, pairingCode: code, name: '客厅照片墙' });
+    await onConnected({ device: result.device, accountToken: result.account_token, apiBase: DEFAULT_API_BASE });
+    setMessage('绑定成功。以后屏幕会自己连接云端。');
+    return result;
+  };
+
+  const inspect = async () => {
+    setBusy(true); setError(''); setMessage('');
+    try {
+      const result = await readProvisionStatus(provisionUrl);
+      setPairingCode(result.pairing_code || '');
+      setMessage(`已找到屏幕 ${result.device_id}，配对码 ${result.pairing_code}`);
+    } catch (e) {
+      setError(`没有找到屏幕：${e.message}`);
+    } finally { setBusy(false); }
+  };
+
+  const configure = async () => {
+    setBusy(true); setError(''); setMessage('正在连接屏幕…');
+    try {
+      const accepted = await provisionDisplay({ provisionUrl, ssid, password: wifiPassword, apiBase: DEFAULT_API_BASE });
+      const code = accepted.pairing_code || pairingCode;
+      setPairingCode(code);
+      let lastError;
+      for (let attempt = 0; attempt < 15; attempt += 1) {
+        await wait(3000);
+        try { await claim(code); lastError = null; break; } catch (e) { lastError = e; }
+      }
+      if (lastError) throw lastError;
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const bindOnline = async () => {
+    setBusy(true); setError('');
+    try { await claim(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View><Text style={styles.modalEyebrow}>墨水屏</Text><Text style={styles.modalTitle}>{session ? '设备已连接' : '连接设备'}</Text></View>
+            <TouchableOpacity onPress={onClose} style={styles.close}><Text style={styles.closeText}>×</Text></TouchableOpacity>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {session ? (
+              <>
+                <View style={styles.connectedBox}>
+                  <Text style={styles.connectedIcon}>✓</Text>
+                  <View style={styles.flex}>
+                    <Text style={styles.cardTitle}>{session.device.name || '客厅照片墙'}</Text>
+                    <Text style={styles.cardDescription}>{session.device.device_id}</Text>
+                  </View>
+                </View>
+                <Text style={styles.help}>屏幕已经绑定。选择照片后即可发布，不需要让手机一直连接屏幕。</Text>
+                <ActionButton onPress={onClose}>完成</ActionButton>
+              </>
+            ) : (
+              <>
+                <Text style={styles.help}>第一次连接：先在 iPhone 的 Wi-Fi 设置中连接屏幕发出的 PhotoWall-XXXX 热点，然后回到这里。</Text>
+                <Field label="屏幕配置地址" value={provisionUrl} onChangeText={setProvisionUrl} />
+                <ActionButton secondary onPress={inspect} disabled={busy}>{busy ? '正在查找…' : '查找屏幕'}</ActionButton>
+                {message ? <Text style={styles.successText}>{message}</Text> : null}
+                <Field label="家里 Wi-Fi 名称" value={ssid} onChangeText={setSsid} />
+                <Field label="家里 Wi-Fi 密码" value={wifiPassword} onChangeText={setWifiPassword} secureTextEntry />
+                <Text style={styles.cloudEndpoint}>线上服务：api.mokeedesign.cn</Text>
+                <ActionButton onPress={configure} disabled={busy || !ssid.trim()}>{busy ? '正在连接…' : '发送配置并绑定'}</ActionButton>
+                <View style={styles.divider} />
+                <Text style={styles.sectionLabel}>屏幕已经联网？输入六位配对码</Text>
+                <TextInput
+                  value={pairingCode}
+                  onChangeText={value => setPairingCode(value.replace(/\D/g, '').slice(0, 6))}
+                  keyboardType="number-pad"
+                  placeholder="例如 072826"
+                  style={styles.input}
+                />
+                <ActionButton secondary onPress={bindOnline} disabled={busy || pairingCode.length !== 6}>绑定屏幕</ActionButton>
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
-function Settings({ members, setMembers, show, setTab, connected, device }) {
-  const [auto,setAuto]=useState(true),[approval,setApproval]=useState(true);
-  return <>
-    <Heading eyebrow="家庭空间" title="账号与设置"/><View style={s.profile}><View style={s.avatar}><Text style={s.avatarText}>WH</Text></View><View style={s.flex}><Text style={s.profileName}>王欢的家庭</Text><Text style={s.meta}>家庭编号 PW-0726 · 所有者</Text></View><Button small secondary onPress={()=>show('profile')}>编辑</Button></View>
-    <Heading title={`家庭成员 · ${members.length}`} action="邀请成员" onAction={()=>show('invite')}/><View style={s.memberList}>{members.map(m=><View key={m.id} style={s.member}><View style={[s.memberAvatar,{backgroundColor:m.color}]}><Text style={s.memberAvatarText}>{m.initials}</Text></View><View style={s.flex}><Text style={s.itemTitle}>{m.name}</Text><Text style={s.meta}>{m.detail}</Text></View><TouchableOpacity onPress={()=>m.role!=='owner'&&setMembers(current=>current.filter(x=>x.id!==m.id))}><Text style={m.role==='owner'?s.owner:s.action}>{m.role==='owner'?'Owner':'管理'}</Text></TouchableOpacity></View>)}</View>
-    <Heading title="设备与自动化"/><View style={s.settingGroup}><TouchableOpacity style={s.setting} onPress={()=>show('device')}><View style={s.settingIcon}><Text>▣</Text></View><View style={s.flex}><Text style={s.itemTitle}>{connected ? device?.name || '客厅照片墙' : '连接墨水屏'}</Text><Text style={s.meta}>{connected ? `${device?.state || '在线'} · ${device?.ip || '云端已绑定'}` : '首次配网后，屏幕将自主连接云端'}</Text></View><Text style={s.chevron}>›</Text></TouchableOpacity><View style={s.divider}/><View style={s.setting}><View style={s.settingIcon}><Text>↻</Text></View><View style={s.flex}><Text style={s.itemTitle}>自动更新</Text><Text style={s.meta}>每天从允许内容中生成新画面</Text></View><Switch value={auto} onValueChange={setAuto} trackColor={{true:colors.moss}}/></View><View style={s.divider}/><View style={s.setting}><View style={s.settingIcon}><Text>✓</Text></View><View style={s.flex}><Text style={s.itemTitle}>投稿需要管理员确认</Text><Text style={s.meta}>投稿者的草稿不会直接上屏</Text></View><Switch value={approval} onValueChange={setApproval} trackColor={{true:colors.moss}}/></View></View>
-    <Heading title="账号"/><View style={s.settingGroup}>{['登录与安全','通知设置','隐私与数据','帮助与反馈'].map((item,i)=><React.Fragment key={item}>{i?<View style={s.divider}/>:null}<TouchableOpacity style={s.simpleSetting} onPress={()=>show('generic')}><Text style={s.itemTitle}>{item}</Text><Text style={s.chevron}>›</Text></TouchableOpacity></React.Fragment>)}</View>
-    <Heading title="内容与隐私"/><View style={s.settingGroup}><TouchableOpacity style={s.setting} onPress={()=>setTab('people')}><View style={[s.settingIcon,{backgroundColor:colors.terracottaSoft}]}><Text style={{color:colors.terracotta}}>◎</Text></View><View style={s.flex}><Text style={s.itemTitle}>人物与展示权限</Text><Text style={s.meta}>管理允许展示、每次审核和不展示人物</Text></View><Pill tone="amber">1 待审核</Pill><Text style={s.chevron}>›</Text></TouchableOpacity></View>
-  </>;
-}
-
-function Dialog({ type, close, connect, invite, published, session }) {
-  const [name,setName]=useState(''),[role,setRole]=useState('contributor'),[step,setStep]=useState('confirm');
-  const [provisionUrl,setProvisionUrl]=useState(DEFAULT_PROVISION_URL),[apiBase,setApiBase]=useState(DEFAULT_API_BASE);
-  const [ssid,setSsid]=useState(''),[wifiPassword,setWifiPassword]=useState(''),[pairingCode,setPairingCode]=useState('');
-  const [asset,setAsset]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[deviceMessage,setDeviceMessage]=useState('');
-  const copy={create:['创建新画面','首页已精简为状态与管理入口。后续创建流程将采用独立的分步向导，不再在首页堆叠预览、模板设置和候选照片。'],permission:['系统照片权限','真机版会调用 iOS/Android 系统相册选择器，并只同步明确选择的相册。'],saved:['草稿已保存','可以稍后继续编辑；保存草稿不会改变墨水屏当前画面。'],profile:['家庭资料','正式版本可以修改家庭名称、头像和成员加入规则。'],generic:['功能预览','该入口已完成信息架构，下一阶段接入真实账号和后端配置。']};
-  const dismiss=()=>{setStep('confirm');close();};
-  const publish=()=>{setStep('uploading');setTimeout(()=>{setStep('done');published();},1400)};
-  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-  const inspectDevice=async()=>{setBusy(true);setError('');try{const result=await readProvisionStatus(provisionUrl);setPairingCode(result.pairing_code||'');setDeviceMessage(`已找到 ${result.device_id} · 配对码 ${result.pairing_code}`);}catch(e){setError(`未连接到屏幕热点：${e.message}`);}finally{setBusy(false)}};
-  const claim=async(code=pairingCode)=>{const result=await claimDisplay({apiBase,pairingCode:code,name:'客厅照片墙'});connect({...result,apiBase});setDeviceMessage('绑定成功，屏幕之后会自主联网。');return result};
-  const configure=async()=>{setBusy(true);setError('');setDeviceMessage('正在把家庭 Wi-Fi 交给屏幕…');try{const accepted=await provisionDisplay({provisionUrl,ssid,password:wifiPassword,apiBase});const code=accepted.pairing_code||pairingCode;setPairingCode(code);setDeviceMessage('屏幕正在连接家庭 Wi-Fi 和云端…');let lastError;for(let attempt=0;attempt<15;attempt+=1){await wait(3000);try{await claim(code);lastError=null;break}catch(e){lastError=e}}if(lastError)throw lastError;}catch(e){setError(e.message);}finally{setBusy(false)}};
-  const bindOnline=async()=>{setBusy(true);setError('');try{await claim();}catch(e){setError(e.message);}finally{setBusy(false)}};
-  const pickPhoto=async()=>{setError('');const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],allowsEditing:false,quality:1});if(!result.canceled)setAsset(result.assets[0]);};
-  const publishPhoto=async()=>{if(!session||!asset)return;setBusy(true);setError('');setStep('uploading');try{await publishDisplayPhoto({apiBase:session.apiBase,deviceId:session.device.device_id,accountToken:session.accountToken,asset});setStep('done');published();}catch(e){setStep('confirm');setError(e.message);}finally{setBusy(false)}};
-  const publishCalendar=async()=>{if(!session)return;setBusy(true);setError('');setStep('uploading');try{await syncJuly2026Photos({apiBase:session.apiBase});await publishJulyCalendar({apiBase:session.apiBase,deviceId:session.device.device_id,accountToken:session.accountToken});setStep('done');published();}catch(e){setStep('confirm');setError(e.message);}finally{setBusy(false)}};
-  return <Modal visible={Boolean(type)} transparent animationType="fade" onRequestClose={dismiss}><Pressable style={s.backdrop} onPress={dismiss}><Pressable style={s.modal} onPress={e=>e.stopPropagation()}><TouchableOpacity style={s.close} onPress={dismiss}><Text style={s.closeText}>×</Text></TouchableOpacity><ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-    {type==='device'?<><Text style={s.eyebrow}>首次配网 · 仅需一次</Text><Text style={s.modalTitle}>{session?'墨水屏已绑定':'让屏幕自主联网'}</Text>{session?<><View style={s.found}><DeviceArt small/><View style={s.flex}><Text style={s.itemTitle}>{session.device.name}</Text><Text style={s.meta}>{session.device.device_id}</Text><Text style={s.deviceCode}>{session.device.state||'online'} · {session.device.ip||'云端在线'}</Text></View></View><Text style={s.modalBody}>Wi-Fi 凭据已保存在屏幕中。以后手机和 Mac 关闭，屏幕仍会自行连接云端拉取新画面。</Text><Button onPress={dismiss}>完成</Button></>:<><Text style={s.modalBody}>先在系统 Wi-Fi 中连接屏幕的 PhotoWall-XXXX 热点，再回到这里。热点密码会显示在串口/机身标签上。</Text><Text style={s.controlLabel}>屏幕配置地址</Text><TextInput value={provisionUrl} onChangeText={setProvisionUrl} autoCapitalize="none" style={s.input}/><Button secondary disabled={busy} onPress={inspectDevice}>读取屏幕信息</Button>{deviceMessage?<Text style={s.deviceMessage}>{deviceMessage}</Text>:null}<Text style={s.controlLabel}>家庭 Wi-Fi 名称</Text><TextInput value={ssid} onChangeText={setSsid} autoCapitalize="none" style={s.input}/><Text style={s.controlLabel}>家庭 Wi-Fi 密码</Text><TextInput value={wifiPassword} onChangeText={setWifiPassword} secureTextEntry style={s.input}/><Text style={s.controlLabel}>云端 API 地址</Text><TextInput value={apiBase} onChangeText={setApiBase} autoCapitalize="none" style={s.input}/><Button disabled={busy||!ssid.trim()||!apiBase.trim()} onPress={configure}>{busy?'正在连接…':'发送配置并绑定'}</Button><View style={s.orRow}><View style={s.orLine}/><Text style={s.meta}>已经配过 Wi-Fi</Text><View style={s.orLine}/></View><Text style={s.controlLabel}>六位配对码</Text><TextInput value={pairingCode} onChangeText={value=>setPairingCode(value.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" placeholder="例如 072826" style={s.input}/><Button secondary disabled={busy||pairingCode.length!==6} onPress={bindOnline}>仅绑定已联网屏幕</Button>{error?<Text style={s.errorText}>{error}</Text>:null}</>}</>:
-    type==='create'?<><Text style={s.eyebrow}>创建新画面</Text><Text style={s.modalTitle}>{step==='done'?'已交给屏幕':step==='uploading'?'正在同步并生成六色画面':'选择一张照片或发布月历'}</Text>{step==='done'?<><View style={s.success}><Text style={s.successText}>✓</Text></View><Text style={s.modalBody}>任务已进入屏幕队列。屏幕会自主发现新版本、下载并刷新，不需要手机保持连接。</Text><Button onPress={dismiss}>完成</Button></>:step==='uploading'?<View style={s.progressState}><View style={s.spinner}><Text style={s.spinnerText}>↻</Text></View><Text style={s.modalBody}>正在同步已授权的七月照片、生成日历并加入屏幕队列…</Text></View>:<><Button secondary disabled={busy||!session} onPress={publishCalendar}>{session?'一键同步并发布 2026 年 7 月日历':'请先连接设备'}</Button><Text style={s.meta}>仅同步系统授权范围内拍摄于 2026 年 7 月的照片；无照片日期将保留留白。</Text><View style={s.orRow}><View style={s.orLine}/><Text style={s.meta}>或发布单张照片</Text><View style={s.orLine}/></View><TouchableOpacity style={s.photoPicker} onPress={pickPhoto}>{asset?<Image source={{uri:asset.uri}} style={s.pickedPhoto}/>:<><Text style={s.photoPickerIcon}>＋</Text><Text style={s.itemTitle}>从系统相册选择</Text><Text style={s.meta}>照片只上传到已配置的云端</Text></>}</TouchableOpacity>{error?<Text style={s.errorText}>{error}</Text>:null}<Button disabled={busy||!asset||!session} onPress={publishPhoto}>{session?'发布到墨水屏':'请先连接设备'}</Button></>}</>:
-    type==='invite'?<><Text style={s.eyebrow}>家庭成员</Text><Text style={s.modalTitle}>邀请新成员</Text><Text style={s.controlLabel}>成员姓名</Text><TextInput value={name} onChangeText={setName} placeholder="例如：爸爸" style={s.input}/><Text style={s.controlLabel}>角色</Text><View style={s.roleRow}>{[['admin','管理员'],['contributor','投稿者'],['viewer','仅查看']].map(([id,label])=><TouchableOpacity key={id} onPress={()=>setRole(id)} style={[s.role,role===id&&s.roleOn]}><Text style={[s.roleText,role===id&&{color:colors.terracotta}]}>{label}</Text></TouchableOpacity>)}</View><Button disabled={!name.trim()} onPress={()=>{invite(name.trim(),role);setName('');dismiss()}}>生成邀请</Button></>:
-    type==='publish'?<><Text style={s.eyebrow}>发布确认</Text><Text style={s.modalTitle}>{step==='done'?'画面已发布':step==='uploading'?'正在发送到墨水屏':'要更新客厅照片墙吗？'}</Text>{step==='confirm'?<><Text style={s.modalBody}>将使用 5 张已审核照片。真实设备刷新约需 1–3 分钟，期间闪烁属于正常现象。</Text><View style={s.publishSummary}><Text style={s.meta}>目标设备</Text><Text style={s.strong}>客厅照片墙 · 在线</Text></View><Button onPress={publish}>开始发布</Button></>:step==='uploading'?<View style={s.progressState}><View style={s.spinner}><Text style={s.spinnerText}>↻</Text></View><Text style={s.modalBody}>正在生成六色画面并建立设备连接…</Text></View>:<><View style={s.success}><Text style={s.successText}>✓</Text></View><Button onPress={dismiss}>完成</Button></>}</>:
-    <><Text style={s.eyebrow}>产品预览</Text><Text style={s.modalTitle}>{copy[type]?.[0]||copy.generic[0]}</Text><Text style={s.modalBody}>{copy[type]?.[1]||copy.generic[1]}</Text><Button onPress={dismiss}>知道了</Button></>}
-  </ScrollView></Pressable></Pressable></Modal>;
-}
-
-function Nav({ item, active, onPress, wide }) {
-  return <TouchableOpacity onPress={onPress} style={[wide?s.sideNav:s.bottomItem,active&&(wide?s.sideNavOn:s.bottomItemOn)]}><Text style={[wide?s.sideIcon:s.bottomIcon,active&&s.navOn]}>{item.icon}</Text><Text style={[wide?s.sideText:s.bottomText,active&&s.navOn]}>{item.label}</Text></TouchableOpacity>;
+function Field({ label, ...props }) {
+  return <><Text style={styles.fieldLabel}>{label}</Text><TextInput autoCapitalize="none" style={styles.input} {...props} /></>;
 }
 
 export default function App() {
-  const {width}=useWindowDimensions(),wide=width>=900;
-  const [tab,setTab]=useState('home'),[session,setSession]=useState(null),[albums,setAlbums]=useState(seedAlbums),[people,setPeople]=useState(seedPeople),[members,setMembers]=useState(initialMembers),[dialog,setDialog]=useState(null),[toast,setToast]=useState('');
-  const connected=Boolean(session);
-  React.useEffect(()=>{loadDeviceSession().then(saved=>{if(saved?.device?.device_id)setSession(saved)})},[]);
-  React.useEffect(()=>{if(tab==='compose')setTab('home')},[tab]);
-  const title=useMemo(()=>tab==='people'?'人物管理':TABS.find(x=>x.id===tab)?.label,[tab]);
-  const notify=text=>{setToast(text);setTimeout(()=>setToast(''),2300)};
-  const invite=(name,role)=>{const roleName={admin:'管理员',contributor:'投稿者',viewer:'仅查看'}[role];setMembers(current=>[...current,{id:`m${Date.now()}`,name,detail:`${roleName} · 等待加入`,role,initials:name[0],color:colors.terracotta}]);notify(`已生成给“${name}”的邀请`)};
-  const screens={home:<Home connected={connected} setTab={setTab} show={setDialog}/>,albums:<Albums albums={albums} setAlbums={setAlbums} show={setDialog}/>,people:<People people={people} setPeople={setPeople} setTab={setTab}/>,settings:<Settings members={members} setMembers={setMembers} show={setDialog} setTab={setTab} connected={connected} device={session?.device}/>};
-  return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content"/><View style={[s.app,wide&&s.appWide]}>
-    {wide?<View style={s.sidebar}><View style={s.brand}><Text style={s.brandText}>P</Text></View><View style={s.sideTabs}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)} wide/>)}</View><View style={s.sideAccount}><View style={s.miniAvatar}><Text style={s.miniText}>WH</Text></View><View><Text style={s.accountName}>王欢的家庭</Text><Text style={s.meta}>所有者</Text></View></View></View>:null}
-    <View style={s.main}><View style={s.topbar}><View><Text style={wide?s.topTitle:s.mobileBrand}>{wide?title:'PhotoWall'}</Text>{!wide?<Text style={s.meta}>{title}</Text>:null}</View><View style={s.topActions}><View style={s.online}/><TouchableOpacity style={s.avatarButton} onPress={()=>setTab('settings')}><Text style={s.avatarText}>WH</Text></TouchableOpacity></View></View><ScrollView style={s.scroll} contentContainerStyle={[s.content,!wide&&s.contentMobile]} showsVerticalScrollIndicator={false}>{screens[tab]}</ScrollView>{!wide?<View style={s.bottom}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)}/>)}</View>:null}</View>
-  </View>{toast?<View style={s.toast}><Text style={s.toastText}>✓ {toast}</Text></View>:null}<Dialog type={dialog} close={()=>setDialog(null)} connect={result=>{const next={device:result.device,accountToken:result.account_token,apiBase:result.apiBase};setSession(next);saveDeviceSession(next);notify('客厅照片墙已连接')}} invite={invite} published={()=>notify('发布任务已创建')} session={session}/></SafeAreaView>;
+  const [session, setSession] = useState(null);
+  const [permission, setPermission] = useState(null);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [deviceModal, setDeviceModal] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+
+  const photoAllowed = permission?.status === 'granted';
+  const connected = Boolean(session?.device?.device_id);
+  const permissionDescription = useMemo(() => {
+    if (!permission) return '正在检查 iPhone 相册权限…';
+    if (permission.status !== 'granted') return '需要允许访问，才能选择照片。';
+    if (permission.accessPrivileges === 'limited') return '已允许访问你选择的照片。';
+    return '已允许访问照片。';
+  }, [permission]);
+
+  const refreshPermission = async () => {
+    const result = await MediaLibrary.getPermissionsAsync(false, ['photo']);
+    setPermission(result);
+    return result;
+  };
+
+  const requestPhotoPermission = async () => {
+    setError('');
+    try {
+      const current = await refreshPermission();
+      if (current.status === 'granted') return true;
+      if (current.canAskAgain === false) {
+        await Linking.openSettings();
+        return false;
+      }
+      const result = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
+      setPermission(result);
+      if (result.status !== 'granted') setError('没有获得照片权限。请点“允许访问照片”，然后在系统设置中开启。');
+      return result.status === 'granted';
+    } catch (e) {
+      setError(`无法申请照片权限：${e.message}`);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    loadDeviceSession().then(saved => {
+      if (saved?.device?.device_id) setSession({ ...saved, apiBase: DEFAULT_API_BASE });
+    });
+    (async () => {
+      const current = await refreshPermission();
+      if (current.status === 'undetermined') await requestPhotoPermission();
+    })().catch(e => setError(`检查照片权限失败：${e.message}`));
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') refreshPermission().catch(() => {});
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const choosePhoto = async () => {
+    const allowed = photoAllowed || await requestPhotoPermission();
+    if (!allowed) return;
+    setError(''); setNotice('');
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
+    if (!result.canceled) setSelectedPhoto(result.assets[0]);
+    await refreshPermission();
+  };
+
+  const publish = async () => {
+    if (!selectedPhoto || !session) return;
+    setPublishing(true); setError(''); setNotice('');
+    try {
+      await publishDisplayPhoto({
+        apiBase: DEFAULT_API_BASE,
+        deviceId: session.device.device_id,
+        accountToken: session.accountToken,
+        asset: selectedPhoto,
+      });
+      setNotice('照片已发送。墨水屏会自动下载并刷新。');
+    } catch (e) { setError(`发送失败：${e.message}`); } finally { setPublishing(false); }
+  };
+
+  const onConnected = async next => {
+    setSession(next);
+    await saveDeviceSession(next);
+  };
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <StatusBar barStyle="dark-content" />
+      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
+        <Text style={styles.brand}>照片墙</Text>
+        <Text style={styles.title}>三步把照片放到屏幕</Text>
+        <Text style={styles.subtitle}>不需要 Expo，也不用理解复杂设置。按顺序完成下面三步即可。</Text>
+
+        <StepCard
+          number="1"
+          title="允许访问照片"
+          description={permissionDescription}
+          ok={photoAllowed}
+          action={photoAllowed ? () => Linking.openSettings() : requestPhotoPermission}
+          actionLabel={photoAllowed ? '管理照片权限' : '允许访问照片'}
+        />
+
+        <StepCard
+          number="2"
+          title="连接墨水屏"
+          description={connected ? `${session.device.name || '照片墙'} · ${session.device.state || '已绑定'}` : '只需首次配置一次，之后屏幕会自己联网。'}
+          ok={connected}
+          action={() => setDeviceModal(true)}
+          actionLabel={connected ? '查看设备' : '开始连接'}
+        />
+
+        <StepCard
+          number="3"
+          title="选择照片并上屏"
+          description={selectedPhoto ? '照片已选好，可以发送到墨水屏。' : '从 iPhone 相册选择一张照片。'}
+          ok={Boolean(selectedPhoto)}
+          action={choosePhoto}
+          actionLabel={selectedPhoto ? '重新选择照片' : '选择照片'}
+        >
+          {selectedPhoto ? <Image source={{ uri: selectedPhoto.uri }} style={styles.preview} /> : null}
+          {selectedPhoto ? (
+            <ActionButton disabled={!connected || publishing} onPress={publish}>
+              {publishing ? '正在发送…' : connected ? '发送到墨水屏' : '请先连接墨水屏'}
+            </ActionButton>
+          ) : null}
+        </StepCard>
+
+        {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
+        {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
+        <Text style={styles.footer}>照片仅在你主动选择并发送时上传。</Text>
+      </ScrollView>
+
+      <DeviceModal
+        visible={deviceModal}
+        session={session}
+        onClose={() => setDeviceModal(false)}
+        onConnected={onConnected}
+      />
+    </SafeAreaView>
+  );
 }
 
-const serif=Platform.OS==='ios'?'Georgia':'serif';
-const s=StyleSheet.create({
-  safe:{flex:1,backgroundColor:colors.canvas},app:{flex:1,backgroundColor:colors.canvas},appWide:{flexDirection:'row'},main:{flex:1},flex:{flex:1},between:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10},strong:{color:colors.ink,fontWeight:'800',fontSize:11},meta:{color:colors.muted,fontSize:11,lineHeight:17,marginTop:2},itemTitle:{color:colors.ink,fontSize:13,fontWeight:'800'},intro:{color:colors.muted,fontSize:13,lineHeight:21,maxWidth:650,marginTop:5,marginBottom:20},eyebrow:{color:colors.terracotta,fontSize:10,fontWeight:'900',letterSpacing:1.6},action:{color:colors.terracotta,fontSize:11,fontWeight:'800'},chevron:{color:colors.faint,fontSize:24},more:{color:colors.faint,letterSpacing:2},divider:{height:1,backgroundColor:colors.line,marginVertical:8},disabled:{opacity:.35},
-  sidebar:{width:236,backgroundColor:colors.paper,borderRightWidth:1,borderRightColor:colors.line,padding:24},brand:{width:42,height:42,borderRadius:13,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center'},brandText:{color:colors.paper,fontFamily:serif,fontSize:25,fontWeight:'700'},sideTabs:{marginTop:45,gap:7},sideNav:{flexDirection:'row',gap:13,alignItems:'center',paddingHorizontal:13,paddingVertical:12,borderRadius:12},sideNavOn:{backgroundColor:colors.terracottaSoft},sideIcon:{width:21,textAlign:'center',color:colors.muted,fontSize:18},sideText:{color:colors.muted,fontSize:14,fontWeight:'600'},navOn:{color:colors.terracotta,fontWeight:'800'},sideAccount:{marginTop:'auto',flexDirection:'row',alignItems:'center',gap:10,paddingTop:20,borderTopWidth:1,borderTopColor:colors.line},miniAvatar:{width:36,height:36,borderRadius:18,backgroundColor:colors.moss,alignItems:'center',justifyContent:'center'},miniText:{color:colors.white,fontSize:10,fontWeight:'800'},accountName:{color:colors.ink,fontSize:12,fontWeight:'700'},
-  topbar:{minHeight:70,paddingHorizontal:28,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomWidth:1,borderBottomColor:colors.line},topTitle:{color:colors.muted,fontSize:14,fontWeight:'700'},mobileBrand:{color:colors.ink,fontFamily:serif,fontSize:20,fontWeight:'700'},topActions:{flexDirection:'row',alignItems:'center',gap:12},online:{width:8,height:8,borderRadius:4,backgroundColor:'#50A06D'},avatarButton:{width:36,height:36,borderRadius:18,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center'},avatarText:{color:colors.white,fontSize:10,fontWeight:'800'},scroll:{flex:1},content:{width:'100%',maxWidth:1030,alignSelf:'center',padding:40,paddingBottom:90},contentMobile:{padding:18,paddingBottom:104},
-  bottom:{position:'absolute',left:10,right:10,bottom:8,minHeight:68,padding:5,borderRadius:20,backgroundColor:colors.paper,flexDirection:'row',...shadow},bottomItem:{flex:1,alignItems:'center',justifyContent:'center',borderRadius:14,gap:2},bottomItemOn:{backgroundColor:colors.terracottaSoft},bottomIcon:{color:colors.muted,fontSize:18},bottomText:{color:colors.muted,fontSize:10,fontWeight:'600'},
-  hero:{marginBottom:23},heroTitle:{fontFamily:serif,color:colors.ink,fontSize:38,lineHeight:48,fontWeight:'500',marginTop:5},heading:{flexDirection:'row',alignItems:'flex-end',justifyContent:'space-between',gap:10,marginTop:31,marginBottom:13},headingTitle:{fontFamily:serif,color:colors.ink,fontSize:23,fontWeight:'600',marginTop:3},
-  button:{minHeight:47,borderRadius:12,paddingHorizontal:19,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center',marginTop:10},buttonSecondary:{backgroundColor:colors.paper,borderWidth:1,borderColor:colors.line},buttonSmall:{alignSelf:'flex-start',minHeight:38,marginTop:0},buttonText:{color:colors.white,fontSize:12,fontWeight:'800'},buttonTextDark:{color:colors.ink},pill:{alignSelf:'flex-start',borderRadius:18,paddingHorizontal:9,paddingVertical:5},pillText:{fontSize:9,fontWeight:'900'},
-  deviceCard:{backgroundColor:colors.paper,borderRadius:22,padding:21,borderWidth:1,borderColor:colors.line,...shadow},deviceBody:{flexDirection:'row',alignItems:'center',gap:27,marginTop:16,flexWrap:'wrap'},deviceCopy:{flex:1,minWidth:200},deviceName:{fontFamily:serif,color:colors.ink,fontSize:25,fontWeight:'600',marginTop:5},kicker:{color:colors.faint,fontSize:10,fontWeight:'800',letterSpacing:1},device:{width:250,height:184,borderRadius:8,padding:9,backgroundColor:'#30312E',...shadow},deviceSmall:{width:105,height:78,padding:4,borderRadius:5},deviceScreen:{flex:1,overflow:'hidden',position:'relative',backgroundColor:'#E9C95F'},sky:{...StyleSheet.absoluteFillObject,backgroundColor:'#EACB6A'},sun:{position:'absolute',width:'25%',aspectRatio:1,borderRadius:100,backgroundColor:'#C54E35',right:'13%',top:'12%'},mountain1:{position:'absolute',width:'70%',height:'65%',backgroundColor:'#58776C',transform:[{rotate:'34deg'}],left:'-18%',bottom:'-28%'},mountain2:{position:'absolute',width:'66%',height:'74%',backgroundColor:'#2F4C45',transform:[{rotate:'42deg'}],right:'-18%',bottom:'-35%'},artLabel:{position:'absolute',left:'7%',bottom:'8%',backgroundColor:colors.paper,paddingHorizontal:7,paddingVertical:4},artLabelText:{fontSize:8,fontWeight:'800'},stats:{flexDirection:'row',gap:12,marginTop:14,flexWrap:'wrap'},stat:{flex:1,minWidth:110,backgroundColor:colors.paperMuted,borderRadius:15,borderWidth:1,borderColor:colors.line,padding:15},statValue:{fontFamily:serif,color:colors.ink,fontSize:25,fontWeight:'600'},
-  notice:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.amberSoft,borderRadius:15,padding:14,borderWidth:1,borderColor:'#E4D2AD'},noticeIcon:{width:40,height:40,borderRadius:20,backgroundColor:colors.amber,alignItems:'center',justifyContent:'center'},noticeIconText:{color:colors.white,fontSize:19},
-  summary:{flexDirection:'row',justifyContent:'space-between',marginVertical:18,paddingHorizontal:3},albumGrid:{flexDirection:'row',flexWrap:'wrap',gap:14},albumCard:{width:'47%',flexGrow:1,minWidth:140,maxWidth:300},albumCover:{width:'100%',aspectRatio:1.35,borderRadius:15,overflow:'hidden'},coverImage:{width:'100%',height:'100%',opacity:.84},check:{position:'absolute',right:9,top:9,width:25,height:25,borderRadius:13,borderWidth:2,borderColor:colors.white,backgroundColor:'rgba(30,30,30,.25)',alignItems:'center',justifyContent:'center'},checkOn:{backgroundColor:colors.terracotta},checkText:{color:colors.white,fontSize:13,fontWeight:'900'},albumName:{color:colors.ink,fontSize:13,fontWeight:'800',marginTop:7},sync:{marginTop:25,backgroundColor:colors.paperMuted,borderRadius:15,padding:15,borderWidth:1,borderColor:colors.line},track:{height:5,borderRadius:4,overflow:'hidden',backgroundColor:colors.line,marginVertical:12},fill:{height:'100%',width:'100%',backgroundColor:colors.moss},
-  segments:{flexDirection:'row',alignSelf:'flex-start',backgroundColor:colors.paperMuted,borderRadius:12,padding:4,borderWidth:1,borderColor:colors.line,marginBottom:14},segment:{paddingHorizontal:14,paddingVertical:8,borderRadius:9},segmentOn:{backgroundColor:colors.paper,...shadow},segmentText:{color:colors.muted,fontSize:10,fontWeight:'700'},list:{gap:10},person:{flexDirection:'row',alignItems:'center',gap:13,flexWrap:'wrap',backgroundColor:colors.paper,borderRadius:16,padding:13,borderWidth:1,borderColor:colors.line},personImage:{width:70,height:70,borderRadius:35,backgroundColor:colors.line},personCopy:{flex:1,minWidth:230},policyChoices:{flexDirection:'row',flexWrap:'wrap',gap:5,marginTop:8},policyChoice:{borderWidth:1,borderColor:colors.line,borderRadius:14,paddingHorizontal:8,paddingVertical:5},policyText:{color:colors.muted,fontSize:8,fontWeight:'800'},policyBadge:{borderRadius:12,paddingHorizontal:9,paddingVertical:6},policyBadgeText:{fontSize:8,fontWeight:'900'},info:{marginTop:18,backgroundColor:colors.mossSoft,borderRadius:14,padding:15},
-  composer:{flexDirection:'row',gap:19,flexWrap:'wrap'},previewPanel:{flex:1.4,minWidth:280,backgroundColor:'#2A2B28',borderRadius:19,padding:17},previewLabel:{color:'#CECBC3',fontSize:9,fontWeight:'800',letterSpacing:1},eink:{aspectRatio:4/3,backgroundColor:'#EFE7D3',position:'relative',overflow:'hidden',marginTop:12},collage:{position:'absolute',borderWidth:4,borderColor:'#F8F0DE'},collage0:{left:'6%',top:'8%',width:'39%',height:'54%',transform:[{rotate:'-3deg'}]},collage1:{right:'7%',top:'6%',width:'40%',height:'41%',transform:[{rotate:'2deg'}]},collage2:{right:'8%',bottom:'8%',width:'35%',height:'38%',transform:[{rotate:'-2deg'}]},collage3:{left:'15%',bottom:'5%',width:'31%',height:'30%',transform:[{rotate:'4deg'}]},collageTitle:{position:'absolute',left:'44%',top:'48%',backgroundColor:'#E2B54C',padding:7,transform:[{rotate:'-4deg'}]},collageMain:{fontSize:11,fontWeight:'900',letterSpacing:1},collageSub:{fontSize:6,fontWeight:'700'},previewNote:{color:'#AAA79E',fontSize:9,marginTop:9},composeControls:{flex:.8,minWidth:230,backgroundColor:colors.paper,borderRadius:19,padding:17,borderWidth:1,borderColor:colors.line},controlLabel:{color:colors.muted,fontSize:9,fontWeight:'900',marginTop:11,marginBottom:7},templateRow:{flexDirection:'row',flexWrap:'wrap',gap:5},template:{borderRadius:15,paddingHorizontal:9,paddingVertical:7,borderWidth:1,borderColor:colors.line},templateOn:{backgroundColor:colors.terracottaSoft,borderColor:colors.terracotta},templateText:{color:colors.muted,fontSize:8,fontWeight:'800'},draftMeta:{backgroundColor:colors.paperMuted,borderRadius:12,padding:11,marginVertical:13},candidates:{flexDirection:'row',flexWrap:'wrap',gap:9},candidate:{width:'31%',minWidth:105,flexGrow:1,aspectRatio:1.25,borderRadius:12,overflow:'hidden',position:'relative'},candidateImage:{width:'100%',height:'100%'},candidateCheck:{left:8,top:8,right:undefined},excluded:{position:'absolute',left:0,right:0,bottom:0,padding:5,alignItems:'center',backgroundColor:'rgba(30,32,29,.72)'},excludedText:{color:colors.white,fontSize:8,fontWeight:'900'},
-  profile:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.paper,borderRadius:16,padding:15,borderWidth:1,borderColor:colors.line},avatar:{width:52,height:52,borderRadius:26,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center'},avatarText:{color:colors.white,fontSize:13,fontWeight:'900'},profileName:{color:colors.ink,fontSize:15,fontWeight:'800'},memberList:{backgroundColor:colors.paper,borderRadius:16,borderWidth:1,borderColor:colors.line,overflow:'hidden'},member:{flexDirection:'row',alignItems:'center',gap:11,padding:13,borderBottomWidth:1,borderBottomColor:colors.line},memberAvatar:{width:39,height:39,borderRadius:20,alignItems:'center',justifyContent:'center'},memberAvatarText:{color:colors.white,fontSize:10,fontWeight:'900'},owner:{color:colors.faint,fontSize:8,fontWeight:'900',textTransform:'uppercase'},settingGroup:{backgroundColor:colors.paper,borderRadius:16,borderWidth:1,borderColor:colors.line,paddingHorizontal:14},setting:{minHeight:64,flexDirection:'row',alignItems:'center',gap:11,paddingVertical:9},settingIcon:{width:35,height:35,borderRadius:10,backgroundColor:colors.paperMuted,alignItems:'center',justifyContent:'center'},simpleSetting:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
-  backdrop:{flex:1,backgroundColor:'rgba(24,25,22,.55)',alignItems:'center',justifyContent:'center',padding:18},modal:{width:'100%',maxWidth:470,maxHeight:'92%',backgroundColor:colors.paper,borderRadius:22,padding:24,...shadow},close:{position:'absolute',right:15,top:13,width:32,height:32,borderRadius:16,backgroundColor:colors.paperMuted,alignItems:'center',justifyContent:'center',zIndex:2},closeText:{fontSize:22,color:colors.muted},modalTitle:{fontFamily:serif,color:colors.ink,fontSize:25,fontWeight:'600',marginTop:5,paddingRight:35},modalBody:{color:colors.muted,fontSize:12,lineHeight:20,marginVertical:15},found:{flexDirection:'row',alignItems:'center',gap:13,backgroundColor:colors.paperMuted,borderRadius:14,padding:13,marginTop:17},deviceCode:{color:colors.terracotta,fontSize:9,fontWeight:'900',marginTop:6},input:{height:45,borderRadius:11,borderWidth:1,borderColor:colors.line,paddingHorizontal:12,color:colors.ink},roleRow:{flexDirection:'row',gap:6,marginBottom:12},role:{flex:1,alignItems:'center',paddingVertical:10,borderRadius:10,borderWidth:1,borderColor:colors.line},roleOn:{backgroundColor:colors.terracottaSoft,borderColor:colors.terracotta},roleText:{color:colors.muted,fontSize:9,fontWeight:'800'},publishSummary:{flexDirection:'row',justifyContent:'space-between',backgroundColor:colors.paperMuted,borderRadius:11,padding:13,marginBottom:8},progressState:{alignItems:'center',paddingVertical:12},spinner:{width:58,height:58,borderRadius:29,backgroundColor:colors.terracottaSoft,alignItems:'center',justifyContent:'center'},spinnerText:{color:colors.terracotta,fontSize:28},success:{width:70,height:70,borderRadius:35,backgroundColor:colors.mossSoft,alignSelf:'center',alignItems:'center',justifyContent:'center',marginVertical:24},successText:{color:colors.moss,fontSize:35,fontWeight:'800'},toast:{position:'absolute',top:22,alignSelf:'center',backgroundColor:colors.ink,borderRadius:20,paddingHorizontal:16,paddingVertical:10,...shadow},toastText:{color:colors.white,fontSize:10,fontWeight:'800'},
-  deviceMessage:{color:colors.moss,fontSize:10,fontWeight:'700',marginTop:10},errorText:{color:colors.danger,fontSize:10,lineHeight:16,marginTop:10},orRow:{flexDirection:'row',alignItems:'center',gap:10,marginTop:15},orLine:{height:1,backgroundColor:colors.line,flex:1},photoPicker:{height:230,borderRadius:15,borderWidth:1,borderStyle:'dashed',borderColor:colors.line,backgroundColor:colors.paperMuted,alignItems:'center',justifyContent:'center',overflow:'hidden',marginTop:18},photoPickerIcon:{color:colors.terracotta,fontSize:34,fontWeight:'300'},pickedPhoto:{width:'100%',height:'100%',resizeMode:'cover'},
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.canvas },
+  page: { width: '100%', maxWidth: 680, alignSelf: 'center', padding: 22, paddingBottom: 60 },
+  brand: { color: C.orange, fontSize: 13, fontWeight: '900', letterSpacing: 2, marginTop: 8 },
+  title: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 34, lineHeight: 43, fontWeight: '700', marginTop: 9 },
+  subtitle: { color: C.muted, fontSize: 15, lineHeight: 24, marginTop: 8, marginBottom: 24 },
+  card: { backgroundColor: C.paper, borderRadius: 20, borderWidth: 1, borderColor: C.line, padding: 17, marginBottom: 14 },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
+  stepNumber: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  stepNumberDone: { backgroundColor: C.greenSoft },
+  stepNumberText: { color: C.orange, fontWeight: '900', fontSize: 15 },
+  stepNumberTextDone: { color: C.green },
+  cardCopy: { flex: 1 },
+  cardTitle: { color: C.ink, fontSize: 16, fontWeight: '800' },
+  cardDescription: { color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 4 },
+  badge: { borderRadius: 14, paddingHorizontal: 8, paddingVertical: 5 },
+  badgeText: { fontSize: 9, fontWeight: '900' },
+  button: { minHeight: 48, borderRadius: 13, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', marginTop: 15, paddingHorizontal: 16 },
+  buttonSecondary: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
+  buttonText: { color: C.white, fontSize: 13, fontWeight: '800' },
+  buttonTextSecondary: { color: C.ink },
+  disabled: { opacity: 0.35 },
+  preview: { width: '100%', height: 260, borderRadius: 14, resizeMode: 'cover', marginTop: 16 },
+  notice: { backgroundColor: C.greenSoft, borderRadius: 14, padding: 14, marginTop: 2 },
+  noticeText: { color: C.green, fontSize: 12, fontWeight: '700', lineHeight: 19 },
+  error: { backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginTop: 2 },
+  errorText: { color: C.red, fontSize: 12, lineHeight: 19, marginTop: 10 },
+  footer: { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 22 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(20,22,19,.55)', justifyContent: 'flex-end' },
+  modalSheet: { maxHeight: '92%', backgroundColor: C.paper, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 22, paddingBottom: 36 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  modalEyebrow: { color: C.orange, fontSize: 10, fontWeight: '900', letterSpacing: 1.5 },
+  modalTitle: { color: C.ink, fontSize: 26, fontWeight: '800', marginTop: 4 },
+  close: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.canvas, alignItems: 'center', justifyContent: 'center' },
+  closeText: { color: C.muted, fontSize: 24 },
+  help: { color: C.muted, fontSize: 13, lineHeight: 21, marginBottom: 8 },
+  fieldLabel: { color: C.muted, fontSize: 11, fontWeight: '800', marginTop: 13, marginBottom: 7 },
+  input: { height: 47, borderRadius: 12, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 13, backgroundColor: C.white },
+  cloudEndpoint: { color: C.green, backgroundColor: C.greenSoft, borderRadius: 10, padding: 11, fontSize: 11, fontWeight: '800', marginTop: 14 },
+  divider: { height: 1, backgroundColor: C.line, marginVertical: 22 },
+  sectionLabel: { color: C.ink, fontSize: 13, fontWeight: '800', marginBottom: 8 },
+  successText: { color: C.green, fontSize: 12, lineHeight: 18, marginTop: 10 },
+  connectedBox: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.greenSoft, padding: 15, borderRadius: 15, marginBottom: 14 },
+  connectedIcon: { color: C.green, fontSize: 24, fontWeight: '900' },
+  flex: { flex: 1 },
 });
