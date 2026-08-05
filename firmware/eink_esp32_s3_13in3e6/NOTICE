@@ -1,0 +1,9 @@
+PhotoWall autonomous E Ink firmware
+
+This product includes modified portions of the Waveshare
+ESP32-S3-ePaper-13.3E6 Arduino example:
+https://github.com/waveshareteam/ESP32-S3-ePaper-13.3E6
+
+Copyright Waveshare Team
+Licensed under the Apache License, Version 2.0.
+The panel driver was modified for direct PWE6 streaming and autonomous cloud operation.

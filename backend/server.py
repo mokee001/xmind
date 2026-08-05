@@ -24,11 +24,15 @@ import ipaddress
 import json
 import os
 import random
+import re
+import secrets
 import sys
 import time
 from typing import Any, Optional
 
 from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -42,8 +46,9 @@ import engine  # noqa: E402
 from . import dedup, eink_push, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
-PHOTOS_DIR = os.path.join(_ROOT, "photos")
-OUTPUT_DIR = os.path.join(_ROOT, "output")
+_DATA_DIR = os.environ.get("PHOTOWALL_DATA_DIR", _ROOT)
+PHOTOS_DIR = os.path.join(_DATA_DIR, "photos")
+OUTPUT_DIR = os.path.join(_DATA_DIR, "output")
 TEMPLATES_DIR = os.path.join(_ROOT, "templates")
 WEBAPP_DIR = os.path.join(_ROOT, "webapp")
 DISPLAY_DIR = os.path.join(_ROOT, "display")
@@ -58,6 +63,14 @@ except Exception:
     pass
 
 app = FastAPI(title="手帐照片墙")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in os.environ.get(
+        "PHOTOWALL_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081"
+    ).split(",") if origin.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------- 双端互联：管理已连接的展示屏 ----------
@@ -143,6 +156,27 @@ class LabelSample(BaseModel):
 class LabelReq(BaseModel):
     wall_id: str = ""
     samples: list[LabelSample]
+
+
+class DeviceBootstrapReq(BaseModel):
+    device_id: str
+    pairing_code: str
+    ip: str = ""
+    firmware_version: str = ""
+    device_token: str = ""
+
+
+class DeviceClaimReq(BaseModel):
+    pairing_code: str
+    name: str = "客厅照片墙"
+
+
+class DeviceStatusReq(BaseModel):
+    state: str
+    revision: str = ""
+    progress: float = 0.0
+    error: str = ""
+    ip: str = ""
 
 
 # ---------- 链路1：相册授权 ----------
@@ -935,6 +969,205 @@ async def eink_prepare(
 def eink_status() -> dict:
     """查询当前照片转换、传输与全刷进度。"""
     return eink_push.status()
+
+
+# ---------- 无 Mac 设备链路：App 发布，屏幕主动拉取 ----------
+
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
+_PAIRING_CODE_RE = re.compile(r"^\d{6}$")
+DEVICE_FRAMES_DIR = os.path.join(OUTPUT_DIR, "device_frames")
+os.makedirs(DEVICE_FRAMES_DIR, exist_ok=True)
+
+
+def _devices() -> dict[str, dict[str, Any]]:
+    data = store.load("eink_devices", {})
+    return data if isinstance(data, dict) else {}
+
+
+def _public_device(device: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in device.items() if key not in ("device_token", "account_token")}
+
+
+def _device_auth(device: dict[str, Any], token: str) -> bool:
+    expected = str(device.get("device_token", ""))
+    return bool(expected and token and secrets.compare_digest(expected, token))
+
+
+def _account_auth(device: dict[str, Any], token: str) -> bool:
+    expected = str(device.get("account_token", ""))
+    return bool(expected and token and secrets.compare_digest(expected, token))
+
+
+@app.post("/api/devices/bootstrap")
+def device_bootstrap(req: DeviceBootstrapReq) -> Response:
+    """设备连上 Wi-Fi 后首次登记；后续启动使用已保存的 device token 报到。"""
+    if not _DEVICE_ID_RE.fullmatch(req.device_id) or not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+        return JSONResponse(status_code=400, content={"error": "设备编号或配对码格式无效"})
+
+    devices_data = _devices()
+    existing = devices_data.get(req.device_id)
+    if existing and existing.get("device_token") and not _device_auth(existing, req.device_token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
+
+    now = time.time()
+    device = existing or {
+        "device_id": req.device_id,
+        "device_token": secrets.token_urlsafe(32),
+        "account_token": "",
+        "claimed": False,
+        "name": "PhotoWall E6",
+        "created_at": now,
+        "revision": "",
+        "displayed_revision": "",
+    }
+    device.update({
+        "pairing_code": req.pairing_code,
+        "ip": req.ip,
+        "firmware_version": req.firmware_version,
+        "last_seen": now,
+        "state": "online",
+        "error": "",
+    })
+    devices_data[req.device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({
+        "device_id": req.device_id,
+        "device_token": device["device_token"],
+        "claimed": bool(device.get("claimed")),
+        "poll_seconds": 15,
+    })
+
+
+@app.post("/api/devices/claim")
+def device_claim(req: DeviceClaimReq) -> Response:
+    """App 使用屏幕/机身上的六位码绑定最近在线的设备。"""
+    if not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+        return JSONResponse(status_code=400, content={"error": "请输入六位配对码"})
+    devices_data = _devices()
+    matches = [d for d in devices_data.values() if d.get("pairing_code") == req.pairing_code]
+    if not matches:
+        return JSONResponse(status_code=404, content={"error": "设备尚未联网，请完成配网后重试"})
+    device = max(matches, key=lambda item: float(item.get("last_seen", 0)))
+    if time.time() - float(device.get("last_seen", 0)) > 300:
+        return JSONResponse(status_code=409, content={"error": "设备已离线，请确认配网状态"})
+    if not device.get("account_token"):
+        device["account_token"] = secrets.token_urlsafe(32)
+    device["claimed"] = True
+    device["name"] = req.name.strip()[:40] or "客厅照片墙"
+    devices_data[device["device_id"]] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+
+
+@app.get("/api/devices")
+def device_list(x_account_token: str = Header(default="")) -> Response:
+    devices_data = _devices()
+    visible = [_public_device(d) for d in devices_data.values() if _account_auth(d, x_account_token)]
+    return JSONResponse({"devices": visible})
+
+
+@app.post("/api/devices/{device_id}/publish")
+async def device_publish(
+    device_id: str,
+    file: UploadFile,
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """App 上传照片，云端转换为 PWE6 并设置为设备下一待显示版本。"""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        preview, panel_codes = eink_push.prepare_image(
+            image_bytes, dither=dither, fit=fit, rotation=rotation, enhancement=enhancement)
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别或转换该图片"})
+
+    revision = str(time.time_ns())
+    device_dir = os.path.join(DEVICE_FRAMES_DIR, device_id)
+    os.makedirs(device_dir, exist_ok=True)
+    frame_path = os.path.join(device_dir, f"{revision}.pwe6")
+    preview_path = os.path.join(device_dir, f"{revision}.png")
+    frame_data = eink_push.build_panel_frame(panel_codes)
+    with open(frame_path, "wb") as output:
+        output.write(frame_data)
+    preview.save(preview_path, format="PNG", optimize=True)
+
+    device.update({
+        "revision": revision,
+        "frame_path": frame_path,
+        "preview_url": f"/output/device_frames/{device_id}/{revision}.png",
+        "published_at": time.time(),
+        "state": "queued",
+        "progress": 0.0,
+        "error": "",
+    })
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "revision": revision})
+
+
+@app.get("/api/devices/{device_id}/next")
+def device_next(device_id: str, revision: str = "", token: str = "") -> Response:
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _device_auth(device, token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    device["last_seen"] = time.time()
+    device["state"] = "online" if not device.get("revision") else device.get("state", "online")
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    target = str(device.get("revision", ""))
+    if not target or target == revision:
+        return Response(status_code=204)
+    return JSONResponse({
+        "revision": target,
+        "size": eink_push.FRAME_HEADER.size + (eink_push.WIDTH * eink_push.HEIGHT // 2),
+        "frame_url": f"/api/devices/{device_id}/frame/{target}?token={token}",
+    })
+
+
+@app.get("/api/devices/{device_id}/frame/{revision}")
+def device_frame(device_id: str, revision: str, token: str = "") -> Response:
+    device = _devices().get(device_id)
+    if not device or not _device_auth(device, token) or str(device.get("revision")) != revision:
+        return JSONResponse(status_code=401, content={"error": "画面授权无效"})
+    frame_path = str(device.get("frame_path", ""))
+    if not frame_path or not os.path.isfile(frame_path):
+        return JSONResponse(status_code=404, content={"error": "画面文件不存在"})
+    return FileResponse(frame_path, media_type="application/vnd.photowall.pwe6", filename="display.pwe6")
+
+
+@app.post("/api/devices/{device_id}/status")
+def device_status(device_id: str, req: DeviceStatusReq, token: str = "") -> Response:
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _device_auth(device, token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    device.update({
+        "state": req.state[:24],
+        "progress": max(0.0, min(float(req.progress), 100.0)),
+        "error": req.error[:240],
+        "last_seen": time.time(),
+        "ip": req.ip or device.get("ip", ""),
+    })
+    if req.state == "displayed" and req.revision == str(device.get("revision", "")):
+        device["displayed_revision"] = req.revision
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/photos/{name}")
