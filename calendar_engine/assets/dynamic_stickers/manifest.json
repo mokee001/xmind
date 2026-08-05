@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "library_id": "journal_dynamic_stickers_v1",
+  "source_policy": "用户提供的贴纸素材经本地去背景后形成的可复现工作资产；不包含原始下载路径。",
+  "reference_composite_is_not_asset_library": true,
+  "assets": [
+    {
+      "id": "pushpin_blue",
+      "file": "pushpin_blue.png",
+      "category": "paper",
+      "keywords": ["图钉", "纸张", "卡片", "手写", "手作", "便签"],
+      "visual_count": 1,
+      "default_box": [0.76, 0.08, 0.18, 0.28],
+      "default_rotation": -5
+    },
+    {
+      "id": "embroidered_hearts_pink",
+      "file": "embroidered_hearts_pink.png",
+      "category": "people_and_animals",
+      "keywords": ["爱心", "人物", "宠物", "猫", "狗", "亲密互动"],
+      "visual_count": 2,
+      "default_box": [0.62, 0.05, 0.36, 0.30],
+      "default_rotation": 3
+    },
+    {
+      "id": "camera_purple",
+      "file": "camera_purple.png",
+      "category": "scenery",
+      "keywords": ["相机", "风景", "旅行", "城市", "晚霞", "外出"],
+      "visual_count": 1,
+      "default_box": [0.62, 0.05, 0.36, 0.28],
+      "default_rotation": -4
+    },
+    {
+      "id": "music_note_silver",
+      "file": "music_note_silver.png",
+      "category": "music_and_film",
+      "keywords": ["音乐", "唱歌", "演出", "电影", "影视", "音符"],
+      "visual_count": 1,
+      "default_box": [0.68, 0.56, 0.28, 0.34],
+      "default_rotation": 4
+    },
+    {
+      "id": "pearl_heart_black_bow",
+      "file": "pearl_heart_black_bow.png",
+      "category": "people_and_animals",
+      "keywords": ["珍珠心", "宠物", "亲密", "可爱"],
+      "visual_count": 1,
+      "default_box": [0.58, 0.48, 0.38, 0.34],
+      "default_rotation": -2
+    },
+    {
+      "id": "outline_star_silver",
+      "file": "outline_star_silver.png",
+      "category": "abstract",
+      "keywords": ["星星", "抽象", "留白", "闪光"],
+      "visual_count": 1,
+      "default_box": [0.58, 0.42, 0.34, 0.30],
+      "default_rotation": 6
+    }
+  ]
+}

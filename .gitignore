@@ -8,6 +8,14 @@
 photos/
 output/
 backend/data/
+calendar_runs/
+runs/
+outputs/
+release/
+originals/
+proxies/
+contact_sheets/
+api_decisions/
 *.jpg
 *.jpeg
 *.heic
@@ -39,6 +47,11 @@ web-build/
 .venv/
 venv/
 env/
+.env
+.env.*
+*.key
+*.secret
+credentials.json
 
 # --- 编辑器 / 系统 ---
 .idea/

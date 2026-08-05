@@ -307,9 +307,14 @@ def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> 
 
     # 替换当前墙里分数最低的若干槽位（让最弱的位置让给惊喜，保住高分主体照片）
     order = sorted(range(len(chosen)), key=lambda i: chosen[i].get("final_score", 0.0))
+    # 惊喜老照片来自原始相册库，没经过 rank_photos，本身没有 final_score；
+    # 这里统一补算真实综合分，避免它们在墙上显示成 0.0，也保证按分排序/训练拿到真实分。
+    scored = selector.rank_photos([s for s, _ in surprises])
+    score_by_path = {p.get("path"): p.get("final_score", 0.0) for p in scored}
     result = list(chosen)
     for (s, label), idx in zip(surprises, order):
-        result[idx] = {**s, "final_score": float(s.get("final_score", 0.0)),
+        result[idx] = {**s,
+                       "final_score": float(score_by_path.get(s.get("path"), s.get("final_score", 0.0))),
                        "surprise": True, "surprise_label": label}
     return result
 
