@@ -63,6 +63,14 @@ export async function publishDisplayPhoto({ apiBase, deviceId, accountToken, ass
   return responseJson(response);
 }
 
+export async function publishJulyCalendar({ apiBase, deviceId, accountToken }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/calendar/july-2026/publish`,
+    { method: 'POST', headers: { 'X-Account-Token': accountToken } },
+  );
+  return responseJson(response);
+}
+
 export async function listDisplays({ apiBase, accountToken }) {
   const response = await fetch(`${baseUrl(apiBase)}/api/devices`, {
     headers: { 'X-Account-Token': accountToken },

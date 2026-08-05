@@ -26,6 +26,7 @@ import os
 import random
 import re
 import secrets
+import shutil
 import sys
 import time
 from typing import Any, Optional
@@ -1003,6 +1004,120 @@ def _account_auth(device: dict[str, Any], token: str) -> bool:
     return bool(expected and token and secrets.compare_digest(expected, token))
 
 
+def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
+    """Build a deterministic July 2026 calendar plan from the existing album.
+
+    The normal selector remains the only photo-ranking authority.  Calendar
+    rendering is deliberately a downstream layout step, so it cannot change
+    daily-wall preference scores or require a Qwen credential.
+    """
+    by_day: dict[int, list[dict]] = {day: [] for day in range(1, 32)}
+    for photo in photos:
+        try:
+            taken = datetime.datetime.fromtimestamp(float(photo.get("taken_at")))
+        except (TypeError, ValueError, OSError, OverflowError):
+            continue
+        if (taken.year, taken.month) == (2026, 7) and 1 <= taken.day <= 31:
+            by_day[taken.day].append(photo)
+
+    selected_count = 0
+    days: list[dict[str, Any]] = []
+    for day in range(1, 32):
+        candidates = by_day[day]
+        if not candidates:
+            days.append({
+                "day": day,
+                "sources": [],
+                "treatment": "blank",
+                "reason": "当天没有已同步的相机照片，保留留白。",
+                "placements": [],
+            })
+            continue
+
+        chosen = selector.rank_photos(candidates)[0]
+        selected_count += 1
+        days.append({
+            "day": day,
+            "sources": [chosen["path"]],
+            "treatment": "proportional_full_image",
+            "reason": "按现有质量、美观度和偏好综合评分选出的当天代表照片。",
+            "selection": {
+                "filename": chosen.get("filename", ""),
+                "final_score": chosen.get("final_score", 0.0),
+            },
+            "placements": [{
+                "kind": "photo",
+                "fit": "cover",
+                "box": [0.01, 0.01, 0.98, 0.98],
+                "focal": [0.5, 0.5],
+                "rotation": 0,
+            }],
+        })
+
+    return {
+        "schema_version": "1.0",
+        "calendar": {
+            "year": 2026,
+            "month": 7,
+            "week_start": "sunday",
+            "template": "calendar_template_v1",
+        },
+        "decision": {
+            "backend": "photowall_selector_v1",
+            "api_used": False,
+            "cutout_style": {"white_outline": False, "shadow": False},
+        },
+        "days": days,
+    }, selected_count
+
+
+def _queue_device_image(device: dict[str, Any], image_bytes: bytes) -> tuple[str, str]:
+    """Convert an image to PWE6 and make it the device's next cloud-pulled frame."""
+    preview, panel_codes = eink_push.prepare_image(
+        image_bytes,
+        dither=True,
+        fit="contain",
+        rotation=0,
+        enhancement="standard",
+    )
+    revision = str(time.time_ns())
+    device_id = str(device["device_id"])
+    device_dir = os.path.join(DEVICE_FRAMES_DIR, device_id)
+    os.makedirs(device_dir, exist_ok=True)
+    frame_path = os.path.join(device_dir, f"{revision}.pwe6")
+    preview_path = os.path.join(device_dir, f"{revision}.png")
+    with open(frame_path, "wb") as output:
+        output.write(eink_push.build_panel_frame(panel_codes))
+    preview.save(preview_path, format="PNG", optimize=True)
+    device.update({
+        "revision": revision,
+        "frame_path": frame_path,
+        "preview_url": f"/output/device_frames/{device_id}/{revision}.png",
+        "published_at": time.time(),
+        "state": "queued",
+        "progress": 0.0,
+        "error": "",
+    })
+    return revision, preview_path
+
+
+def _materialize_calendar_sources(plan: dict[str, Any], run_dir: str) -> None:
+    """Copy selected originals into date-prefixed proxies required by calendar QA."""
+    proxy_dir = os.path.join(run_dir, "proxies")
+    os.makedirs(proxy_dir, exist_ok=True)
+    for day in plan["days"]:
+        sources = list(day.get("sources", []))
+        if not sources:
+            continue
+        source = sources[0]
+        if not os.path.isfile(source):
+            raise OSError(f"找不到日历候选照片：{source}")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(source))
+        proxy_path = os.path.join(proxy_dir, f"2026-07-{int(day['day']):02d}__{safe_name}")
+        shutil.copy2(source, proxy_path)
+        day["sources"] = [proxy_path]
+
+
 @app.post("/api/devices/bootstrap")
 def device_bootstrap(req: DeviceBootstrapReq) -> Response:
     """设备连上 Wi-Fi 后首次登记；后续启动使用已保存的 device token 报到。"""
@@ -1122,6 +1237,61 @@ async def device_publish(
     devices_data[device_id] = device
     store.save("eink_devices", devices_data)
     return JSONResponse({"device": _public_device(device), "revision": revision})
+
+
+@app.post("/api/devices/{device_id}/calendar/july-2026/publish")
+async def device_publish_july_calendar(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Generate a QA-approved July 2026 calendar from the synced album and queue it.
+
+    Only photos genuinely captured in July 2026 are eligible. This prevents an
+    attractive but misleading calendar assembled from unrelated dates.
+    """
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+
+    photos = store.load("photos", []) or _tag_all()
+    photos, _ = dedup.deduplicate(photos)
+    plan, selected_count = _july_calendar_plan(photos)
+    if not selected_count:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "没有已同步的 2026 年 7 月相机照片，暂时无法生成七月日历"},
+        )
+
+    from calendar_engine import GenerationError, generate_july_calendar
+
+    run_id = f"july-2026-{time.time_ns()}"
+    run_dir = os.path.join(OUTPUT_DIR, "calendar_runs", device_id, run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    plan_path = os.path.join(run_dir, "treatment_plan.json")
+
+    try:
+        _materialize_calendar_sources(plan, run_dir)
+        with open(plan_path, "w", encoding="utf-8") as output:
+            json.dump(plan, output, ensure_ascii=False, indent=2)
+        result = generate_july_calendar(run_dir, final_name="calendar.png", preview_name="preview.jpg")
+        image_bytes = result.calendar_path.read_bytes()
+        revision, _ = _queue_device_image(device, image_bytes)
+    except (GenerationError, OSError, ValueError) as exc:
+        return JSONResponse(status_code=500, content={"error": f"七月日历生成失败：{exc}"})
+
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({
+        "device": _public_device(device),
+        "revision": revision,
+        "calendar": {
+            "year": 2026,
+            "month": 7,
+            "selected_day_count": selected_count,
+            "qa": result.qa_report.get("status"),
+        },
+    })
 
 
 @app.get("/api/devices/{device_id}/next")
