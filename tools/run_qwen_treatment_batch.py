@@ -27,7 +27,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="只将 selection.json 中已入选的素材逐日发送给决策 API。"
+        description="只将 selection.json 中已入选的素材逐日发送给已配置决策后端。"
     )
     parser.add_argument("run_dir", type=Path)
     parser.add_argument("--resume", action="store_true")
@@ -37,11 +37,18 @@ def main() -> None:
     selection = read_json(run_dir / "selection.json")
     output_dir = run_dir / "api_decisions"
     completed: list[int] = []
+    actual_backend = ""
+    actual_model = ""
+    actual_mode = ""
 
     for item in sorted(selection["days"], key=lambda entry: entry["day"]):
         day = int(item["day"])
         output_path = output_dir / f"day{day:02d}.json"
         if args.resume and output_path.exists():
+            existing = read_json(output_path).get("metadata", {})
+            actual_backend = str(existing.get("backend", actual_backend))
+            actual_model = str(existing.get("model", actual_model))
+            actual_mode = str(existing.get("decision_mode", actual_mode))
             completed.append(day)
             print(f"7/{day}: 已存在，跳过")
             continue
@@ -52,6 +59,9 @@ def main() -> None:
             PROJECT_ROOT,
             existing_analysis=item.get("analysis_context"),
         )
+        actual_backend = str(metadata.get("backend", actual_backend))
+        actual_model = str(metadata.get("model", actual_model))
+        actual_mode = str(metadata.get("decision_mode", actual_mode))
         write_json(
             output_path,
             {
@@ -74,8 +84,9 @@ def main() -> None:
     write_json(
         output_dir / "batch_summary.json",
         {
-            "backend": "qwen",
-            "mode": "shadow",
+            "backend": actual_backend,
+            "model": actual_model,
+            "mode": actual_mode,
             "selected_only": True,
             "completed_days": completed,
             "completed_count": len(completed),

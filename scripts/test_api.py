@@ -11,12 +11,48 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from calendar_ai.keychain import load_api_key  # noqa: E402
-from calendar_ai.analyzer import load_config  # noqa: E402
+from calendar_ai.analyzer import (  # noqa: E402
+    _decision_model,
+    _ollama_base_url,
+    _post_ollama_json,
+    load_config,
+)
 
 
 def main() -> None:
     config = load_config(PROJECT_ROOT)
     backend = str(config.get("decision_backend", "qwen")).strip().lower()
+    if backend in {"local_ollama", "ollama", "qwen3_vl_local"}:
+        model = _decision_model(config, "local_ollama")
+        base_url = _ollama_base_url(config)
+        try:
+            response = _post_ollama_json(
+                base_url,
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "user", "content": "只回复：本地模型连接成功"}
+                    ],
+                    "stream": False,
+                    "think": False,
+                    "options": {"temperature": 0, "num_predict": 32},
+                },
+                float(config.get("local_model_timeout_seconds", 300)),
+            )
+        except RuntimeError as error:
+            raise SystemExit(f"\n{error}\n") from error
+        content = (response.get("message", {}).get("content") or "").strip()
+        if not content:
+            raise SystemExit(
+                "\n本地模型已连接，但没有返回正文。"
+                f"结束原因：{response.get('done_reason', 'unknown')}\n"
+            )
+        print()
+        print(f"后端：{backend}")
+        print(f"模型：{model}")
+        print(content)
+        print()
+        return
     if backend == "qwen":
         model = config["qwen_decision_model"]
         base_url = (

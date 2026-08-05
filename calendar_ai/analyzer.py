@@ -5,6 +5,9 @@ import hashlib
 import json
 import mimetypes
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
@@ -22,6 +25,7 @@ from .schemas import (
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 DEFAULT_QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
 
 def project_file(project_root: Path, *parts: str) -> Path:
@@ -41,6 +45,10 @@ def encode_image(path: Path) -> str:
     mime_type = mimetypes.guess_type(path.name)[0] or "image/jpeg"
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
+
+
+def encode_image_base64(path: Path) -> str:
+    return base64.b64encode(path.read_bytes()).decode("ascii")
 
 
 def validate_image(path: Path) -> None:
@@ -77,13 +85,30 @@ def _sha256_text(value: str) -> str:
 def _decision_context(
     existing_analysis: Optional[Dict[str, Any]],
     rules: str,
+    image_count: int,
     calibration_examples: Sequence[Dict[str, Any]] = (),
 ) -> str:
+    if image_count:
+        input_constraint = (
+            f"当前输入包含 {image_count} 张已经由上游选中的合格照片。"
+            "必须选择图片处理类型并引用至少一张输入素材；"
+            "禁止选择 illustration_only、illustration_with_text、text_only 或 blank。"
+            "纸质卡片、海报和照片内可见文字属于真实照片主体，"
+            "应保留原图或抠图，不得改画成插画或另行改写文字。"
+        )
+    else:
+        input_constraint = (
+            "当前没有合格照片。只能根据已有文字证据和布局上下文，"
+            "在 illustration_only、illustration_with_text、text_only 或 blank 中选择；"
+            "selected_asset_indices 必须为空，primary_asset_index 必须为 0。"
+        )
     return (
         "请判断这个日期已有的 0-3 张素材与文字线索的最佳处理方式。"
         "不要重新选择其他日期的照片，也不要生成或重绘图片。"
         "最终只输出一个 JSON 对象，不要使用 Markdown 代码块。"
         "所有字段都必须符合给定 JSON Schema；无法确认时使用保守回退方案。"
+        "\n\n当前输入的强制模式约束：\n"
+        f"{input_constraint}"
         "\n\n已有视觉理解结果：\n"
         f"{json.dumps(existing_analysis or {}, ensure_ascii=False)}"
         "\n\n以下是必须遵守的处理规则注册表：\n"
@@ -187,6 +212,214 @@ def _qwen_messages(
         {"role": "system", "content": prompt},
         {"role": "user", "content": content},
     ]
+
+
+def _ollama_base_url(config: Dict[str, Any]) -> str:
+    value = (
+        os.environ.get("OLLAMA_HOST", "").strip()
+        or str(config.get("local_ollama_base_url", "")).strip()
+        or DEFAULT_OLLAMA_BASE_URL
+    )
+    if not value.startswith(("http://", "https://")):
+        value = "http://" + value
+    value = value.rstrip("/")
+    hostname = urllib.parse.urlparse(value).hostname
+    if hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError(
+            "本地 Ollama 后端只允许连接本机回环地址，"
+            f"当前地址为：{value}"
+        )
+    return value
+
+
+def _ollama_payload(
+    model: str,
+    prompt: str,
+    context: str,
+    image_paths: Sequence[Path],
+    retry_feedback: str = "",
+) -> dict[str, Any]:
+    user_text = context
+    if image_paths:
+        user_text += "\n\n" + "\n".join(
+            f"素材 {index} 对应 images 数组中的第 {index} 张图片。"
+            for index in range(1, len(image_paths) + 1)
+        )
+    if retry_feedback:
+        user_text += (
+            "\n\n上一次结果未通过本地校验。请修正后重新输出完整 JSON。"
+            f"\n校验错误：{retry_feedback}"
+        )
+    user_message: dict[str, Any] = {
+        "role": "user",
+        "content": user_text,
+    }
+    if image_paths:
+        user_message["images"] = [
+            encode_image_base64(image_path) for image_path in image_paths
+        ]
+    return {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": prompt},
+            user_message,
+        ],
+        "format": ImageTreatmentDecision.model_json_schema(),
+        "stream": False,
+        "think": False,
+        "options": {
+            "temperature": 0,
+            "num_predict": 2400,
+        },
+        "keep_alive": "10m",
+    }
+
+
+def _post_ollama_json(
+    base_url: str,
+    payload: dict[str, Any],
+    timeout: float,
+) -> dict[str, Any]:
+    request = urllib.request.Request(
+        f"{base_url.rstrip('/')}/api/chat",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"Ollama 返回 HTTP {error.code}：{detail[:1200]}"
+        ) from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(
+            "无法连接本地 Ollama。请确认 Ollama 已启动，"
+            f"地址为 {base_url}。原始错误：{error.reason}"
+        ) from error
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("Ollama 返回了无法解析的响应。") from error
+
+
+def _normalize_local_decision(
+    decision: ImageTreatmentDecision,
+) -> ImageTreatmentDecision:
+    updates: dict[str, Any] = {}
+    text_modes = {
+        TreatmentMode.text_only,
+        TreatmentMode.illustration_with_text,
+        TreatmentMode.irregular_cutout_with_text,
+    }
+    if decision.treatment_mode not in text_modes:
+        updates.update(
+            {
+                "text_required": False,
+                "short_text": "",
+                "text_source": TextSource.none,
+                "text_source_excerpt": "",
+                "text_is_direct_quote": False,
+                "text_layout": TextLayout.none,
+            }
+        )
+
+    illustration_modes = {
+        TreatmentMode.illustration_only,
+        TreatmentMode.illustration_with_text,
+    }
+    if decision.treatment_mode not in illustration_modes:
+        updates.update(
+            {
+                "illustration_required": False,
+                "illustration_role": IllustrationRole.none,
+                "illustration_category": "",
+                "illustration_style_id": "",
+                "illustration_brief": "",
+            }
+        )
+    if decision.treatment_mode != TreatmentMode.illustration_only:
+        updates["consecutive_blank_run_length"] = 0
+
+    expected_element_counts = {
+        TreatmentMode.blank: 0,
+        TreatmentMode.text_only: 1,
+        TreatmentMode.illustration_only: 1,
+        TreatmentMode.illustration_with_text: 2,
+    }
+    expected = expected_element_counts.get(decision.treatment_mode)
+    if expected is not None:
+        updates["element_count"] = expected
+
+    return decision.model_copy(update=updates)
+
+
+def _analyze_day_ollama(
+    image_paths: Sequence[Path],
+    config: Dict[str, Any],
+    prompt: str,
+    context: str,
+) -> tuple[ImageTreatmentDecision, Dict[str, Any]]:
+    base_url = _ollama_base_url(config)
+    model = _decision_model(config, "local_ollama")
+    if not model:
+        raise RuntimeError("config.json 缺少本地 Ollama 决策模型名称。")
+
+    attempts = max(1, min(3, int(config.get("decision_validation_attempts", 2))))
+    timeout = float(config.get("local_model_timeout_seconds", 300))
+    retry_feedback = ""
+    last_error: Exception | None = None
+    last_response: dict[str, Any] = {}
+    for attempt in range(1, attempts + 1):
+        payload = _ollama_payload(
+            model,
+            prompt,
+            context,
+            image_paths,
+            retry_feedback=retry_feedback,
+        )
+        response = _post_ollama_json(base_url, payload, timeout)
+        last_response = response
+        raw_content = response.get("message", {}).get("content", "")
+        decision: ImageTreatmentDecision | None = None
+        try:
+            decision = _parse_qwen_decision(raw_content)
+            decision = _normalize_local_decision(decision)
+            _validate_decision(decision, len(image_paths))
+        except (ValidationError, ValueError, RuntimeError) as error:
+            last_error = error
+            retry_feedback = str(error)[:1200]
+            if decision is not None and "短文字不得超过" in str(error):
+                retry_feedback += (
+                    "\n你上次的 short_text 是 "
+                    f"{json.dumps(decision.short_text, ensure_ascii=False)}，"
+                    f"按 Unicode 字符计数为 {len(decision.short_text)}。"
+                    "请把 short_text 缩短到 12 个字符以内，并确保仍能从 "
+                    "text_source_excerpt 直接追溯；不要重复上一次的长句。"
+                )
+            continue
+
+        metadata = {
+            "response_id": "local-" + _sha256_text(raw_content)[:16],
+            "backend": "local_ollama",
+            "model": model,
+            "base_url": base_url,
+            "attempt": attempt,
+            "image_names": [path.name for path in image_paths],
+            "usage": {
+                "prompt_eval_count": response.get("prompt_eval_count"),
+                "eval_count": response.get("eval_count"),
+                "total_duration": response.get("total_duration"),
+            },
+        }
+        return decision, metadata
+
+    raise RuntimeError(
+        f"本地 Ollama 决策连续 {attempts} 次未通过本地校验"
+        f"（done_reason={last_response.get('done_reason', '')}）：{last_error}"
+    )
 
 
 def _parse_qwen_decision(raw_content: Any) -> ImageTreatmentDecision:
@@ -340,7 +573,15 @@ def analyze_day(
         validate_image(image_path)
 
     config = load_config(project_root)
-    if not config.get("api_enabled", False):
+    backend = str(config.get("decision_backend", "openai")).strip().lower()
+    local_backends = {"local_ollama", "ollama", "qwen3_vl_local"}
+    if backend in local_backends:
+        if not config.get("local_model_enabled", False):
+            raise RuntimeError(
+                "当前已关闭本地模型调用。请先启动 Ollama，"
+                "完成连接测试后再在 config.json 中启用。"
+            )
+    elif not config.get("api_enabled", False):
         raise RuntimeError(
             "当前已关闭 API 调用。请先在本机安全配置密钥，"
             "完成连接测试后再在 config.json 中启用。"
@@ -359,10 +600,17 @@ def analyze_day(
     context = _decision_context(
         existing_analysis,
         rules,
+        len(image_paths),
         calibration_examples,
     )
-    backend = str(config.get("decision_backend", "openai")).strip().lower()
-    if backend in {"qwen", "qwen3.8-max", "qwen3_8_max"}:
+    if backend in local_backends:
+        decision, metadata = _analyze_day_ollama(
+            image_paths,
+            config,
+            prompt,
+            context,
+        )
+    elif backend in {"qwen", "qwen3.8-max", "qwen3_8_max"}:
         decision, metadata = _analyze_day_qwen(
             image_paths,
             config,
@@ -414,6 +662,8 @@ def _validate_decision(
         TreatmentMode.blank,
     }
     if decision.treatment_mode in no_image_modes:
+        if input_count:
+            raise RuntimeError("已有合格照片时不得选择无图片处理方式。")
         if indices or decision.primary_asset_index != 0:
             raise RuntimeError("无图片处理方式不能引用图片素材。")
     else:

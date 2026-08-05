@@ -1,7 +1,11 @@
 {
-  "decision_backend": "qwen",
+  "decision_backend": "local_ollama",
   "decision_mode": "shadow",
   "api_enabled": false,
+  "local_model_enabled": true,
+  "local_ollama_decision_model": "qwen3-vl:4b-instruct",
+  "local_ollama_base_url": "http://127.0.0.1:11434",
+  "local_model_timeout_seconds": 300,
   "qwen_decision_model": "qwen3.8-max",
   "qwen_decision_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
   "openai_decision_model": "",
