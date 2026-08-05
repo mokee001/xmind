@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 
 export const DEFAULT_API_BASE = 'https://api.mokeedesign.cn';
 export const DEFAULT_PROVISION_URL = 'http://192.168.4.1';

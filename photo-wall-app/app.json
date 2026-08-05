@@ -3,6 +3,7 @@
     "name": "手帐照片墙",
     "slug": "photo-wall-app",
     "version": "1.0.0",
+    "scheme": "photowall",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -14,8 +15,6 @@
         "NSPhotoLibraryUsageDescription": "需要读取相册，自动挑选照片生成照片墙并投屏。",
         "NSLocalNetworkUsageDescription": "需要在家庭局域网中发现并连接你的墨水屏。",
         "NSBonjourServices": [
-          "_photowall._tcp",
-          "_http._tcp",
           "_photowall._tcp",
           "_http._tcp"
         ],
@@ -39,7 +38,6 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO"
       ],
-      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
