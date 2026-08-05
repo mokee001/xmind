@@ -19,12 +19,9 @@ import {
 import {
   claimDisplay,
   DEFAULT_API_BASE,
-  DEFAULT_PROVISION_URL,
-  provisionDisplay,
   publishDisplayPhoto,
   publishJulyCalendar,
   readDisplayStatus,
-  readProvisionStatus,
   syncJuly2026Photos,
 } from './src/deviceApi';
 import { loadDeviceSession, saveDeviceSession } from './src/sessionStore';
@@ -96,52 +93,43 @@ function StepCard({ number, title, description, ok, action, actionLabel, childre
   );
 }
 
+function PairingStep({ number, title, children }) {
+  return (
+    <View style={styles.pairingStep}>
+      <View style={styles.pairingNumber}><Text style={styles.pairingNumberText}>{number}</Text></View>
+      <View style={styles.flex}>
+        <Text style={styles.pairingTitle}>{title}</Text>
+        <Text style={styles.pairingDescription}>{children}</Text>
+      </View>
+    </View>
+  );
+}
+
 function DeviceModal({ visible, session, onClose, onConnected }) {
-  const [provisionUrl, setProvisionUrl] = useState(DEFAULT_PROVISION_URL);
-  const [ssid, setSsid] = useState('');
-  const [wifiPassword, setWifiPassword] = useState('');
   const [pairingCode, setPairingCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const wait = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
-
-  const claim = async (code = pairingCode) => {
-    const result = await claimDisplay({ apiBase: DEFAULT_API_BASE, pairingCode: code, name: '客厅照片墙' });
-    await onConnected({ device: result.device, accountToken: result.account_token, apiBase: DEFAULT_API_BASE });
-    setMessage('绑定成功。以后屏幕会自己连接云端。');
-    return result;
-  };
-
-  const inspect = async () => {
-    setBusy(true); setError(''); setMessage('');
-    try {
-      const result = await readProvisionStatus(provisionUrl);
-      setPairingCode(result.pairing_code || '');
-      setMessage(`已找到屏幕 ${result.device_id}，配对码 ${result.pairing_code}`);
-    } catch (e) {
-      setError(`没有找到屏幕：${e.message}`);
-    } finally { setBusy(false); }
-  };
-
-  const configure = async () => {
-    setBusy(true); setError(''); setMessage('正在连接屏幕…');
-    try {
-      const accepted = await provisionDisplay({ provisionUrl, ssid, password: wifiPassword, apiBase: DEFAULT_API_BASE });
-      const code = accepted.pairing_code || pairingCode;
-      setPairingCode(code);
-      let lastError;
-      for (let attempt = 0; attempt < 15; attempt += 1) {
-        await wait(3000);
-        try { await claim(code); lastError = null; break; } catch (e) { lastError = e; }
-      }
-      if (lastError) throw lastError;
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
-  };
 
   const bindOnline = async () => {
     setBusy(true); setError('');
-    try { await claim(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+    try {
+      const result = await claimDisplay({
+        apiBase: DEFAULT_API_BASE,
+        pairingCode,
+        name: '客厅照片墙',
+      });
+      const nextSession = {
+        device: result.device,
+        accountToken: result.account_token,
+        apiBase: DEFAULT_API_BASE,
+      };
+      await onConnected(nextSession);
+      setPairingCode('');
+    } catch (caught) {
+      setError(caught.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -167,24 +155,26 @@ function DeviceModal({ visible, session, onClose, onConnected }) {
               </>
             ) : (
               <>
-                <Text style={styles.help}>第一次连接：先在 iPhone 的 Wi-Fi 设置中连接屏幕发出的 PhotoWall-XXXX 热点，然后回到这里。</Text>
-                <Field label="屏幕配置地址" value={provisionUrl} onChangeText={setProvisionUrl} />
-                <ActionButton secondary onPress={inspect} disabled={busy}>{busy ? '正在查找…' : '查找屏幕'}</ActionButton>
-                {message ? <Text style={styles.successText}>{message}</Text> : null}
-                <Field label="家里 Wi-Fi 名称" value={ssid} onChangeText={setSsid} />
-                <Field label="家里 Wi-Fi 密码" value={wifiPassword} onChangeText={setWifiPassword} secureTextEntry />
-                <Text style={styles.cloudEndpoint}>线上服务：api.mokeedesign.cn</Text>
-                <ActionButton onPress={configure} disabled={busy || !ssid.trim()}>{busy ? '正在连接…' : '发送配置并绑定'}</ActionButton>
-                <View style={styles.divider} />
-                <Text style={styles.sectionLabel}>屏幕已经联网？输入六位配对码</Text>
+                <PairingStep number="1" title="连接屏幕 Wi-Fi">
+                  打开 iPhone“设置”→“Wi-Fi”，连接名称为 PhotoWall-XXXX 的网络。
+                </PairingStep>
+                <PairingStep number="2" title="在自动打开的网页完成配网">
+                  在系统自动打开的 PhotoWall 页面中填写家庭 Wi-Fi。完成后等待约 30 秒，屏幕热点会消失，这是正常的。
+                </PairingStep>
+                <PairingStep number="3" title="回到 App 绑定屏幕">
+                  屏幕已经联网后，输入 PhotoWall 网页显示的六位配对码。
+                </PairingStep>
                 <TextInput
                   value={pairingCode}
                   onChangeText={value => setPairingCode(value.replace(/\D/g, '').slice(0, 6))}
                   keyboardType="number-pad"
+                  maxLength={6}
                   placeholder="例如 072826"
                   style={styles.input}
                 />
-                <ActionButton secondary onPress={bindOnline} disabled={busy || pairingCode.length !== 6}>绑定屏幕</ActionButton>
+                <ActionButton onPress={bindOnline} disabled={busy || pairingCode.length !== 6}>
+                  {busy ? '正在绑定…' : '绑定屏幕'}
+                </ActionButton>
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
               </>
             )}
@@ -193,10 +183,6 @@ function DeviceModal({ visible, session, onClose, onConnected }) {
       </View>
     </Modal>
   );
-}
-
-function Field({ label, ...props }) {
-  return <><Text style={styles.fieldLabel}>{label}</Text><TextInput autoCapitalize="none" style={styles.input} {...props} /></>;
 }
 
 export default function App() {
@@ -507,12 +493,12 @@ const styles = StyleSheet.create({
   close: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.canvas, alignItems: 'center', justifyContent: 'center' },
   closeText: { color: C.muted, fontSize: 24 },
   help: { color: C.muted, fontSize: 13, lineHeight: 21, marginBottom: 8 },
-  fieldLabel: { color: C.muted, fontSize: 11, fontWeight: '800', marginTop: 13, marginBottom: 7 },
   input: { height: 47, borderRadius: 12, borderWidth: 1, borderColor: C.line, color: C.ink, paddingHorizontal: 13, backgroundColor: C.white },
-  cloudEndpoint: { color: C.green, backgroundColor: C.greenSoft, borderRadius: 10, padding: 11, fontSize: 11, fontWeight: '800', marginTop: 14 },
-  divider: { height: 1, backgroundColor: C.line, marginVertical: 22 },
-  sectionLabel: { color: C.ink, fontSize: 13, fontWeight: '800', marginBottom: 8 },
-  successText: { color: C.green, fontSize: 12, lineHeight: 18, marginTop: 10 },
+  pairingStep: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: C.line },
+  pairingNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  pairingNumberText: { color: C.orange, fontSize: 12, fontWeight: '900' },
+  pairingTitle: { color: C.ink, fontSize: 14, fontWeight: '800' },
+  pairingDescription: { color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 4 },
   connectedBox: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.greenSoft, padding: 15, borderRadius: 15, marginBottom: 14 },
   connectedIcon: { color: C.green, fontSize: 24, fontWeight: '900' },
   flex: { flex: 1 },
