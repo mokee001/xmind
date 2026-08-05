@@ -4,6 +4,9 @@
 
 这个目录记录 `calendar_engine/` 的接入边界。
 
+选图层输入契约见 [`selection_contract_v1.md`](selection_contract_v1.md)，本地模型
+安装、运行和可恢复状态见 [`本地小模型运行说明.md`](本地小模型运行说明.md)。
+
 本次分支包含已经验证过的照片导入、Qwen 处理决策、月度艺术指导、插画与抠图资产准备、日历渲染、图文报告和 QA 模块。它们尚未接入现有 FastAPI，且默认关闭，不修改：
 
 - `backend/server.py`
@@ -53,6 +56,20 @@ prepared-run/
 
 选图层继续复用项目原有方法。得到 `selection.json` 后，处理和渲染链路为：
 
+推荐使用已经固化的统一入口：
+
+```bash
+.venv/bin/python scripts/run_local_calendar_workflow.py \
+  --run-dir calendar_runs/july \
+  --resume
+```
+
+它会执行连接检查、逐日决策、整月艺术指导、资产盘点、动态装饰、渲染、QA 和
+图文报告，并写入 `reports/local_workflow_report.json`。若计划引用的抠图或插画
+尚不存在，状态为 `NEEDS_ASSETS`；补齐报告列出的资产后使用同一命令继续。
+
+分步调试命令仍保留：
+
 ```bash
 python3 tools/import_real_user_july.py INPUT_PHOTO_FOLDER calendar_runs/july --year 2026 --month 7
 python3 tools/run_qwen_treatment_batch.py calendar_runs/july
@@ -61,6 +78,10 @@ python3 tools/build_decoration_plan.py --run-dir calendar_runs/july
 python3 -m calendar_engine --run-dir calendar_runs/july
 python3 tools/render_run_reports.py --run-dir calendar_runs/july
 ```
+
+这里的“完整”从 `selection.json` 开始。当前照片导入工具只生成 `manifest.json`
+和代理图；已确认的旧选图方法尚未独立封装为 `selection.json` 生成器，不能跳过
+这个输入契约。详细边界见 [`本地小模型运行说明.md`](本地小模型运行说明.md)。
 
 动态装饰步骤不会调用模型。它读取 `treatment_plan.json` 中已经确认的内容语义，从内置透明贴纸库选择素材并生成 `decoration_plan.json`。默认每个语义类别只选一个代表日期、每月最多装饰 5 个日期格；硬上限仍是每格 2 个视觉贴纸、每月 8 个装饰日期格、所属格遮挡不超过 25%。日期数字、人物和动物面部、重要文字与票据信息不能被遮挡，空白格只允许抽象贴纸。
 

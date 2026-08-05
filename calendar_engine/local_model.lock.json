@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "runtime": "ollama",
+  "model": "qwen3-vl:4b-instruct",
+  "endpoint": "http://127.0.0.1:11434",
+  "required_capabilities": [
+    "vision",
+    "json_schema",
+    "non_thinking_response"
+  ],
+  "distribution": {
+    "weights_bundled_in_git": false,
+    "install_command": "ollama pull qwen3-vl:4b-instruct",
+    "reason": "模型权重由 Ollama 单独下载，Git 只保存可复现的代码、规则、Prompt 和配置。"
+  }
+}

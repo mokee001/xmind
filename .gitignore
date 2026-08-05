@@ -41,6 +41,11 @@ web-build/
 *.pt
 *.onnx
 *.pth
+*.gguf
+*.safetensors
+*.ckpt
+models/
+.ollama/
 
 # --- Python 虚拟环境 ---
 .venv/

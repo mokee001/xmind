@@ -275,6 +275,33 @@ def build_plan(run_dir: Path) -> dict[str, Any]:
 
     art_rules = load_art_direction_rules()
     directives, art_summary = direct_month(selection["days"], decisions, art_rules)
+    metadata_items = [payload.get("metadata", {}) for payload in payloads.values()]
+    backends = sorted(
+        {
+            str(item.get("backend", "")).strip()
+            for item in metadata_items
+            if str(item.get("backend", "")).strip()
+        }
+    )
+    models = sorted(
+        {
+            str(item.get("model", "")).strip()
+            for item in metadata_items
+            if str(item.get("model", "")).strip()
+        }
+    )
+    modes = sorted(
+        {
+            str(item.get("decision_mode", "")).strip()
+            for item in metadata_items
+            if str(item.get("decision_mode", "")).strip()
+        }
+    )
+    backend = backends[0] if len(backends) == 1 else "+".join(backends) or "unknown"
+    local_only = bool(backends) and all(
+        item in {"local_ollama", "ollama", "qwen3_vl_local"}
+        for item in backends
+    )
     days: list[dict[str, Any]] = []
     for selected in selection["days"]:
         day = int(selected["day"])
@@ -303,9 +330,15 @@ def build_plan(run_dir: Path) -> dict[str, Any]:
             "template": "../../calendar_engine/templates/calendar_template_v1",
         },
         "decision": {
-            "backend": "qwen3.8-max_then_gpt_style_art_direction",
-            "api_used": True,
-            "processing": "selected_work_copies_and_text_context_only",
+            "backend": backend,
+            "models": models,
+            "decision_modes": modes,
+            "api_used": not local_only,
+            "processing": (
+                "local_loopback_only"
+                if local_only
+                else "selected_work_copies_and_text_context_only"
+            ),
             "treatment_rules_version": "2.0",
             "monthly_art_direction_rules_version": art_rules["version"],
             "primary_goal": "aesthetic_life_journal",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,7 @@ RESOURCE_ROOT = PROJECT_ROOT / "calendar_engine"
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from calendar_ai.art_direction import direct_day, direct_month, load_art_direction_rules  # noqa: E402
+from tools.build_treatment_plan_from_qwen import build_plan  # noqa: E402
 
 
 class MonthlyArtDirectionTest(unittest.TestCase):
@@ -79,6 +81,52 @@ class MonthlyArtDirectionTest(unittest.TestCase):
             decisions[day] = {"treatment_mode": item["treatment"], "content_type": item["semantic"]}
         _directives, summary = direct_month(selection, decisions, self.rules)
         self.assertEqual(summary["consecutive_rectangular_runs_over_limit"], [])
+
+    def test_local_decision_metadata_is_preserved_in_treatment_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run_dir = Path(temporary)
+            selection = {
+                "days": [
+                    {
+                        "day": 3,
+                        "sources": ["proxies/2026-07-03__001.jpg"],
+                        "reason": "手写卡片记录",
+                        "analysis_context": {"content_type": "纸质手写卡片"},
+                    }
+                ]
+            }
+            (run_dir / "selection.json").write_text(
+                json.dumps(selection, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            decision_dir = run_dir / "api_decisions"
+            decision_dir.mkdir()
+            (decision_dir / "day03.json").write_text(
+                json.dumps(
+                    {
+                        "metadata": {
+                            "backend": "local_ollama",
+                            "model": "qwen3-vl:4b-instruct",
+                            "decision_mode": "shadow",
+                        },
+                        "decision": {
+                            "treatment_mode": "non_cell_ratio_image",
+                            "rotation_degrees": 2,
+                            "subject_bbox": [0.1, 0.1, 0.9, 0.9],
+                            "reasons": ["保留卡片边缘"],
+                        },
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            plan = build_plan(run_dir)
+
+        self.assertEqual(plan["decision"]["backend"], "local_ollama")
+        self.assertEqual(plan["decision"]["models"], ["qwen3-vl:4b-instruct"])
+        self.assertFalse(plan["decision"]["api_used"])
+        self.assertEqual(plan["decision"]["processing"], "local_loopback_only")
 
 
 if __name__ == "__main__":

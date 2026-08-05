@@ -2,7 +2,9 @@
 
 > 2026 年 7 月 AI 手帐日历独立引擎见
 > [docs/calendar/README.md](docs/calendar/README.md)。分支已包含可选的
-> Qwen 图片处理决策与线描插画模块，但默认关闭，不修改现有照片墙 API。
+> 本地 Qwen3-VL 图片处理决策、规则化布局、动态贴纸、渲染和 QA 模块，
+> 不修改现有照片墙 API。首次使用可双击 `安装本地模型.command`；已准备好
+> `selection.json` 后可双击 `运行本地日历工作流.command`。
 
 > 👥 **团队协作看这里** → [CONTRIBUTING.md](CONTRIBUTING.md)（分工、目录归属、每周 Git 流程、踩坑清单）
 > 🔌 **前后端对接看这里** → [API.md](API.md)（接口路径、入参出参、字段归属）
