@@ -9,6 +9,13 @@ photos/
 output/
 backend/data/
 calendar_runs/
+runs/
+outputs/
+release/
+originals/
+proxies/
+contact_sheets/
+api_decisions/
 *.jpg
 *.jpeg
 *.heic

@@ -40,8 +40,22 @@ class QwenDecisionProviderTest(unittest.TestCase):
         cases = _load_calibration_cases(PROJECT_ROOT)
         selected = _select_calibration_examples(cases, {}, image_count=1)
         modes = {case["expected"]["treatment_mode"] for case in selected}
-        self.assertIn("proportional_full_image", modes)
-        self.assertIn("non_cell_ratio_image", modes)
+        self.assertEqual(
+            modes,
+            {
+                "irregular_cutout",
+                "proportional_full_image",
+                "circle_image",
+                "non_cell_ratio_image",
+                "oval_image_with_cutout",
+            },
+        )
+
+    def test_photo_calibration_warns_against_animal_circle_shortcut(self) -> None:
+        cases = _load_calibration_cases(PROJECT_ROOT)
+        selected = _select_calibration_examples(cases, {}, image_count=1)
+        reasons = " ".join(case["reason"] for case in selected)
+        self.assertIn("不能因为宠物类别默认使用圆形", reasons)
 
     def test_selects_blank_and_text_cases_for_no_image_input(self) -> None:
         cases = _load_calibration_cases(PROJECT_ROOT)

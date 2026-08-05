@@ -730,6 +730,25 @@ def validate(
     if len(blank_days) < 1:
         warnings.append("整月没有留白日期，可能过于拥挤")
 
+    art_direction_summary = plan.get("decision", {}).get(
+        "art_direction_summary"
+    )
+    if art_direction_summary is not None:
+        long_rectangular_runs = art_direction_summary.get(
+            "consecutive_rectangular_runs_over_limit",
+            [],
+        )
+        if long_rectangular_runs:
+            failures.append(
+                "存在连续三个以上完整矩形照片："
+                + "、".join(
+                    "-".join(str(day) for day in run)
+                    for run in long_rectangular_runs
+                )
+            )
+        if art_direction_summary.get("status") != "PASS":
+            failures.append("全月艺术指导复核未通过")
+
     checks = {
         "date_ownership": "PASS",
         "one_to_three_sources_per_day": "PASS",
@@ -742,6 +761,8 @@ def validate(
         "illustration_assets_complete": "PASS",
         "illustration_closeup_framing": "PASS",
         "no_consecutive_blank_days": "PASS",
+        "monthly_art_direction_review": "PASS",
+        "no_three_consecutive_rectangular_cells": "PASS",
         "five_layer_order": "PASS",
         "static_decoration_from_template": "PASS",
         "dynamic_sticker_assets_complete": "PASS",
@@ -763,6 +784,7 @@ def validate(
         "selected_day_count": len(selected_days),
         "blank_days": blank_days,
         "consecutive_blank_pairs": consecutive_blank_pairs,
+        "art_direction_summary": art_direction_summary,
         "rendered_placement_count": len(render_plan["items"]),
         "dynamic_decoration_item_count": len(
             render_plan.get("decoration_items", [])
@@ -777,10 +799,14 @@ def validate(
 
 def write_processing_report(plan: dict[str, Any]) -> None:
     counts: dict[str, int] = {}
+    decision = plan.get("decision", {})
+    backend = decision.get("backend", "unknown")
+    api_used = "已调用外部 API" if decision.get("api_used") else "未调用外部 API"
+    maximum_sources = max((len(item["sources"]) for item in plan["days"]), default=0)
     lines = [
         "# 2026 年 7 月图片处理决策报告",
         "",
-        "本报告由本次会话中的 GPT Vision 依据交付规则逐日判断；未调用外部 API。",
+        f"本报告由 `{backend}` 依据交付规则逐日判断；{api_used}。",
         "",
         "| 日期 | 处理方式 | 图片数 | 判断理由 |",
         "|---|---|---:|---|",
@@ -820,7 +846,7 @@ def write_processing_report(plan: dict[str, Any]) -> None:
             "",
             "## 固定执行约束",
             "",
-            "- 每天最多 3 张素材，本月实际最多为 2 张。",
+            f"- 每天最多 3 张素材，本月实际最多为 {maximum_sources} 张。",
             "- 所有旋转角度绝对值不超过 10°。",
             "- 所有透明抠图均不加白色描边、不加阴影。",
             "- 静态装饰完全按模板；动态贴纸每格最多 1–2 个。",

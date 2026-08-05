@@ -124,7 +124,13 @@ def _select_calibration_examples(
     layout_balance_needed = bool(analysis.get("layout_balance_needed"))
 
     if image_count:
-        selected_ids = ["it_025", "it_026"]
+        selected_ids = [
+            "it_031",
+            "it_032",
+            "it_033",
+            "it_034",
+            "it_035",
+        ]
         if text_candidates:
             selected_ids.append("it_027")
     else:

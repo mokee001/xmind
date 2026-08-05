@@ -1,6 +1,6 @@
 {
-  "version": "1.6",
-  "source": "calendar_template_v1/rules/、纯文字/插画案例及静态/动态装饰层规范",
+  "version": "2.0",
+  "source": "calendar_template_v1/rules/、纯文字/插画案例、静态/动态装饰层规范及 GPT Vision 2026 年 7 月确认正例",
   "units": "figma_design_units",
   "global_rules": {
     "preferred_images_per_day": 1,
@@ -16,6 +16,25 @@
     "cutout_shadow_allowed": false,
     "maximum_dynamic_visual_stickers_per_cell": 2,
     "maximum_dynamic_decorated_cells_per_month": 8
+  },
+  "monthly_art_direction_policy": {
+    "enabled": true,
+    "runs_after_daily_ai_decision": true,
+    "runs_before_asset_execution": true,
+    "rules_file": "monthly_art_direction_rules_v1.json",
+    "calibration_file": "../training/monthly_layout/gpt_july_reference_v1.json",
+    "daily_ai_result_is_candidate_not_final": true,
+    "can_override_treatment_mode": true,
+    "can_keep_a_day_blank": true,
+    "cannot_change_selected_source": true,
+    "cannot_change_date_ownership": true,
+    "hard_checks": [
+      "同一行不得连续出现三个完整矩形照片",
+      "留白日期不得连续出现",
+      "大抠图的主体中心必须留在所属日期格",
+      "不得使用动态贴纸弥补连续方图造成的僵硬版式",
+      "抠图不得添加白色描边和阴影"
+    ]
   },
   "decoration_layer_policy": {
     "layer_order": [
@@ -358,7 +377,14 @@
         "电影海报",
         "游戏海报",
         "专辑封面",
-        "需要保留原始窄幅比例的画面"
+        "需要保留原始窄幅比例的画面",
+        "纵向或横向构图本身具有明显设计感",
+        "主体与书架、植物、建筑或室内陈设共同构成有生活意义的环境叙事"
+      ],
+      "do_not_use_when": [
+        "仅因为照片是人物或宠物就保留特殊比例",
+        "背景杂乱且不承载生活信息",
+        "主体在保持原比例后会小到无法辨认"
       ]
     },
     {
@@ -390,6 +416,13 @@
         "动物",
         "主体适合集中在圆形区域",
         "局部画面特别出彩"
+      ],
+      "do_not_use_when": [
+        "仅因为主体是动物就默认使用圆形",
+        "人物与宠物、宠物与宠物之间的动作或关系是画面重点",
+        "书架、植物、床品、建筑或活动环境属于照片意义的一部分",
+        "圆形会切掉耳朵、手、前爪、道具或关键动作",
+        "照片原始纵横比例和完整构图比头像特写更有辨识度"
       ]
     },
     {
@@ -406,7 +439,14 @@
       "use_when": [
         "当天有主要活动和次要物料",
         "购物物品为主、票据为辅",
-        "主图适合椭圆裁切且辅助素材适合抠图"
+        "主图适合椭圆裁切且辅助素材适合抠图",
+        "单张主体集中、背景氛围值得保留，但边缘杂物需要柔化",
+        "椭圆比圆形更适合保留卧姿、餐盘、床品或横向主体"
+      ],
+      "do_not_use_when": [
+        "完整环境和边缘信息都不可裁切",
+        "主体轮廓抠图后比椭圆裁切更有表现力",
+        "椭圆会破坏多人或多主体之间的关系"
       ]
     },
     {
@@ -444,8 +484,15 @@
         "卡片",
         "手办",
         "手拿物品展示",
+        "人物与宠物互动且双方动作需要作为一个透明主体保留",
+        "宠物与手、玩具或道具的关系比背景更重要",
         "桌上多个食物无法分别抠出但可整体抠图",
         "多个物品堆叠且能整体抠图"
+      ],
+      "do_not_use_when": [
+        "毛发、透明物或复杂边缘无法可靠分割",
+        "背景承载地点、活动或亲密氛围",
+        "抠图会切断主体之间的重要关系"
       ]
     },
     {

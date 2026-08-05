@@ -4,7 +4,7 @@
 
 这个目录记录 `calendar_engine/` 的接入边界。
 
-本次分支提交已经验证过的日历渲染与 QA 模块，并补充独立的 Qwen 决策和插画适配器。它们尚未接入现有 FastAPI，且默认关闭，不修改：
+本次分支包含已经验证过的照片导入、Qwen 处理决策、月度艺术指导、插画与抠图资产准备、日历渲染、图文报告和 QA 模块。它们尚未接入现有 FastAPI，且默认关闭，不修改：
 
 - `backend/server.py`
 - `engine.py`
@@ -25,6 +25,8 @@
 - 可选使用 `qwen3.8-max` 为已入选素材生成结构化处理决策。
 - 决策请求读取同一份规则、校准案例和 Pydantic Schema，不合规结果会被本地拦截并纠正。
 - 可选使用 `qwen-image-3.0-pro` 生成空白格线描插画；普通照片处理与渲染不调用生成模型。
+- 使用月度艺术指导约束整月矩形、有机轮廓和安静格的节奏，单日模型不能越过日期归属和产品硬规则。
+- 提供本地素材导入、批量决策、处理计划、透明线稿、抠图和图文报告工具。
 
 ## 不包含的内容
 
@@ -43,7 +45,32 @@ prepared-run/
   assets/                    # 插画、抠图和动态贴纸
 ```
 
-这些运行数据应放在 Git 忽略的 `calendar_runs/`，不要提交真实相册。
+这些运行数据应放在 Git 忽略的 `calendar_runs/` 或 `runs/`，不要提交真实相册。
+
+## 完整本地工作流
+
+选图层继续复用项目原有方法。得到 `selection.json` 后，处理和渲染链路为：
+
+```bash
+python3 tools/import_real_user_july.py INPUT_PHOTO_FOLDER calendar_runs/july --year 2026 --month 7
+python3 tools/run_qwen_treatment_batch.py calendar_runs/july
+python3 tools/build_treatment_plan_from_qwen.py --run-dir calendar_runs/july
+python3 -m calendar_engine --run-dir calendar_runs/july
+python3 tools/render_run_reports.py --run-dir calendar_runs/july
+```
+
+需要异形抠图时，可在 macOS 编译并调用：
+
+```bash
+swiftc tools/macos_foreground_cutout.swift -o /tmp/ai_calendar_foreground_cutout
+/tmp/ai_calendar_foreground_cutout INPUT_IMAGE OUTPUT_PNG
+```
+
+Qwen 插画生成后，用本地工具转换透明背景：
+
+```bash
+python3 tools/line_art_to_transparent.py INPUT_PNG OUTPUT_PNG
+```
 
 ## 命令行调用
 
@@ -117,8 +144,7 @@ docs/calendar/Qwen_API迁移与规则校准说明_v1.md
 ## 验证
 
 ```bash
-python3 -m unittest tests/test_calendar_engine.py -v
-python3 -m unittest tests/test_qwen_providers.py -v
+python3 -m unittest discover -s tests -v
 ```
 
 测试会创建临时模板和临时计划，不读取真实用户照片。
