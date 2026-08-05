@@ -154,13 +154,24 @@ void startProvisioning() {
   });
   provisionServer.on("/provision", HTTP_POST, []() {
     JsonDocument document;
-    const DeserializationError error = deserializeJson(document, provisionServer.arg("plain"));
-    const String ssid = document["ssid"] | "";
-    const String password = document["password"] | "";
-    const String requestedApi = normalizeApiBase(String(document["api_base"] | ""));
+    const bool formSubmission = provisionServer.hasArg("ssid");
+    const DeserializationError error = formSubmission
+      ? DeserializationError::Ok
+      : deserializeJson(document, provisionServer.arg("plain"));
+    const String ssid = formSubmission ? provisionServer.arg("ssid") : String(document["ssid"] | "");
+    const String password = formSubmission ? provisionServer.arg("password") : String(document["password"] | "");
+    const String requestedApi = normalizeApiBase(formSubmission
+      ? provisionServer.arg("api_base")
+      : String(document["api_base"] | ""));
     if (error || ssid.isEmpty() || requestedApi.isEmpty()) {
       sendProvisionCors();
-      provisionServer.send(400, "application/json", "{\"error\":\"ssid and api_base are required\"}");
+      if (formSubmission) {
+        provisionServer.send(400, "text/html; charset=utf-8",
+          "<!doctype html><meta name=viewport content='width=device-width'><h2>Configuration failed</h2>"
+          "<p>Please enter your home Wi-Fi name and try again.</p><p><a href='/'>Back</a></p>");
+      } else {
+        provisionServer.send(400, "application/json", "{\"error\":\"ssid and api_base are required\"}");
+      }
       return;
     }
     prefs.begin("photowall", false);
@@ -171,17 +182,30 @@ void startProvisioning() {
     prefs.remove("revision");
     prefs.end();
     sendProvisionCors();
-    provisionServer.send(202, "application/json",
-      "{\"accepted\":true,\"device_id\":\"" + jsonEscape(deviceId) +
-      "\",\"pairing_code\":\"" + pairingCode + "\"}");
+    if (formSubmission) {
+      provisionServer.send(202, "text/html; charset=utf-8",
+        "<!doctype html><meta name=viewport content='width=device-width'><h2>Connecting PhotoWall</h2>"
+        "<p>The display is joining your home Wi-Fi now. This page will close shortly.</p>"
+        "<p>Then open the PhotoWall app and enter pairing code <b>" + pairingCode + "</b>.</p>");
+    } else {
+      provisionServer.send(202, "application/json",
+        "{\"accepted\":true,\"device_id\":\"" + jsonEscape(deviceId) +
+        "\",\"pairing_code\":\"" + pairingCode + "\"}");
+    }
     restartRequested = true;
   });
   provisionServer.onNotFound([]() {
     sendProvisionCors();
     provisionServer.send(200, "text/html; charset=utf-8",
-      "<!doctype html><meta name=viewport content='width=device-width'><h2>PhotoWall E6</h2>"
-      "<p>Open the PhotoWall app to configure this display.</p><p>Pairing code: <b>" +
-      pairingCode + "</b></p>");
+      "<!doctype html><html><meta name=viewport content='width=device-width,initial-scale=1'>"
+      "<title>PhotoWall setup</title><style>body{font:17px -apple-system,system-ui,sans-serif;max-width:480px;margin:36px auto;padding:0 22px;color:#18211b}"
+      "input{box-sizing:border-box;width:100%;padding:12px;margin:6px 0 18px;border:1px solid #b9c4bb;border-radius:9px;font-size:16px}"
+      "button{width:100%;padding:14px;border:0;border-radius:9px;background:#176b45;color:#fff;font-size:17px;font-weight:600}</style>"
+      "<h1>PhotoWall E6</h1><p>Enter your home Wi-Fi details. The display will connect to the cloud automatically.</p>"
+      "<form action='/provision' method='post'><label>Home Wi-Fi name</label><input name='ssid' required autocomplete='username'>"
+      "<label>Wi-Fi password</label><input name='password' type='password' autocomplete='current-password'>"
+      "<input name='api_base' type='hidden' value='https://api.mokeedesign.cn'><button type='submit'>Connect display</button></form>"
+      "<p>Pairing code: <b>" + pairingCode + "</b></p><p>After connecting, return to the PhotoWall app and enter this code to bind the display.</p></html>");
   });
   provisionServer.begin();
   Serial.printf("Provisioning AP: %s\nPassword: %s\nPairing code: %s\n", apName.c_str(),
