@@ -4,6 +4,7 @@ import {
   StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
 import { albums as seedAlbums, candidates as seedCandidates, devices, initialMembers, people as seedPeople } from './src/mockData';
+import { claimDisplay } from './src/deviceConnection';
 import { colors, shadow } from './src/theme';
 
 const API = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://HJFG3FGM46.local:8000';
@@ -98,12 +99,12 @@ function Settings({ members, setMembers, show }) {
 }
 
 function Dialog({ type, close, connect, invite, published }) {
-  const [name,setName]=useState(''),[role,setRole]=useState('contributor'),[step,setStep]=useState('confirm');
+  const [name,setName]=useState(''),[role,setRole]=useState('contributor'),[step,setStep]=useState('confirm'),[pairingCode,setPairingCode]=useState(''),[connecting,setConnecting]=useState(false),[connectionError,setConnectionError]=useState('');
   const copy={history:['展示历史','正式版本会保存每次实际发布的不可变版本，可重新展示或复制为新草稿。'],permission:['系统照片权限','真机版会调用 iOS/Android 系统相册选择器，并只同步明确选择的相册。'],saved:['草稿已保存','可以稍后继续编辑；保存草稿不会改变墨水屏当前画面。'],profile:['家庭资料','正式版本可以修改家庭名称、头像和成员加入规则。'],generic:['功能预览','该入口已完成信息架构，下一阶段接入真实账号和后端配置。']};
   const dismiss=()=>{setStep('confirm');close();};
   const publish=()=>{setStep('uploading');setTimeout(()=>{setStep('done');published();},1400)};
   return <Modal visible={Boolean(type)} transparent animationType="fade" onRequestClose={dismiss}><Pressable style={s.backdrop} onPress={dismiss}><Pressable style={s.modal} onPress={e=>e.stopPropagation()}><TouchableOpacity style={s.close} onPress={dismiss}><Text style={s.closeText}>×</Text></TouchableOpacity>
-    {type==='device'?<><Text style={s.eyebrow}>设备连接</Text><Text style={s.modalTitle}>发现一台照片墙</Text><View style={s.found}><DeviceArt small/><View style={s.flex}><Text style={s.itemTitle}>PhotoWall E6</Text><Text style={s.meta}>Waveshare 13.3” · 局域网可用</Text><Text style={s.deviceCode}>配对码 · 072 826</Text></View></View><Text style={s.modalBody}>确认设备屏幕显示相同配对码后完成绑定。开发模式仍可手动填写 IP。</Text><Button onPress={()=>{connect();dismiss()}}>确认连接</Button></>:
+    {type==='device'?<><Text style={s.eyebrow}>设备连接</Text><Text style={s.modalTitle}>绑定 PhotoWall 墨水屏</Text><Text style={s.modalBody}>1. 在 iPhone Wi-Fi 中连接 PhotoWall-XXXX。2. 在自动打开的网页填写家庭 Wi-Fi。3. 回到这里输入网页显示的六位配对码。</Text><View style={s.found}><DeviceArt small/><View style={s.flex}><Text style={s.itemTitle}>PhotoWall E6</Text><Text style={s.meta}>屏幕联网后将主动连接云端。</Text></View></View><Text style={s.controlLabel}>六位配对码</Text><TextInput value={pairingCode} onChangeText={value=>setPairingCode(value.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" maxLength={6} placeholder="例如 072826" style={s.input}/>{connectionError?<Text style={{color:colors.danger,fontSize:11,marginTop:10}}>{connectionError}</Text>:null}<Button disabled={connecting||pairingCode.length!==6} onPress={async()=>{setConnecting(true);setConnectionError('');try{await connect(pairingCode);setPairingCode('');dismiss()}catch(error){setConnectionError(error.message)}finally{setConnecting(false)}}}>{connecting?'正在绑定…':'绑定屏幕'}</Button></>:
     type==='invite'?<><Text style={s.eyebrow}>家庭成员</Text><Text style={s.modalTitle}>邀请新成员</Text><Text style={s.controlLabel}>成员姓名</Text><TextInput value={name} onChangeText={setName} placeholder="例如：爸爸" style={s.input}/><Text style={s.controlLabel}>角色</Text><View style={s.roleRow}>{[['admin','管理员'],['contributor','投稿者'],['viewer','仅查看']].map(([id,label])=><TouchableOpacity key={id} onPress={()=>setRole(id)} style={[s.role,role===id&&s.roleOn]}><Text style={[s.roleText,role===id&&{color:colors.terracotta}]}>{label}</Text></TouchableOpacity>)}</View><Button disabled={!name.trim()} onPress={()=>{invite(name.trim(),role);setName('');dismiss()}}>生成邀请</Button></>:
     type==='publish'?<><Text style={s.eyebrow}>发布确认</Text><Text style={s.modalTitle}>{step==='done'?'画面已发布':step==='uploading'?'正在发送到墨水屏':'要更新客厅照片墙吗？'}</Text>{step==='confirm'?<><Text style={s.modalBody}>将使用 5 张已审核照片。真实设备刷新约需 1–3 分钟，期间闪烁属于正常现象。</Text><View style={s.publishSummary}><Text style={s.meta}>目标设备</Text><Text style={s.strong}>客厅照片墙 · 在线</Text></View><Button onPress={publish}>开始发布</Button></>:step==='uploading'?<View style={s.progressState}><View style={s.spinner}><Text style={s.spinnerText}>↻</Text></View><Text style={s.modalBody}>正在生成六色画面并建立设备连接…</Text></View>:<><View style={s.success}><Text style={s.successText}>✓</Text></View><Button onPress={dismiss}>完成</Button></>}</>:
     <><Text style={s.eyebrow}>产品预览</Text><Text style={s.modalTitle}>{copy[type]?.[0]||copy.generic[0]}</Text><Text style={s.modalBody}>{copy[type]?.[1]||copy.generic[1]}</Text><Button onPress={dismiss}>知道了</Button></>}
@@ -116,15 +117,17 @@ function Nav({ item, active, onPress, wide }) {
 
 export default function App() {
   const {width}=useWindowDimensions(),wide=width>=900;
-  const [tab,setTab]=useState('home'),[connected,setConnected]=useState(true),[albums,setAlbums]=useState(seedAlbums),[people,setPeople]=useState(seedPeople),[candidates,setCandidates]=useState(seedCandidates),[members,setMembers]=useState(initialMembers),[dialog,setDialog]=useState(null),[toast,setToast]=useState('');
+  const [tab,setTab]=useState('home'),[session,setSession]=useState(null),[albums,setAlbums]=useState(seedAlbums),[people,setPeople]=useState(seedPeople),[candidates,setCandidates]=useState(seedCandidates),[members,setMembers]=useState(initialMembers),[dialog,setDialog]=useState(null),[toast,setToast]=useState('');
+  const connected=Boolean(session?.device?.device_id);
   const title=useMemo(()=>TABS.find(x=>x.id===tab)?.label,[tab]);
   const notify=text=>{setToast(text);setTimeout(()=>setToast(''),2300)};
   const invite=(name,role)=>{const roleName={admin:'管理员',contributor:'投稿者',viewer:'仅查看'}[role];setMembers(current=>[...current,{id:`m${Date.now()}`,name,detail:`${roleName} · 等待加入`,role,initials:name[0],color:colors.terracotta}]);notify(`已生成给“${name}”的邀请`)};
   const screens={home:<Home connected={connected} setTab={setTab} show={setDialog}/>,albums:<Albums albums={albums} setAlbums={setAlbums} show={setDialog}/>,people:<People people={people} setPeople={setPeople}/>,compose:<Compose candidates={candidates} setCandidates={setCandidates} show={setDialog}/>,settings:<Settings members={members} setMembers={setMembers} show={setDialog}/>};
+  const connect=async pairingCode=>{const result=await claimDisplay(pairingCode);setSession({device:result.device,accountToken:result.account_token});notify(`${result.device?.name||'客厅照片墙'}已连接`)};
   return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content"/><View style={[s.app,wide&&s.appWide]}>
     {wide?<View style={s.sidebar}><View style={s.brand}><Text style={s.brandText}>P</Text></View><View style={s.sideTabs}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)} wide/>)}</View><View style={s.sideAccount}><View style={s.miniAvatar}><Text style={s.miniText}>WH</Text></View><View><Text style={s.accountName}>王欢的家庭</Text><Text style={s.meta}>所有者</Text></View></View></View>:null}
     <View style={s.main}><View style={s.topbar}><View><Text style={wide?s.topTitle:s.mobileBrand}>{wide?title:'PhotoWall'}</Text>{!wide?<Text style={s.meta}>{title}</Text>:null}</View><View style={s.topActions}><View style={s.online}/><TouchableOpacity style={s.avatarButton} onPress={()=>setTab('settings')}><Text style={s.avatarText}>WH</Text></TouchableOpacity></View></View><ScrollView style={s.scroll} contentContainerStyle={[s.content,!wide&&s.contentMobile]} showsVerticalScrollIndicator={false}>{screens[tab]}</ScrollView>{!wide?<View style={s.bottom}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)}/>)}</View>:null}</View>
-  </View>{toast?<View style={s.toast}><Text style={s.toastText}>✓ {toast}</Text></View>:null}<Dialog type={dialog} close={()=>setDialog(null)} connect={()=>{setConnected(true);notify('客厅照片墙已连接')}} invite={invite} published={()=>notify('发布任务已创建')}/></SafeAreaView>;
+  </View>{toast?<View style={s.toast}><Text style={s.toastText}>✓ {toast}</Text></View>:null}<Dialog type={dialog} close={()=>setDialog(null)} connect={connect} invite={invite} published={()=>notify('发布任务已创建')}/></SafeAreaView>;
 }
 
 const serif=Platform.OS==='ios'?'Georgia':'serif';
