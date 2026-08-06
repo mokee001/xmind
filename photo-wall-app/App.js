@@ -32,6 +32,14 @@ const C = {
   orangeSoft: '#F4E1D8', red: '#A84D45', redSoft: '#F4DFDC', white: '#FFFFFF',
 };
 
+const TABS = [
+  { id: 'home', label: '首页', icon: '⌂' },
+  { id: 'albums', label: '相册', icon: '▧' },
+  { id: 'compose', label: '创作', icon: '＋' },
+  { id: 'people', label: '人物', icon: '◎' },
+  { id: 'settings', label: '设置', icon: '☷' },
+];
+
 function deliveryStatus(device) {
   if (!device) return null;
   const state = String(device.state || '').toLowerCase();
@@ -70,6 +78,37 @@ function StatusBadge({ ok, children }) {
   return (
     <View style={[styles.badge, { backgroundColor: ok ? C.greenSoft : C.redSoft }]}>
       <Text style={[styles.badgeText, { color: ok ? C.green : C.red }]}>{children}</Text>
+    </View>
+  );
+}
+
+function SectionHeading({ eyebrow, title, description }) {
+  return (
+    <View style={styles.sectionHeading}>
+      {eyebrow ? <Text style={styles.sectionEyebrow}>{eyebrow}</Text> : null}
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {description ? <Text style={styles.sectionDescription}>{description}</Text> : null}
+    </View>
+  );
+}
+
+function BottomNavigation({ activeTab, onChange }) {
+  return (
+    <View style={styles.bottomNavigation}>
+      {TABS.map(tab => {
+        const active = tab.id === activeTab;
+        return (
+          <TouchableOpacity
+            key={tab.id}
+            activeOpacity={0.8}
+            onPress={() => onChange(tab.id)}
+            style={[styles.navItem, active && styles.navItemActive]}
+          >
+            <Text style={[styles.navIcon, active && styles.navTextActive]}>{tab.icon}</Text>
+            <Text style={[styles.navLabel, active && styles.navTextActive]}>{tab.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -186,8 +225,10 @@ function DeviceModal({ visible, session, onClose, onConnected }) {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('home');
   const [session, setSession] = useState(null);
   const [permission, setPermission] = useState(null);
+  const [photoCount, setPhotoCount] = useState(null);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [deviceModal, setDeviceModal] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -205,9 +246,22 @@ export default function App() {
     return '已允许访问照片。';
   }, [permission]);
 
+  const refreshPhotoCount = async status => {
+    if (status !== 'granted') {
+      setPhotoCount(null);
+      return;
+    }
+    const result = await MediaLibrary.getAssetsAsync({
+      first: 1,
+      mediaType: [MediaLibrary.MediaType.photo],
+    });
+    setPhotoCount(result.totalCount);
+  };
+
   const refreshPermission = async () => {
     const result = await MediaLibrary.getPermissionsAsync(false, ['photo']);
     setPermission(result);
+    await refreshPhotoCount(result.status);
     return result;
   };
 
@@ -222,6 +276,7 @@ export default function App() {
       }
       const result = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
       setPermission(result);
+      await refreshPhotoCount(result.status);
       if (result.status !== 'granted') setError('没有获得照片权限。请点“允许访问照片”，然后在系统设置中开启。');
       return result.status === 'granted';
     } catch (e) {
@@ -284,7 +339,10 @@ export default function App() {
     if (!allowed) return;
     setError(''); setNotice('');
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
-    if (!result.canceled) setSelectedPhoto(result.assets[0]);
+    if (!result.canceled) {
+      setSelectedPhoto(result.assets[0]);
+      setActiveTab('compose');
+    }
     await refreshPermission();
   };
 
@@ -362,85 +420,217 @@ export default function App() {
   const onConnected = async next => {
     setSession(next);
     await saveDeviceSession(next);
+    setActiveTab('home');
   };
+
+  const operationCard = (
+    <View style={styles.statusCard}>
+      <View style={styles.statusHeader}>
+        <View style={styles.flex}>
+          <Text style={styles.statusLabel}>真实发布状态</Text>
+          <Text style={styles.statusTitle}>{operation.message}</Text>
+        </View>
+        <StatusBadge ok={operation.state === 'done'}>
+          {{
+            idle: '待发布', scanning: '读取中', uploading: '上传中', generating: '生成中',
+            queued: '已排队', downloading: '下载中', displaying: '刷新中', done: '已完成', failed: '失败',
+          }[operation.state] || operation.state}
+        </StatusBadge>
+      </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, operation.progress || 0))}%` }]} />
+      </View>
+      {operation.state === 'failed' && lastAction ? <ActionButton secondary onPress={retry}>重试上一次操作</ActionButton> : null}
+    </View>
+  );
+
+  const screenTitle = TABS.find(tab => tab.id === activeTab)?.label || '首页';
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
-      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-        <Text style={styles.brand}>照片墙</Text>
-        <Text style={styles.title}>三步把照片放到屏幕</Text>
-        <Text style={styles.subtitle}>不需要 Expo，也不用理解复杂设置。按顺序完成下面三步即可。</Text>
-
-        <StepCard
-          number="1"
-          title="允许访问照片"
-          description={permissionDescription}
-          ok={photoAllowed}
-          action={photoAllowed ? () => Linking.openSettings() : requestPhotoPermission}
-          actionLabel={photoAllowed ? '管理照片权限' : '允许访问照片'}
-        />
-
-        <StepCard
-          number="2"
-          title="连接墨水屏"
-          description={connected ? `${session.device.name || '照片墙'} · ${session.device.state || '已绑定'}` : '只需首次配置一次，之后屏幕会自己联网。'}
-          ok={connected}
-          action={() => setDeviceModal(true)}
-          actionLabel={connected ? '查看设备' : '开始连接'}
-        />
-
-        <StepCard
-          number="3"
-          title="选择照片并上屏"
-          description={selectedPhoto ? '照片已选好，可以发送到墨水屏。' : '从 iPhone 相册选择一张照片。'}
-          ok={Boolean(selectedPhoto)}
-          action={choosePhoto}
-          actionLabel={selectedPhoto ? '重新选择照片' : '选择照片'}
-        >
-          {selectedPhoto ? <Image source={{ uri: selectedPhoto.uri }} style={styles.preview} /> : null}
-          {selectedPhoto ? (
-            <ActionButton disabled={!connected || publishing} onPress={publish}>
-              {publishing ? '正在发送…' : connected ? '发送到墨水屏' : '请先连接墨水屏'}
-            </ActionButton>
-          ) : null}
-        </StepCard>
-
-        <StepCard
-          number="4"
-          title="一键发布 2026 年 7 月日历"
-          description="读取已授权范围内拍摄于 2026 年 7 月的照片；选图、去重、日历生成和 PWE6 转码都由现有云端完成。"
-          ok={operation.state === 'done' && lastAction === 'calendar'}
-        >
-          <ActionButton disabled={!photoAllowed || !connected || publishing} onPress={publishCalendar}>
-            {publishing && lastAction === 'calendar' ? '正在同步并发布…' : connected ? '一键同步并发布七月日历' : '请先连接墨水屏'}
-          </ActionButton>
-        </StepCard>
-
-        <View style={styles.statusCard}>
-          <View style={styles.statusHeader}>
-            <View>
-              <Text style={styles.statusLabel}>真实发布状态</Text>
-              <Text style={styles.statusTitle}>{operation.message}</Text>
-            </View>
-            <StatusBadge ok={operation.state === 'done'}>
-              {{
-                idle: '待发布', scanning: '读取中', uploading: '上传中', generating: '生成中',
-                queued: '已排队', downloading: '下载中', displaying: '刷新中', done: '已完成', failed: '失败',
-              }[operation.state] || operation.state}
-            </StatusBadge>
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.max(0, Math.min(100, operation.progress || 0))}%` }]} />
-          </View>
-          {operation.state === 'failed' && lastAction ? <ActionButton secondary onPress={retry}>重试上一次操作</ActionButton> : null}
+      <View style={styles.topBar}>
+        <View>
+          <Text style={styles.brand}>照片墙</Text>
+          <Text style={styles.topBarTitle}>{screenTitle}</Text>
         </View>
+        <View style={[styles.onlineDot, !connected && styles.offlineDot]} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
+        {activeTab === 'home' ? (
+          <>
+            <SectionHeading
+              eyebrow="家庭墨水屏"
+              title="把值得记住的时刻，留在每天都能看见的地方"
+              description="相册、设备和发布状态都来自真实系统与线上服务。"
+            />
+            <View style={styles.heroCard}>
+              <View style={styles.heroArt}>
+                <View style={styles.heroSun} />
+                <View style={styles.heroMountainBack} />
+                <View style={styles.heroMountainFront} />
+                <Text style={styles.heroArtText}>PHOTO WALL</Text>
+              </View>
+              <View style={styles.heroCopy}>
+                <StatusBadge ok={connected}>{connected ? '● 已绑定' : '● 未连接'}</StatusBadge>
+                <Text style={styles.heroTitle}>{connected ? session.device.name || '客厅照片墙' : '连接你的墨水屏'}</Text>
+                <Text style={styles.cardDescription}>
+                  {connected
+                    ? `${session.device.device_id}\n${operation.message}`
+                    : '首次连接后，屏幕会自行访问云端，日常使用不需要 Mac。'}
+                </Text>
+                <ActionButton onPress={() => connected ? setActiveTab('compose') : setDeviceModal(true)}>
+                  {connected ? '创建新画面' : '连接设备'}
+                </ActionButton>
+              </View>
+            </View>
+            <View style={styles.summaryRow}>
+              <TouchableOpacity style={styles.summaryCard} onPress={() => setActiveTab('albums')}>
+                <Text style={styles.summaryValue}>{photoAllowed ? (photoCount ?? '—') : '未授权'}</Text>
+                <Text style={styles.summaryLabel}>可访问照片</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.summaryCard} onPress={() => setActiveTab('compose')}>
+                <Text style={styles.summaryValue}>{selectedPhoto ? '1' : '0'}</Text>
+                <Text style={styles.summaryLabel}>已选择照片</Text>
+              </TouchableOpacity>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryValue}>{operation.progress || 0}%</Text>
+                <Text style={styles.summaryLabel}>发布进度</Text>
+              </View>
+            </View>
+            <SectionHeading title="设备状态" />
+            {operationCard}
+          </>
+        ) : null}
+
+        {activeTab === 'albums' ? (
+          <>
+            <SectionHeading
+              eyebrow="照片来源"
+              title="系统相册"
+              description="只读取 iPhone 实际授权范围，照片数量和授权状态不会使用演示数据。"
+            />
+            <StepCard
+              number="1"
+              title="照片访问权限"
+              description={permissionDescription}
+              ok={photoAllowed}
+              action={photoAllowed ? () => Linking.openSettings() : requestPhotoPermission}
+              actionLabel={photoAllowed ? '管理系统照片权限' : '允许访问照片'}
+            >
+              {photoAllowed ? (
+                <View style={styles.realDataBox}>
+                  <Text style={styles.realDataValue}>{photoCount ?? '—'}</Text>
+                  <Text style={styles.realDataLabel}>当前授权范围内的照片</Text>
+                </View>
+              ) : null}
+            </StepCard>
+            <StepCard
+              number="2"
+              title="选择准备展示的照片"
+              description={selectedPhoto ? '已从真实相册选择照片，可以进入创作页发布。' : '使用系统照片选择器，不会自动上传整个相册。'}
+              ok={Boolean(selectedPhoto)}
+              action={choosePhoto}
+              actionLabel={selectedPhoto ? '重新选择照片' : '从相册选择'}
+            >
+              {selectedPhoto ? <Image source={{ uri: selectedPhoto.uri }} style={styles.preview} /> : null}
+            </StepCard>
+          </>
+        ) : null}
+
+        {activeTab === 'compose' ? (
+          <>
+            <SectionHeading
+              eyebrow="新建画面"
+              title="预览与发布"
+              description="沿用现有云端选图、去重、日历生成和 PWE6 转码，不在手机端重复实现。"
+            />
+            <View style={styles.previewPanel}>
+              <View style={styles.previewHeader}>
+                <Text style={styles.previewLabel}>SPECTRA 6 画面预览</Text>
+                <StatusBadge ok={Boolean(selectedPhoto)}>{selectedPhoto ? '已选照片' : '等待选择'}</StatusBadge>
+              </View>
+              {selectedPhoto ? (
+                <Image source={{ uri: selectedPhoto.uri }} style={styles.einkPreview} />
+              ) : (
+                <View style={styles.emptyPreview}>
+                  <Text style={styles.emptyPreviewIcon}>＋</Text>
+                  <Text style={styles.emptyPreviewText}>先从真实相册选择一张照片</Text>
+                </View>
+              )}
+              <ActionButton secondary onPress={choosePhoto}>{selectedPhoto ? '更换照片' : '选择照片'}</ActionButton>
+              <ActionButton disabled={!selectedPhoto || !connected || publishing} onPress={publish}>
+                {publishing && lastAction === 'photo' ? '正在发送…' : connected ? '确认并发布' : '请先连接墨水屏'}
+              </ActionButton>
+            </View>
+            <SectionHeading title="自动日历" />
+            <StepCard
+              number="7"
+              title="2026 年 7 月家庭日历"
+              description="读取已授权范围内拍摄于 2026 年 7 月的照片，上传后由云端生成并发布。"
+              ok={operation.state === 'done' && lastAction === 'calendar'}
+            >
+              <ActionButton disabled={!photoAllowed || !connected || publishing} onPress={publishCalendar}>
+                {publishing && lastAction === 'calendar' ? '正在同步并发布…' : connected ? '一键同步并发布七月日历' : '请先连接墨水屏'}
+              </ActionButton>
+            </StepCard>
+            {operationCard}
+          </>
+        ) : null}
+
+        {activeTab === 'people' ? (
+          <>
+            <SectionHeading
+              eyebrow="隐私与展示"
+              title="人物管理"
+              description="人物策略将支持允许展示、每次审核和不展示三种选择。"
+            />
+            <View style={styles.infoCard}>
+              <Text style={styles.infoIcon}>◎</Text>
+              <Text style={styles.infoTitle}>等待云端人物接口</Text>
+              <Text style={styles.infoText}>当前线上接口还不能返回真实人物列表和策略。为避免展示虚构人物，本页暂不写入演示数据。</Text>
+            </View>
+            <View style={styles.policyRow}>
+              {['允许展示', '每次审核', '不展示'].map((label, index) => (
+                <View key={label} style={[styles.policyPill, index === 1 && styles.policyPillAmber, index === 2 && styles.policyPillRed]}>
+                  <Text style={styles.policyPillText}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {activeTab === 'settings' ? (
+          <>
+            <SectionHeading eyebrow="设备与账号" title="设置" />
+            <View style={styles.settingCard}>
+              <Text style={styles.settingLabel}>云端服务</Text>
+              <Text style={styles.settingValue}>api.mokeedesign.cn</Text>
+              <Text style={styles.settingHint}>固定线上地址，不能由用户修改。</Text>
+            </View>
+            <View style={styles.settingCard}>
+              <Text style={styles.settingLabel}>墨水屏</Text>
+              <Text style={styles.settingValue}>{connected ? session.device.name || '客厅照片墙' : '尚未绑定'}</Text>
+              <Text style={styles.settingHint}>{connected ? session.device.device_id : '连接 PhotoWall-XXXX 完成首次配对。'}</Text>
+              <ActionButton secondary onPress={() => setDeviceModal(true)}>{connected ? '查看设备' : '连接设备'}</ActionButton>
+            </View>
+            <View style={styles.settingCard}>
+              <Text style={styles.settingLabel}>照片权限</Text>
+              <Text style={styles.settingValue}>{permissionDescription}</Text>
+              <ActionButton secondary onPress={photoAllowed ? () => Linking.openSettings() : requestPhotoPermission}>
+                {photoAllowed ? '打开系统设置' : '申请照片权限'}
+              </ActionButton>
+            </View>
+          </>
+        ) : null}
 
         {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
         {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
         <Text style={styles.footer}>照片仅在你主动选择并发送时上传。</Text>
       </ScrollView>
 
+      <BottomNavigation activeTab={activeTab} onChange={setActiveTab} />
       <DeviceModal
         visible={deviceModal}
         session={session}
@@ -453,7 +643,11 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.canvas },
-  page: { width: '100%', maxWidth: 680, alignSelf: 'center', padding: 22, paddingBottom: 60 },
+  page: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 22, paddingBottom: 120 },
+  topBar: { minHeight: 68, paddingHorizontal: 22, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.canvas },
+  topBarTitle: { color: C.ink, fontSize: 20, fontWeight: '800', marginTop: 2 },
+  onlineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.green },
+  offlineDot: { backgroundColor: C.red },
   brand: { color: C.orange, fontSize: 13, fontWeight: '900', letterSpacing: 2, marginTop: 8 },
   title: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 34, lineHeight: 43, fontWeight: '700', marginTop: 9 },
   subtitle: { color: C.muted, fontSize: 15, lineHeight: 24, marginTop: 8, marginBottom: 24 },
@@ -468,12 +662,51 @@ const styles = StyleSheet.create({
   cardDescription: { color: C.muted, fontSize: 12, lineHeight: 19, marginTop: 4 },
   badge: { borderRadius: 14, paddingHorizontal: 8, paddingVertical: 5 },
   badgeText: { fontSize: 9, fontWeight: '900' },
+  sectionHeading: { marginTop: 8, marginBottom: 17 },
+  sectionEyebrow: { color: C.orange, fontSize: 10, fontWeight: '900', letterSpacing: 1.4, marginBottom: 5 },
+  sectionTitle: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 27, lineHeight: 35, fontWeight: '700' },
+  sectionDescription: { color: C.muted, fontSize: 13, lineHeight: 21, marginTop: 7 },
   button: { minHeight: 48, borderRadius: 13, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', marginTop: 15, paddingHorizontal: 16 },
   buttonSecondary: { backgroundColor: C.paper, borderWidth: 1, borderColor: C.line },
   buttonText: { color: C.white, fontSize: 13, fontWeight: '800' },
   buttonTextSecondary: { color: C.ink },
   disabled: { opacity: 0.35 },
   preview: { width: '100%', height: 260, borderRadius: 14, resizeMode: 'cover', marginTop: 16 },
+  heroCard: { backgroundColor: C.paper, borderRadius: 22, borderWidth: 1, borderColor: C.line, padding: 18, marginBottom: 14, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 20 },
+  heroArt: { width: 230, maxWidth: '100%', aspectRatio: 4 / 3, borderRadius: 12, overflow: 'hidden', backgroundColor: '#E7C665', position: 'relative' },
+  heroSun: { position: 'absolute', width: 48, height: 48, borderRadius: 24, right: 28, top: 24, backgroundColor: C.orange },
+  heroMountainBack: { position: 'absolute', width: 185, height: 140, left: -55, bottom: -78, backgroundColor: '#6E8B7C', transform: [{ rotate: '35deg' }] },
+  heroMountainFront: { position: 'absolute', width: 205, height: 165, right: -70, bottom: -92, backgroundColor: '#34554C', transform: [{ rotate: '42deg' }] },
+  heroArtText: { position: 'absolute', left: 14, bottom: 13, color: C.ink, backgroundColor: C.paper, paddingHorizontal: 8, paddingVertical: 5, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  heroCopy: { flex: 1, minWidth: 210 },
+  heroTitle: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 25, fontWeight: '700', marginTop: 12 },
+  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  summaryCard: { flex: 1, minWidth: 100, backgroundColor: C.paper, borderRadius: 15, borderWidth: 1, borderColor: C.line, padding: 14 },
+  summaryValue: { color: C.ink, fontSize: 22, fontWeight: '800' },
+  summaryLabel: { color: C.muted, fontSize: 10, fontWeight: '700', marginTop: 4 },
+  realDataBox: { backgroundColor: C.greenSoft, borderRadius: 13, padding: 15, marginTop: 15 },
+  realDataValue: { color: C.green, fontSize: 26, fontWeight: '900' },
+  realDataLabel: { color: C.green, fontSize: 11, marginTop: 3 },
+  previewPanel: { backgroundColor: '#292B27', borderRadius: 20, padding: 17, marginBottom: 23 },
+  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13 },
+  previewLabel: { color: '#D8D3CA', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
+  einkPreview: { width: '100%', aspectRatio: 4 / 3, resizeMode: 'contain', backgroundColor: '#EFE8D6' },
+  emptyPreview: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#EFE8D6', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  emptyPreviewIcon: { color: C.orange, fontSize: 35 },
+  emptyPreviewText: { color: C.muted, fontSize: 12, marginTop: 8 },
+  infoCard: { backgroundColor: C.paper, borderRadius: 18, borderWidth: 1, borderColor: C.line, padding: 22, alignItems: 'center' },
+  infoIcon: { color: C.orange, fontSize: 36 },
+  infoTitle: { color: C.ink, fontSize: 17, fontWeight: '800', marginTop: 8 },
+  infoText: { color: C.muted, fontSize: 12, lineHeight: 20, textAlign: 'center', marginTop: 8 },
+  policyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 15 },
+  policyPill: { flex: 1, minWidth: 90, alignItems: 'center', borderRadius: 14, paddingVertical: 11, backgroundColor: C.greenSoft },
+  policyPillAmber: { backgroundColor: '#F4E8D1' },
+  policyPillRed: { backgroundColor: C.redSoft },
+  policyPillText: { color: C.ink, fontSize: 10, fontWeight: '800' },
+  settingCard: { backgroundColor: C.paper, borderRadius: 17, borderWidth: 1, borderColor: C.line, padding: 17, marginBottom: 12 },
+  settingLabel: { color: C.orange, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  settingValue: { color: C.ink, fontSize: 15, fontWeight: '800', marginTop: 7 },
+  settingHint: { color: C.muted, fontSize: 11, lineHeight: 18, marginTop: 5 },
   notice: { backgroundColor: C.greenSoft, borderRadius: 14, padding: 14, marginTop: 2 },
   noticeText: { color: C.green, fontSize: 12, fontWeight: '700', lineHeight: 19 },
   error: { backgroundColor: C.redSoft, borderRadius: 14, padding: 14, marginTop: 2 },
@@ -502,4 +735,10 @@ const styles = StyleSheet.create({
   connectedBox: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.greenSoft, padding: 15, borderRadius: 15, marginBottom: 14 },
   connectedIcon: { color: C.green, fontSize: 24, fontWeight: '900' },
   flex: { flex: 1 },
+  bottomNavigation: { position: 'absolute', left: 10, right: 10, bottom: 7, minHeight: 68, borderRadius: 20, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper, flexDirection: 'row', padding: 5, shadowColor: '#594F42', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.14, shadowRadius: 18, elevation: 5 },
+  navItem: { flex: 1, minWidth: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  navItemActive: { backgroundColor: C.orangeSoft },
+  navIcon: { color: C.muted, fontSize: 18 },
+  navLabel: { color: C.muted, fontSize: 9, fontWeight: '700' },
+  navTextActive: { color: C.orange, fontWeight: '900' },
 });
