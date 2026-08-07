@@ -38,6 +38,13 @@ const TABS = [
   { id: 'settings', label: '设置', icon: '☷' },
 ];
 
+const IS_WEB_PREVIEW = Platform.OS === 'web';
+const WEB_PREVIEW_SESSION = {
+  device: { device_id: 'web-preview-frame', name: '客厅照片墙' },
+  accountToken: 'preview-only',
+  apiBase: DEFAULT_API_BASE,
+};
+
 function deliveryStatus(device) {
   if (!device) return null;
   const state = String(device.state || '').toLowerCase();
@@ -107,6 +114,28 @@ function BottomNavigation({ activeTab, onChange }) {
           </TouchableOpacity>
         );
       })}
+    </View>
+  );
+}
+
+function WebPreviewBar({ connected, hasPhoto, onToggleConnection, onClearPhoto }) {
+  if (!IS_WEB_PREVIEW) return null;
+  return (
+    <View style={styles.webPreviewBar}>
+      <View style={styles.flex}>
+        <Text style={styles.webPreviewTitle}>网页 UI 预览</Text>
+        <Text style={styles.webPreviewHint}>不会连接设备、读取系统权限或上传照片</Text>
+      </View>
+      <View style={styles.webPreviewActions}>
+        <TouchableOpacity onPress={onToggleConnection} style={styles.webPreviewButton}>
+          <Text style={styles.webPreviewButtonText}>{connected ? '查看未连接' : '查看已连接'}</Text>
+        </TouchableOpacity>
+        {hasPhoto ? (
+          <TouchableOpacity onPress={onClearPhoto} style={styles.webPreviewButton}>
+            <Text style={styles.webPreviewButtonText}>清除照片</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -206,6 +235,7 @@ function DeviceModal({ visible, session, onClose, onConnected }) {
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [session, setSession] = useState(null);
+  const [webConnected, setWebConnected] = useState(true);
   const [permission, setPermission] = useState(null);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -216,9 +246,11 @@ export default function App() {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
-  const photoAllowed = permission?.status === 'granted';
-  const connected = Boolean(session?.device?.device_id);
+  const effectiveSession = IS_WEB_PREVIEW && webConnected ? WEB_PREVIEW_SESSION : session;
+  const photoAllowed = IS_WEB_PREVIEW || permission?.status === 'granted';
+  const connected = IS_WEB_PREVIEW ? webConnected : Boolean(session?.device?.device_id);
   const permissionDescription = useMemo(() => {
+    if (IS_WEB_PREVIEW) return '网页预览使用浏览器文件选择器，不读取 iPhone 权限。';
     if (!permission) return '正在检查 iPhone 相册权限…';
     if (permission.status !== 'granted') return '需要允许访问，才能选择照片。';
     if (permission.accessPrivileges === 'limited') return '已允许访问你选择的照片。';
@@ -251,6 +283,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (IS_WEB_PREVIEW) return;
     loadDeviceSession().then(saved => {
       if (saved?.device?.device_id) setSession({ ...saved, apiBase: DEFAULT_API_BASE });
     });
@@ -261,6 +294,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (IS_WEB_PREVIEW) return undefined;
     if (!session?.device?.device_id || !session.accountToken) return undefined;
     let active = true;
     const refreshDevice = async () => {
@@ -300,18 +334,40 @@ export default function App() {
   }, []);
 
   const choosePhoto = async () => {
-    const allowed = photoAllowed || await requestPhotoPermission();
+    const allowed = IS_WEB_PREVIEW || photoAllowed || await requestPhotoPermission();
     if (!allowed) return;
     setError(''); setNotice('');
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
     if (!result.canceled) {
       setSelectedPhoto(result.assets[0]);
     }
-    await refreshPermission();
+    if (!IS_WEB_PREVIEW) await refreshPermission();
+  };
+
+  const simulateWebPublish = async kind => {
+    setLastAction(kind);
+    setPublishing(true); setError(''); setNotice('');
+    const steps = kind === 'calendar'
+      ? [
+        { state: 'scanning', progress: 20, message: '预览：正在查找七月照片' },
+        { state: 'generating', progress: 70, message: '预览：正在生成日历' },
+        { state: 'queued', progress: 100, message: '预览：发布任务已排队' },
+      ]
+      : [
+        { state: 'uploading', progress: 45, message: '预览：正在上传照片' },
+        { state: 'queued', progress: 100, message: '预览：发布任务已排队' },
+      ];
+    for (const step of steps) {
+      setOperation(step);
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+    setNotice('这是网页交互预览，没有数据被上传。');
+    setPublishing(false);
   };
 
   const publish = async () => {
-    if (!selectedPhoto || !session) return;
+    if (!selectedPhoto || (!IS_WEB_PREVIEW && !session)) return;
+    if (IS_WEB_PREVIEW) return simulateWebPublish('photo');
     setLastAction('photo');
     setPublishing(true); setError(''); setNotice('');
     setOperation({ state: 'uploading', progress: 0, message: '正在上传照片' });
@@ -339,7 +395,8 @@ export default function App() {
   };
 
   const publishCalendar = async () => {
-    if (!session || publishing) return;
+    if ((!IS_WEB_PREVIEW && !session) || publishing) return;
+    if (IS_WEB_PREVIEW) return simulateWebPublish('calendar');
     const allowed = photoAllowed || await requestPhotoPermission();
     if (!allowed) return;
     setLastAction('calendar');
@@ -387,6 +444,16 @@ export default function App() {
     setActiveTab('home');
   };
 
+  const connectDevice = () => {
+    if (IS_WEB_PREVIEW) setWebConnected(true);
+    else setDeviceModal(true);
+  };
+
+  const manageDevice = () => {
+    if (IS_WEB_PREVIEW) setWebConnected(value => !value);
+    else setDeviceModal(true);
+  };
+
   const operationCard = (
     <View style={styles.statusCard}>
       <View style={styles.statusHeader}>
@@ -419,12 +486,19 @@ export default function App() {
           <Text style={styles.topBarTitle}>{screenTitle}</Text>
         </View>
         {activeTab === 'home' ? (
-          <TouchableOpacity activeOpacity={0.8} onPress={() => setDeviceModal(true)} style={styles.connectionStatus}>
+          <TouchableOpacity activeOpacity={0.8} onPress={manageDevice} style={styles.connectionStatus}>
             <View style={[styles.onlineDot, !connected && styles.offlineDot]} />
             <Text style={styles.connectionStatusText}>{connected ? '已连接' : '未连接'}</Text>
           </TouchableOpacity>
         ) : null}
       </View>
+
+      <WebPreviewBar
+        connected={connected}
+        hasPhoto={Boolean(selectedPhoto)}
+        onToggleConnection={manageDevice}
+        onClearPhoto={() => setSelectedPhoto(null)}
+      />
 
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         {activeTab === 'home' ? (
@@ -446,14 +520,14 @@ export default function App() {
                   <View style={styles.heroCopy}>
                     <Text style={styles.heroTitle}>连接你的墨水屏</Text>
                     <Text style={styles.cardDescription}>连接 PhotoWall-XXXX 并输入六位配对码。完成后日常使用不需要 Mac。</Text>
-                    <ActionButton onPress={() => setDeviceModal(true)}>开始连接</ActionButton>
+                    <ActionButton onPress={connectDevice}>开始连接</ActionButton>
                   </View>
                 </View>
               </>
             ) : (
               <>
                 <SectionHeading
-                  eyebrow={session.device.name || '家庭墨水屏'}
+                  eyebrow={effectiveSession.device.name || '家庭墨水屏'}
                   title="发布照片"
                   description="选择照片后，可以先查看相框效果，再发布到照片墙。"
                 />
@@ -536,16 +610,20 @@ export default function App() {
           <>
             <View style={styles.settingCard}>
               <Text style={styles.settingLabel}>设备</Text>
-              <Text style={styles.settingValue}>{connected ? session.device.name || '客厅照片墙' : '尚未绑定'}</Text>
-              <Text style={styles.settingHint}>{connected ? session.device.device_id : '连接 PhotoWall-XXXX 完成首次配对。'}</Text>
-              <ActionButton secondary onPress={() => setDeviceModal(true)}>{connected ? '查看设备' : '连接设备'}</ActionButton>
+              <Text style={styles.settingValue}>{connected ? effectiveSession.device.name || '客厅照片墙' : '尚未绑定'}</Text>
+              <Text style={styles.settingHint}>{connected ? effectiveSession.device.device_id : '连接 PhotoWall-XXXX 完成首次配对。'}</Text>
+              <ActionButton secondary onPress={connected ? manageDevice : connectDevice}>
+                {IS_WEB_PREVIEW ? (connected ? '预览未连接状态' : '预览已连接状态') : (connected ? '查看设备' : '连接设备')}
+              </ActionButton>
             </View>
             <View style={styles.settingCard}>
               <Text style={styles.settingLabel}>照片权限</Text>
               <Text style={styles.settingValue}>{permissionDescription}</Text>
-              <ActionButton secondary onPress={photoAllowed ? () => Linking.openSettings() : requestPhotoPermission}>
-                {photoAllowed ? '打开系统设置' : '申请照片权限'}
-              </ActionButton>
+              {!IS_WEB_PREVIEW ? (
+                <ActionButton secondary onPress={photoAllowed ? () => Linking.openSettings() : requestPhotoPermission}>
+                  {photoAllowed ? '打开系统设置' : '申请照片权限'}
+                </ActionButton>
+              ) : null}
             </View>
             <SectionHeading title="发布记录" description="查看最近一次上传和屏幕刷新状态。" />
             {operationCard}
@@ -559,7 +637,7 @@ export default function App() {
 
         {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
         {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
-        <Text style={styles.footer}>照片仅在你主动选择并发送时上传。</Text>
+        <Text style={styles.footer}>{IS_WEB_PREVIEW ? '网页预览不会上传照片或调用真实设备接口。' : '照片仅在你主动选择并发送时上传。'}</Text>
       </ScrollView>
 
       <BottomNavigation activeTab={activeTab} onChange={setActiveTab} />
@@ -578,6 +656,12 @@ const styles = StyleSheet.create({
   page: { width: '100%', maxWidth: 760, alignSelf: 'center', padding: 22, paddingBottom: 120 },
   topBar: { minHeight: 68, paddingHorizontal: 22, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.canvas },
   topBarTitle: { color: C.ink, fontSize: 20, fontWeight: '800', marginTop: 2 },
+  webPreviewBar: { width: '100%', maxWidth: 760, alignSelf: 'center', marginTop: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, backgroundColor: C.greenSoft, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
+  webPreviewTitle: { color: C.green, fontSize: 12, fontWeight: '900' },
+  webPreviewHint: { color: C.green, fontSize: 10, marginTop: 2 },
+  webPreviewActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+  webPreviewButton: { borderRadius: 10, borderWidth: 1, borderColor: C.green, paddingHorizontal: 10, paddingVertical: 7 },
+  webPreviewButtonText: { color: C.green, fontSize: 10, fontWeight: '800' },
   connectionStatus: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 16, borderWidth: 1, borderColor: C.line, backgroundColor: C.paper, paddingHorizontal: 11, paddingVertical: 8 },
   connectionStatusText: { color: C.ink, fontSize: 11, fontWeight: '800' },
   onlineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: C.green },
