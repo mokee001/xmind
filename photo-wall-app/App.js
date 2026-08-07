@@ -34,6 +34,7 @@ const C = {
 
 const TABS = [
   { id: 'home', label: '首页', icon: '⌂' },
+  { id: 'preview', label: '预览', icon: '▣' },
   { id: 'settings', label: '设置', icon: '☷' },
 ];
 
@@ -305,7 +306,6 @@ export default function App() {
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: 1 });
     if (!result.canceled) {
       setSelectedPhoto(result.assets[0]);
-      setActiveTab('home');
     }
     await refreshPermission();
   };
@@ -454,22 +454,22 @@ export default function App() {
               <>
                 <SectionHeading
                   eyebrow={session.device.name || '家庭墨水屏'}
-                  title="照片预览"
-                  description="选择一张照片，确认后发布到照片墙。"
+                  title="发布照片"
+                  description="选择照片后，可以先查看相框效果，再发布到照片墙。"
                 />
-                <View style={styles.previewPanel}>
-                  <View style={styles.previewHeader}>
-                    <Text style={styles.previewLabel}>照片墙画面</Text>
-                    <StatusBadge ok={Boolean(selectedPhoto)}>{selectedPhoto ? '已选择' : '未选择'}</StatusBadge>
-                  </View>
+                <View style={styles.publishCard}>
                   {selectedPhoto ? (
-                    <Image source={{ uri: selectedPhoto.uri }} style={styles.einkPreview} />
-                  ) : (
-                    <View style={styles.emptyPreview}>
-                      <Text style={styles.emptyPreviewIcon}>＋</Text>
-                      <Text style={styles.emptyPreviewText}>从真实相册选择一张照片</Text>
+                    <View style={styles.selectedPhotoRow}>
+                      <Image source={{ uri: selectedPhoto.uri }} style={styles.selectedThumbnail} />
+                      <View style={styles.flex}>
+                        <Text style={styles.cardTitle}>照片已选择</Text>
+                        <Text style={styles.cardDescription}>可以查看相框效果或直接发布。</Text>
+                        <TouchableOpacity onPress={() => setActiveTab('preview')}>
+                          <Text style={styles.previewLink}>查看效果预览 →</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
-                  )}
+                  ) : <Text style={styles.cardDescription}>还没有选择照片。</Text>}
                   <ActionButton secondary={Boolean(selectedPhoto)} onPress={choosePhoto}>{selectedPhoto ? '更换照片' : '选择照片'}</ActionButton>
                   {selectedPhoto ? (
                     <ActionButton disabled={publishing} onPress={publish}>
@@ -495,6 +495,40 @@ export default function App() {
                 ) : null}
               </>
             )}
+          </>
+        ) : null}
+
+        {activeTab === 'preview' ? (
+          <>
+            <SectionHeading
+              eyebrow="空间效果"
+              title="相框预览"
+              description="模拟照片墙挂在家中墙面上的效果。实际墨水屏颜色会略有差异。"
+            />
+            <View style={styles.roomPreview}>
+              <View style={styles.hangingLine} />
+              <View style={styles.frameShadow}>
+                <View style={styles.frameOuter}>
+                  <View style={styles.frameMat}>
+                    {selectedPhoto ? (
+                      <Image source={{ uri: selectedPhoto.uri }} style={styles.framePhoto} />
+                    ) : (
+                      <View style={styles.framePlaceholder}>
+                        <Text style={styles.framePlaceholderIcon}>＋</Text>
+                        <Text style={styles.framePlaceholderText}>选择照片查看效果</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+              <View style={styles.shelf} />
+              <View style={styles.vase} />
+              <View style={styles.plantStem} />
+              <View style={[styles.plantLeaf, styles.plantLeafLeft]} />
+              <View style={[styles.plantLeaf, styles.plantLeafRight]} />
+            </View>
+            <ActionButton secondary={Boolean(selectedPhoto)} onPress={choosePhoto}>{selectedPhoto ? '更换照片' : '选择照片'}</ActionButton>
+            {selectedPhoto ? <ActionButton onPress={() => setActiveTab('home')}>返回首页发布</ActionButton> : null}
           </>
         ) : null}
 
@@ -570,13 +604,25 @@ const styles = StyleSheet.create({
   heroArtText: { position: 'absolute', left: 14, bottom: 13, color: C.ink, backgroundColor: C.paper, paddingHorizontal: 8, paddingVertical: 5, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   heroCopy: { flex: 1, minWidth: 210 },
   heroTitle: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', fontSize: 25, fontWeight: '700', marginTop: 12 },
-  previewPanel: { backgroundColor: '#292B27', borderRadius: 20, padding: 17, marginBottom: 23 },
-  previewHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 13 },
-  previewLabel: { color: '#D8D3CA', fontSize: 10, fontWeight: '900', letterSpacing: 1 },
-  einkPreview: { width: '100%', aspectRatio: 4 / 3, resizeMode: 'contain', backgroundColor: '#EFE8D6' },
-  emptyPreview: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#EFE8D6', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  emptyPreviewIcon: { color: C.orange, fontSize: 35 },
-  emptyPreviewText: { color: C.muted, fontSize: 12, marginTop: 8 },
+  publishCard: { backgroundColor: C.paper, borderRadius: 18, borderWidth: 1, borderColor: C.line, padding: 17, marginBottom: 16 },
+  selectedPhotoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 2 },
+  selectedThumbnail: { width: 84, height: 64, borderRadius: 9, resizeMode: 'cover', backgroundColor: C.canvas },
+  previewLink: { color: C.orange, fontSize: 11, fontWeight: '800', marginTop: 7 },
+  roomPreview: { height: 430, borderRadius: 22, overflow: 'hidden', backgroundColor: '#D8CFBD', borderWidth: 1, borderColor: '#C7BBA6', alignItems: 'center', paddingTop: 54, position: 'relative' },
+  hangingLine: { position: 'absolute', top: 22, width: 1, height: 43, backgroundColor: '#8E806B' },
+  frameShadow: { width: '78%', maxWidth: 310, padding: 7, backgroundColor: 'rgba(65,48,35,.18)', borderRadius: 3, shadowColor: '#3D3026', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 9 },
+  frameOuter: { padding: 12, backgroundColor: '#4A3528', borderWidth: 2, borderColor: '#2E211A' },
+  frameMat: { padding: 14, backgroundColor: '#F1E8D6' },
+  framePhoto: { width: '100%', aspectRatio: 4 / 3, resizeMode: 'cover', backgroundColor: '#E8DFCA' },
+  framePlaceholder: { width: '100%', aspectRatio: 4 / 3, backgroundColor: '#E7DEC9', alignItems: 'center', justifyContent: 'center' },
+  framePlaceholderIcon: { color: C.orange, fontSize: 32 },
+  framePlaceholderText: { color: C.muted, fontSize: 11, marginTop: 7 },
+  shelf: { position: 'absolute', left: 24, right: 24, bottom: 62, height: 12, borderRadius: 4, backgroundColor: '#71513B' },
+  vase: { position: 'absolute', right: 52, bottom: 74, width: 42, height: 58, borderBottomLeftRadius: 17, borderBottomRightRadius: 17, borderTopLeftRadius: 8, borderTopRightRadius: 8, backgroundColor: '#8C5B43' },
+  plantStem: { position: 'absolute', right: 72, bottom: 130, width: 2, height: 42, backgroundColor: '#486253', transform: [{ rotate: '-8deg' }] },
+  plantLeaf: { position: 'absolute', width: 28, height: 13, borderRadius: 14, backgroundColor: '#61796A' },
+  plantLeafLeft: { right: 71, bottom: 151, transform: [{ rotate: '28deg' }] },
+  plantLeafRight: { right: 48, bottom: 163, transform: [{ rotate: '-25deg' }] },
   moreHeader: { minHeight: 64, backgroundColor: C.paper, borderRadius: 16, borderWidth: 1, borderColor: C.line, paddingHorizontal: 17, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   moreTitle: { color: C.ink, fontSize: 14, fontWeight: '800' },
   moreHint: { color: C.muted, fontSize: 10, marginTop: 3 },
