@@ -155,6 +155,9 @@ def main() -> None:
         )
         try:
             wait_for_server(base, process)
+            status, raw = request(base, "/healthz")
+            assert status == 200, raw
+            assert json.loads(raw) == {"status": "ok", "storage_ready": True}
             subprocess.run(
                 [sys.executable, "tests/test_device_flow.py"],
                 cwd=ROOT,

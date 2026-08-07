@@ -30,6 +30,7 @@ String pairingCode;
 String apiBase;
 String deviceToken;
 String displayedRevision;
+String setupToken;
 uint32_t lastPollAt = 0;
 bool restartRequested = false;
 
@@ -62,6 +63,14 @@ void deriveIdentity() {
   pairingCode = code;
 }
 
+String createSetupToken() {
+  char token[33];
+  for (size_t index = 0; index < 4; ++index) {
+    snprintf(token + index * 8, 9, "%08lx", static_cast<unsigned long>(esp_random()));
+  }
+  return String(token);
+}
+
 void clearConfigurationIfRequested() {
   pinMode(kBootButton, INPUT_PULLUP);
   if (digitalRead(kBootButton) != LOW) return;
@@ -80,6 +89,7 @@ void loadConfiguration() {
   apiBase = prefs.getString("api", "");
   deviceToken = prefs.getString("token", "");
   displayedRevision = prefs.getString("revision", "");
+  setupToken = prefs.getString("setup", "");
   prefs.end();
 }
 
@@ -135,6 +145,7 @@ void sendProvisionCors() {
 }
 
 void startProvisioning() {
+  setupToken = createSetupToken();
   const String apName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
   const String apPassword = "PhotoWall" + pairingCode.substring(2);
   WiFi.mode(WIFI_AP);
@@ -145,8 +156,8 @@ void startProvisioning() {
     sendProvisionCors();
     provisionServer.send(200, "application/json",
       "{\"state\":\"provisioning\",\"device_id\":\"" + jsonEscape(deviceId) +
-      "\",\"pairing_code\":\"" + pairingCode + "\",\"firmware_version\":\"" +
-      kFirmwareVersion + "\"}");
+      "\",\"firmware_version\":\"" + kFirmwareVersion +
+      "\",\"setup_token\":\"" + setupToken + "\"}");
   });
   provisionServer.on("/provision", HTTP_OPTIONS, []() {
     sendProvisionCors();
@@ -178,6 +189,7 @@ void startProvisioning() {
     prefs.putString("ssid", ssid);
     prefs.putString("pass", password);
     prefs.putString("api", requestedApi);
+    prefs.putString("setup", setupToken);
     prefs.remove("token");
     prefs.remove("revision");
     prefs.end();
@@ -186,11 +198,11 @@ void startProvisioning() {
       provisionServer.send(202, "text/html; charset=utf-8",
         "<!doctype html><meta name=viewport content='width=device-width'><h2>Connecting PhotoWall</h2>"
         "<p>The display is joining your home Wi-Fi now. This page will close shortly.</p>"
-        "<p>Then open the PhotoWall app and enter pairing code <b>" + pairingCode + "</b>.</p>");
+        "<p>Return to the PhotoWall app to finish the connection.</p>");
     } else {
       provisionServer.send(202, "application/json",
         "{\"accepted\":true,\"device_id\":\"" + jsonEscape(deviceId) +
-        "\",\"pairing_code\":\"" + pairingCode + "\"}");
+        "\",\"setup_token\":\"" + setupToken + "\"}");
     }
     restartRequested = true;
   });
@@ -205,7 +217,7 @@ void startProvisioning() {
       "<form action='/provision' method='post'><label>Home Wi-Fi name</label><input name='ssid' required autocomplete='username'>"
       "<label>Wi-Fi password</label><input name='password' type='password' autocomplete='current-password'>"
       "<input name='api_base' type='hidden' value='https://api.mokeedesign.cn'><button type='submit'>Connect display</button></form>"
-      "<p>Pairing code: <b>" + pairingCode + "</b></p><p>After connecting, return to the PhotoWall app and enter this code to bind the display.</p></html>");
+      "<p>After connecting, return to the PhotoWall app to finish setup.</p></html>");
   });
   provisionServer.begin();
   Serial.printf("Provisioning AP: %s\nPassword: %s\nPairing code: %s\n", apName.c_str(),
@@ -239,6 +251,7 @@ bool bootstrapDevice() {
   JsonDocument request;
   request["device_id"] = deviceId;
   request["pairing_code"] = pairingCode;
+  request["setup_token"] = setupToken;
   request["ip"] = WiFi.localIP().toString();
   request["firmware_version"] = kFirmwareVersion;
   request["device_token"] = deviceToken;
@@ -254,6 +267,12 @@ bool bootstrapDevice() {
   const String receivedToken = document["device_token"] | "";
   if (receivedToken.isEmpty()) return false;
   if (receivedToken != deviceToken) saveDeviceToken(receivedToken);
+  if (document["claimed"] | false) {
+    prefs.begin("photowall", false);
+    prefs.remove("setup");
+    prefs.end();
+    setupToken = "";
+  }
   Serial.println("Device registered with cloud");
   return true;
 }

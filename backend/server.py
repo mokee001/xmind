@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import datetime
 import glob
+import hashlib
+import hmac
 import io
 import ipaddress
 import json
@@ -162,6 +164,7 @@ class LabelReq(BaseModel):
 class DeviceBootstrapReq(BaseModel):
     device_id: str
     pairing_code: str
+    setup_token: str = ""
     ip: str = ""
     firmware_version: str = ""
     device_token: str = ""
@@ -169,6 +172,12 @@ class DeviceBootstrapReq(BaseModel):
 
 class DeviceClaimReq(BaseModel):
     pairing_code: str
+    name: str = "客厅照片墙"
+
+
+class DeviceAutoClaimReq(BaseModel):
+    device_id: str
+    setup_token: str
     name: str = "客厅照片墙"
 
 
@@ -1148,6 +1157,12 @@ def device_bootstrap(req: DeviceBootstrapReq) -> Response:
         "state": "online",
         "error": "",
     })
+    setup_token = req.setup_token.strip()
+    if not device.get("claimed") and setup_token:
+        token_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+        if device.get("setup_token_digest") != token_digest:
+            device["setup_token_digest"] = token_digest
+            device["setup_token_expires_at"] = now + 600
     devices_data[req.device_id] = device
     store.save("eink_devices", devices_data)
     return JSONResponse({
@@ -1175,6 +1190,36 @@ def device_claim(req: DeviceClaimReq) -> Response:
     device["claimed"] = True
     device["name"] = req.name.strip()[:40] or "客厅照片墙"
     devices_data[device["device_id"]] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+
+
+@app.post("/api/devices/auto-claim")
+def device_auto_claim(req: DeviceAutoClaimReq) -> Response:
+    """Bind a display using the single-use token read from its local setup AP."""
+    setup_token = req.setup_token.strip()
+    if not _DEVICE_ID_RE.fullmatch(req.device_id) or len(setup_token) < 24:
+        return JSONResponse(status_code=400, content={"error": "设备自动绑定信息无效"})
+
+    devices_data = _devices()
+    device = devices_data.get(req.device_id)
+    if not device:
+        return JSONResponse(status_code=404, content={"error": "设备尚未联网，请完成 Wi-Fi 配置后重试"})
+    if time.time() - float(device.get("last_seen", 0)) > 300:
+        return JSONResponse(status_code=409, content={"error": "设备已离线，请重新连接设备热点后重试"})
+    expected_digest = str(device.get("setup_token_digest", ""))
+    expires_at = float(device.get("setup_token_expires_at", 0))
+    supplied_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+    if not expected_digest or time.time() > expires_at or not hmac.compare_digest(expected_digest, supplied_digest):
+        return JSONResponse(status_code=403, content={"error": "自动绑定已过期，请重新开始设备配网"})
+
+    if not device.get("account_token"):
+        device["account_token"] = secrets.token_urlsafe(32)
+    device["claimed"] = True
+    device["name"] = req.name.strip()[:40] or "客厅照片墙"
+    device.pop("setup_token_digest", None)
+    device.pop("setup_token_expires_at", None)
+    devices_data[req.device_id] = device
     store.save("eink_devices", devices_data)
     return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
 
@@ -1378,6 +1423,19 @@ app.mount("/eink", StaticFiles(directory=EINK_UI_DIR, html=True), name="eink")
 app.mount("/studio", StaticFiles(directory=os.path.join(_ROOT, "studio"), html=True), name="studio")
 app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="app")
 app.mount("/screen", StaticFiles(directory=DISPLAY_DIR, html=True), name="screen")
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    storage_ready = all(
+        os.path.isdir(directory) and os.access(directory, os.R_OK | os.W_OK)
+        for directory in (PHOTOS_DIR, OUTPUT_DIR, store._BASE)
+    )
+    payload = {
+        "status": "ok" if storage_ready else "degraded",
+        "storage_ready": storage_ready,
+    }
+    return JSONResponse(content=payload, status_code=200 if storage_ready else 503)
 
 
 @app.get("/")

@@ -22,6 +22,7 @@ BASE = os.environ.get("PHOTOWALL_TEST_BASE", "http://127.0.0.1:8000").rstrip("/"
 RUN_ID = str(time.time_ns())
 DEVICE_ID = f"pwe6-test-{RUN_ID}"
 PAIRING_CODE = RUN_ID[-6:]
+SETUP_TOKEN = "a" * 32
 
 
 def request(path: str, method: str = "GET", body: dict | None = None, headers: dict | None = None):
@@ -78,6 +79,7 @@ def main() -> None:
     _, _, raw = request("/api/devices/bootstrap", "POST", {
         "device_id": DEVICE_ID,
         "pairing_code": PAIRING_CODE,
+        "setup_token": SETUP_TOKEN,
         "ip": "192.168.1.55",
         "firmware_version": "integration-test",
         "device_token": "",
@@ -85,12 +87,22 @@ def main() -> None:
     bootstrap = json.loads(raw)
     device_token = bootstrap["device_token"]
 
-    _, _, raw = request("/api/devices/claim", "POST", {
-        "pairing_code": PAIRING_CODE,
+    _, _, raw = request("/api/devices/auto-claim", "POST", {
+        "device_id": DEVICE_ID,
+        "setup_token": SETUP_TOKEN,
         "name": "集成测试屏",
     })
     claim = json.loads(raw)
     account_token = claim["account_token"]
+    try:
+        request("/api/devices/auto-claim", "POST", {
+            "device_id": DEVICE_ID,
+            "setup_token": SETUP_TOKEN,
+            "name": "不应重复绑定",
+        })
+        raise AssertionError("已消费的 setup token 不应允许重复绑定")
+    except urllib.error.HTTPError as error:
+        assert error.code == 403, error.code
 
     photo, disposable_photo = test_photo()
     try:

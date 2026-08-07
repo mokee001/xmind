@@ -63,11 +63,11 @@ export async function provisionDisplay({ provisionUrl = DEFAULT_PROVISION_URL, s
   return responseJson(response);
 }
 
-export async function claimDisplay({ apiBase, pairingCode, name = '客厅照片墙' }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/devices/claim`, {
+export async function autoClaimDisplay({ apiBase, deviceId, setupToken, name = '客厅照片墙' }) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/devices/auto-claim`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pairing_code: pairingCode.replace(/\D/g, ''), name }),
+    body: JSON.stringify({ device_id: deviceId, setup_token: setupToken, name }),
   });
   return responseJson(response);
 }
