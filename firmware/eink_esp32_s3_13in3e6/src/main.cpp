@@ -11,10 +11,11 @@
 #include <mbedtls/sha256.h>
 
 #include "panel_13in3e6.h"
+#include "ble_provisioning.h"
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.1.0";
+constexpr char kFirmwareVersion[] = "0.2.0";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -33,6 +34,7 @@ String displayedRevision;
 String setupToken;
 uint32_t lastPollAt = 0;
 bool restartRequested = false;
+bool provisioningMode = false;
 
 String jsonEscape(const String& input) {
   String escaped;
@@ -145,12 +147,14 @@ void sendProvisionCors() {
 }
 
 void startProvisioning() {
+  provisioningMode = true;
   setupToken = createSetupToken();
   const String apName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
   const String apPassword = "PhotoWall" + pairingCode.substring(2);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAP(apName.c_str(), apPassword.c_str());
   dnsServer.start(53, "*", WiFi.softAPIP());
+  photowall::bleProvisioning.begin(deviceId, kFirmwareVersion, setupToken);
 
   provisionServer.on("/status", HTTP_GET, []() {
     sendProvisionCors();
@@ -432,7 +436,8 @@ void setup() {
 }
 
 void loop() {
-  if (WiFi.getMode() == WIFI_AP) {
+  photowall::bleProvisioning.loop();
+  if (provisioningMode) {
     dnsServer.processNextRequest();
     provisionServer.handleClient();
     if (restartRequested) {
