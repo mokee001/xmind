@@ -21,6 +21,7 @@ constexpr size_t kEventChunkBytes = 140;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
 constexpr uint32_t kRestartDelayMs = 5000;
 constexpr size_t kMaximumNetworks = 20;
+constexpr uint8_t kProofButton = 0;
 
 BleProvisioningService* activeService = nullptr;
 
@@ -100,7 +101,7 @@ void BleProvisioningService::begin(
   info["deviceId"] = deviceId_;
   info["deviceName"] = advertisedName;
   info["firmwareVersion"] = firmwareVersion_;
-  info["setupToken"] = setupToken_;
+  info["requiresPhysicalConfirmation"] = true;
   infoCharacteristic_->setValue(jsonString(info));
 
   BLECharacteristic* commandCharacteristic = service->createCharacteristic(
@@ -166,11 +167,13 @@ bool BleProvisioningService::active() const { return active_; }
 
 void BleProvisioningService::handleClientConnected() {
   clientConnected_ = true;
-  setStatus(status_.c_str(), "安全蓝牙会话已连接");
+  clientAuthorized_ = false;
+  setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
 }
 
 void BleProvisioningService::handleClientDisconnected() {
   clientConnected_ = false;
+  clientAuthorized_ = false;
   if (active_ && restartAt_ == 0) BLEDevice::startAdvertising();
 }
 
@@ -233,13 +236,29 @@ void BleProvisioningService::processCommand(const char* command) {
     setStatus("error", "蓝牙命令格式无效", "invalid_command");
     return;
   }
+  const String operation = document["op"] | "";
+  if (operation == "authorize") {
+    if (digitalRead(kProofButton) != LOW) {
+      setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
+      return;
+    }
+    clientAuthorized_ = true;
+    JsonDocument event;
+    event["type"] = "authorization";
+    event["status"] = "authorized";
+    event["deviceId"] = deviceId_;
+    event["setupToken"] = setupToken_;
+    sendEvent(jsonString(event));
+    setStatus("idle", "设备物理确认已通过");
+    return;
+  }
+
   const String suppliedToken = document["setupToken"] | "";
-  if (suppliedToken.isEmpty() || suppliedToken != setupToken_) {
+  if (!clientAuthorized_ || suppliedToken.isEmpty() || suppliedToken != setupToken_) {
     setStatus("error", "设备凭证校验失败", "invalid_setup_token");
     return;
   }
 
-  const String operation = document["op"] | "";
   if (operation == "scan") {
     if (wifiConnecting_) {
       setStatus("error", "设备正在连接 Wi-Fi", "busy");

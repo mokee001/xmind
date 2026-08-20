@@ -46,6 +46,7 @@ class BleProvisioningService {
   volatile bool commandReady_ = false;
   bool active_ = false;
   bool clientConnected_ = false;
+  bool clientAuthorized_ = false;
   bool scanRequested_ = false;
   bool wifiConnecting_ = false;
   uint32_t wifiConnectStartedAt_ = 0;
