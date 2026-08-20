@@ -19,7 +19,9 @@ constexpr char kFirmwareVersion[] = "0.2.0";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
-constexpr uint32_t kPollIntervalMs = 15000;
+constexpr uint32_t kDefaultPollIntervalMs = 15000;
+constexpr uint32_t kMinimumPollIntervalMs = 5000;
+constexpr uint32_t kMaximumPollIntervalMs = 300000;
 constexpr size_t kFrameHeaderBytes = 45;
 
 Preferences prefs;
@@ -33,6 +35,7 @@ String deviceToken;
 String displayedRevision;
 String setupToken;
 uint32_t lastPollAt = 0;
+uint32_t pollIntervalMs = kDefaultPollIntervalMs;
 bool restartRequested = false;
 bool provisioningMode = false;
 
@@ -285,6 +288,10 @@ bool bootstrapDevice(String* errorMessage = nullptr) {
     return false;
   }
   if (receivedToken != deviceToken) saveDeviceToken(receivedToken);
+  const uint32_t pollSeconds = document["poll_seconds"] | (kDefaultPollIntervalMs / 1000);
+  pollIntervalMs = constrain(pollSeconds,
+                             kMinimumPollIntervalMs / 1000,
+                             kMaximumPollIntervalMs / 1000) * 1000UL;
   if (document["claimed"] | false) {
     prefs.begin("photowall", false);
     prefs.remove("setup");
@@ -484,7 +491,7 @@ void loop() {
       return;
     }
   }
-  if (lastPollAt == 0 || millis() - lastPollAt >= kPollIntervalMs) {
+  if (lastPollAt == 0 || millis() - lastPollAt >= pollIntervalMs) {
     lastPollAt = millis();
     pollForFrame();
   }
