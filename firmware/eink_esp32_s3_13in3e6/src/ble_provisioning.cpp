@@ -76,6 +76,7 @@ void BleProvisioningService::begin(
   setupToken_ = setupToken;
   status_ = "idle";
   activeService = this;
+  pinMode(kProofButton, INPUT_PULLUP);
 
   String advertisedName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
   advertisedName.toUpperCase();
