@@ -251,7 +251,7 @@ bool postJson(const String& path, const String& body, String* response = nullptr
   return code >= 200 && code < 300;
 }
 
-bool bootstrapDevice() {
+bool bootstrapDevice(String* errorMessage = nullptr) {
   JsonDocument request;
   request["device_id"] = deviceId;
   request["pairing_code"] = pairingCode;
@@ -264,12 +264,26 @@ bool bootstrapDevice() {
   String response;
   if (!postJson("/api/devices/bootstrap", body, &response)) {
     Serial.printf("Device bootstrap failed: %s\n", response.c_str());
+    if (errorMessage) {
+      JsonDocument errorDocument;
+      if (!deserializeJson(errorDocument, response)) {
+        *errorMessage = String(errorDocument["error"] | "云端暂时不可用，请稍后重试");
+      } else {
+        *errorMessage = "云端暂时不可用，请检查家庭网络后重试";
+      }
+    }
     return false;
   }
   JsonDocument document;
-  if (deserializeJson(document, response)) return false;
+  if (deserializeJson(document, response)) {
+    if (errorMessage) *errorMessage = "云端响应格式异常，请稍后重试";
+    return false;
+  }
   const String receivedToken = document["device_token"] | "";
-  if (receivedToken.isEmpty()) return false;
+  if (receivedToken.isEmpty()) {
+    if (errorMessage) *errorMessage = "云端未返回设备凭据，请稍后重试";
+    return false;
+  }
   if (receivedToken != deviceToken) saveDeviceToken(receivedToken);
   if (document["claimed"] | false) {
     prefs.begin("photowall", false);
@@ -437,6 +451,15 @@ void setup() {
 
 void loop() {
   photowall::bleProvisioning.loop();
+  if (provisioningMode && photowall::bleProvisioning.cloudBootstrapPending()) {
+    loadConfiguration();
+    String bootstrapError;
+    if (bootstrapDevice(&bootstrapError)) {
+      photowall::bleProvisioning.completeCloudBootstrap(true, "设备已连接 PhotoWall 云端");
+    } else {
+      photowall::bleProvisioning.completeCloudBootstrap(false, bootstrapError);
+    }
+  }
   if (provisioningMode) {
     dnsServer.processNextRequest();
     provisionServer.handleClient();

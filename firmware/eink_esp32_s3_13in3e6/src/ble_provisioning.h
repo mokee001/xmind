@@ -12,6 +12,8 @@ class BleProvisioningService {
   void loop();
   void stop();
   bool active() const;
+  bool cloudBootstrapPending() const;
+  void completeCloudBootstrap(bool success, const String& message = "");
 
   void handleCommandWrite(BLECharacteristic* characteristic);
   void handleClientConnected();
@@ -49,6 +51,7 @@ class BleProvisioningService {
   bool clientAuthorized_ = false;
   bool scanRequested_ = false;
   bool wifiConnecting_ = false;
+  bool cloudBootstrapPending_ = false;
   uint32_t wifiConnectStartedAt_ = 0;
   uint32_t restartAt_ = 0;
   portMUX_TYPE commandMux_ = portMUX_INITIALIZER_UNLOCKED;

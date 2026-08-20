@@ -166,6 +166,22 @@ void BleProvisioningService::stop() {
 
 bool BleProvisioningService::active() const { return active_; }
 
+bool BleProvisioningService::cloudBootstrapPending() const {
+  return cloudBootstrapPending_;
+}
+
+void BleProvisioningService::completeCloudBootstrap(bool success, const String& message) {
+  cloudBootstrapPending_ = false;
+  if (success) {
+    setStatus("connected", message.isEmpty() ? "设备已连接云端" : message);
+    restartAt_ = millis() + kRestartDelayMs;
+  } else {
+    setStatus("cloud_unreachable",
+              message.isEmpty() ? "无法连接 PhotoWall 云端，请检查网络后重试" : message,
+              "cloud_unreachable");
+  }
+}
+
 void BleProvisioningService::handleClientConnected() {
   clientConnected_ = true;
   clientAuthorized_ = false;
@@ -282,6 +298,7 @@ void BleProvisioningService::processCommand(const char* command) {
   if (operation == "cancel") {
     WiFi.disconnect(false, false);
     wifiConnecting_ = false;
+    cloudBootstrapPending_ = false;
     pendingPassword_ = "";
     setStatus("idle", "已取消配网");
     return;
@@ -325,6 +342,7 @@ void BleProvisioningService::scanNetworks() {
 void BleProvisioningService::startWifiConnection(const String& ssid, const String& password) {
   pendingSsid_ = ssid;
   pendingPassword_ = password;
+  cloudBootstrapPending_ = false;
   WiFi.disconnect(false, false);
   WiFi.begin(pendingSsid_.c_str(), pendingPassword_.c_str());
   wifiConnectStartedAt_ = millis();
@@ -347,8 +365,8 @@ void BleProvisioningService::processWifiConnection() {
     preferences.end();
     pendingPassword_ = "";
     wifiConnecting_ = false;
-    setStatus("connected", "家庭 Wi-Fi 已连接");
-    restartAt_ = millis() + kRestartDelayMs;
+    cloudBootstrapPending_ = true;
+    setStatus("connecting", "Wi-Fi 已连接，正在连接 PhotoWall 云端");
     return;
   }
   if (wifiStatus == WL_CONNECT_FAILED) {
