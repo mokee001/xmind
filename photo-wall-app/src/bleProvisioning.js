@@ -258,16 +258,22 @@ async function awaitPhysicalConfirmation() {
       },
     };
   });
-  const startedAt = Date.now();
-  try {
-    while (authorizationWaiter && Date.now() - startedAt < PHYSICAL_CONFIRM_TIMEOUT_MS) {
-      await writeCommand({ op: 'authorize' });
-      await new Promise(resolve => setTimeout(resolve, PHYSICAL_CONFIRM_RETRY_MS));
+  const retryPromise = (async () => {
+    const startedAt = Date.now();
+    try {
+      while (authorizationWaiter && Date.now() - startedAt < PHYSICAL_CONFIRM_TIMEOUT_MS) {
+        await writeCommand({ op: 'authorize' });
+        await new Promise(resolve => setTimeout(resolve, PHYSICAL_CONFIRM_RETRY_MS));
+      }
+    } catch (error) {
+      authorizationWaiter?.reject(friendlyBleError(error));
     }
-  } catch (error) {
-    authorizationWaiter?.reject(friendlyBleError(error));
+  })();
+  try {
+    return await tokenPromise;
+  } finally {
+    await retryPromise;
   }
-  return tokenPromise;
 }
 
 export async function startDeviceDiscovery(onDevice) {
