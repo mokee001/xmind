@@ -4,6 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "@expo/metro-runtime": "~57.0.8",
+    "base64-js": "^1.5.1",
     "expo": "~57.0.0",
     "expo-image-picker": "~57.0.7",
     "expo-media-library": "~57.0.3",
@@ -12,6 +13,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-ble-plx": "^3.5.1",
     "react-native-web": "^0.21.2"
   },
   "scripts": {

@@ -57,7 +57,14 @@
           "isAccessMediaLocationEnabled": true
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "react-native-ble-plx",
+        {
+          "bluetoothAlwaysPermission": "需要通过蓝牙发现并配置你的墨水屏。",
+          "neverForLocation": true
+        }
+      ]
     ],
     "extra": {
       "eas": {
