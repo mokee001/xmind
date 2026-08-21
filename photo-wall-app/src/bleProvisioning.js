@@ -25,6 +25,14 @@ let provisionCompleted = false;
 const discoveredDevices = new Map();
 const statusListeners = new Set();
 
+function logBle(event, details = {}) {
+  console.info('[PhotoWall BLE]', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    event,
+    ...details,
+  }));
+}
+
 function getManager() {
   if (Platform.OS === 'web') throw new Error('网页预览不支持蓝牙配网');
   if (!manager) {
@@ -103,12 +111,19 @@ function rejectWifiScan(error) {
 
 function processEvent(event) {
   if (event?.type === 'authorization') {
+    logBle('authorization_event', {
+      status: String(event.status || ''),
+      setupTokenPresent: Boolean(event.setupToken),
+    });
     if (!authorizationWaiter || event.status !== 'authorized' || !event.setupToken) return;
     authorizationWaiter.resolve(String(event.setupToken));
     authorizationWaiter = undefined;
     return;
   }
   if (event?.type === 'wifi_networks') {
+    logBle('wifi_networks_received', {
+      networkCount: Array.isArray(event.networks) ? event.networks.length : 0,
+    });
     if (!wifiScanWaiter) return;
     clearTimeout(wifiScanWaiter.timeout);
     const networks = Array.isArray(event.networks)
@@ -123,6 +138,11 @@ function processEvent(event) {
     return;
   }
   if (event?.type !== 'status') return;
+  logBle('status_received', {
+    status: String(event.status || ''),
+    message: String(event.message || ''),
+    errorCode: String(event.errorCode || ''),
+  });
   if (event.status === 'connected') provisionCompleted = true;
   if (event.errorCode === 'scan_failed') rejectWifiScan(new Error(event.message || 'Wi-Fi 扫描失败'));
   emitStatus(event);
@@ -236,6 +256,7 @@ async function sendCommand(command) {
 }
 
 async function awaitPhysicalConfirmation() {
+  logBle('physical_confirmation_waiting');
   emitStatus({
     status: 'awaiting_confirmation',
     message: '请按住设备 BOOT 键确认配网',
@@ -278,6 +299,7 @@ async function awaitPhysicalConfirmation() {
 
 export async function startDeviceDiscovery(onDevice) {
   try {
+    logBle('discovery_started');
     await waitForBluetooth();
     await stopDeviceDiscovery();
     discoveredDevices.clear();
@@ -287,7 +309,15 @@ export async function startDeviceDiscovery(onDevice) {
         return;
       }
       if (!device) return;
+      const firstDiscovery = !discoveredDevices.has(device.id);
       discoveredDevices.set(device.id, device);
+      if (firstDiscovery) {
+        logBle('device_discovered', {
+          transportId: String(device.id || ''),
+          deviceName: String(device.name || device.localName || 'PhotoWall'),
+          signalStrength: Number(device.rssi) || -127,
+        });
+      }
       onDevice?.({
         deviceId: device.id,
         deviceName: device.name || device.localName || 'PhotoWall',
@@ -305,10 +335,12 @@ export async function startDeviceDiscovery(onDevice) {
 export async function stopDeviceDiscovery() {
   if (!manager) return;
   try { await manager.stopDeviceScan(); } catch {}
+  logBle('discovery_stopped');
 }
 
 export async function connectProvisioningDevice(deviceId) {
   try {
+    logBle('connection_started', { transportId: String(deviceId || '') });
     await waitForBluetooth();
     await stopDeviceDiscovery();
     eventSubscription?.remove();
@@ -322,6 +354,10 @@ export async function connectProvisioningDevice(deviceId) {
     const infoCharacteristic = await connectedDevice.readCharacteristicForService(SERVICE_UUID, INFO_UUID);
     const info = JSON.parse(decodeUtf8(toByteArray(infoCharacteristic.value || '')));
     if (!info.deviceId) throw new Error('设备身份信息不完整');
+    logBle('encrypted_link_verified', {
+      deviceId: String(info.deviceId),
+      firmwareVersion: String(info.firmwareVersion || ''),
+    });
 
     connectedInfo = {
       deviceId: String(info.deviceId),
@@ -346,6 +382,10 @@ export async function connectProvisioningDevice(deviceId) {
       },
     );
     disconnectSubscription = connectedDevice.onDisconnected(error => {
+      logBle('disconnected', {
+        expected: provisionCompleted,
+        message: error ? friendlyBleError(error).message : '',
+      });
       rejectWifiScan(new Error('设备蓝牙连接已断开'));
       if (authorizationWaiter) {
         authorizationWaiter.reject?.(new Error('设备蓝牙连接已断开'));
@@ -361,6 +401,10 @@ export async function connectProvisioningDevice(deviceId) {
       });
     });
     if (!connectedInfo.setupToken) connectedInfo.setupToken = await awaitPhysicalConfirmation();
+    logBle('physical_confirmation_authorized', {
+      deviceId: connectedInfo.deviceId,
+      setupTokenPresent: Boolean(connectedInfo.setupToken),
+    });
     emitStatus({ status: 'idle', message: '设备已连接', deviceId: connectedInfo.deviceId });
     return { ...connectedInfo };
   } catch (error) {
@@ -372,6 +416,7 @@ export async function connectProvisioningDevice(deviceId) {
 
 export async function scanWifiNetworks() {
   requireConnection();
+  logBle('wifi_scan_requested');
   rejectWifiScan(new Error('新的 Wi-Fi 扫描已开始'));
   const result = new Promise((resolve, reject) => {
     wifiScanWaiter = {
@@ -397,6 +442,10 @@ export async function provisionWifi({ ssid, password }) {
   if (networkName.length > 32 || String(password || '').length > 64) {
     throw new Error('Wi-Fi 名称或密码过长');
   }
+  logBle('wifi_credentials_submitted', {
+    networkNameLength: networkName.length,
+    passwordPresent: String(password || '').length > 0,
+  });
   await sendCommand({ op: 'provision', ssid: networkName, password: String(password || '') });
 }
 
