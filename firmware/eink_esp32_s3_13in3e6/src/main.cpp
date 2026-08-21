@@ -101,8 +101,9 @@ void loadConfiguration() {
 void saveDeviceToken(const String& token) {
   deviceToken = token;
   prefs.begin("photowall", false);
-  prefs.putString("token", token);
+  const size_t storedLength = prefs.putString("token", token);
   prefs.end();
+  Serial.printf("Device token persisted: %s\n", storedLength == token.length() ? "yes" : "no");
 }
 
 void saveRevision(const String& revision) {
@@ -242,13 +243,15 @@ bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure, co
   return http.begin(plain, url);
 }
 
-bool postJson(const String& path, const String& body, String* response = nullptr) {
+bool postJson(const String& path, const String& body, String* response = nullptr,
+              int* responseCode = nullptr) {
   HTTPClient http;
   WiFiClient plain;
   WiFiClientSecure secure;
   if (!beginHttp(http, plain, secure, apiBase + path)) return false;
   http.addHeader("Content-Type", "application/json");
   const int code = http.POST(body);
+  if (responseCode) *responseCode = code;
   if (response) *response = http.getString();
   http.end();
   return code >= 200 && code < 300;
@@ -265,8 +268,10 @@ bool bootstrapDevice(String* errorMessage = nullptr) {
   String body;
   serializeJson(request, body);
   String response;
-  if (!postJson("/api/devices/bootstrap", body, &response)) {
-    Serial.printf("Device bootstrap failed: %s\n", response.c_str());
+  int bootstrapHttpStatus = 0;
+  Serial.println("Cloud bootstrap request: POST /api/devices/bootstrap");
+  if (!postJson("/api/devices/bootstrap", body, &response, &bootstrapHttpStatus)) {
+    Serial.printf("Device bootstrap failed: HTTP %d %s\n", bootstrapHttpStatus, response.c_str());
     if (errorMessage) {
       JsonDocument errorDocument;
       if (!deserializeJson(errorDocument, response)) {
@@ -292,6 +297,8 @@ bool bootstrapDevice(String* errorMessage = nullptr) {
   pollIntervalMs = constrain(pollSeconds,
                              kMinimumPollIntervalMs / 1000,
                              kMaximumPollIntervalMs / 1000) * 1000UL;
+  Serial.printf("Cloud bootstrap accepted: HTTP %d, token_present=yes, poll_seconds=%lu\n",
+                bootstrapHttpStatus, static_cast<unsigned long>(pollIntervalMs / 1000));
   if (document["claimed"] | false) {
     prefs.begin("photowall", false);
     prefs.remove("setup");
@@ -402,6 +409,8 @@ void pollForFrame() {
                      displayedRevision + "&token=" + deviceToken;
   if (!beginHttp(http, plain, secure, url)) return;
   const int code = http.GET();
+  Serial.printf("Cloud next poll: GET /api/devices/%s/next HTTP %d, interval_seconds=%lu\n",
+                deviceId.c_str(), code, static_cast<unsigned long>(pollIntervalMs / 1000));
   if (code == HTTP_CODE_NO_CONTENT) {
     http.end();
     return;
