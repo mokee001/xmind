@@ -1,9 +1,12 @@
 import { Platform } from 'react-native';
+import { fetch as expoFetch } from 'expo/fetch';
+import { File, Paths, UploadType } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library/legacy';
 
-export const DEFAULT_API_BASE = 'https://api.mokeedesign.cn';
+export const DEFAULT_API_BASE = process.env.EXPO_PUBLIC_API_BASE || 'https://api.mokeedesign.cn';
 export const DEFAULT_PROVISION_URL = 'http://192.168.4.1';
 const PHOTO_UPLOAD_BATCH_SIZE = 1;
+const PWE6_FRAME_BYTES = 960045;
 
 function baseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -21,13 +24,14 @@ async function responseJson(response) {
   return data;
 }
 
-function uploadForm({ url, form, headers = {}, onProgress }) {
+function uploadForm({ url, form, headers = {}, onProgress, timeoutMs = 0 }) {
   if (Platform.OS === 'web' || typeof XMLHttpRequest === 'undefined') {
     return fetch(url, { method: 'POST', headers, body: form }).then(responseJson);
   }
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', url);
+    request.timeout = timeoutMs;
     Object.entries(headers).forEach(([key, value]) => request.setRequestHeader(key, value));
     request.upload.onprogress = event => {
       if (event.lengthComputable) onProgress?.(event.loaded / event.total);
@@ -50,8 +54,134 @@ function uploadForm({ url, form, headers = {}, onProgress }) {
 }
 
 export async function readProvisionStatus(provisionUrl = DEFAULT_PROVISION_URL) {
-  const response = await fetch(`${baseUrl(provisionUrl)}/status`);
-  return responseJson(response);
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), 6000);
+  try {
+    const response = await expoFetch(`${baseUrl(provisionUrl)}/status`, {
+      signal: abortController.signal,
+    });
+    return responseJson(response);
+  } catch (error) {
+    if (abortController.signal.aborted || error.name === 'AbortError' ||
+        String(error.message).includes('FetchRequestCanceledException')) {
+      throw new Error('连接设备超时');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function waitForLocalDisplay({ provisionUrl, onProgress, timeoutMs = 150000 }) {
+  const deadline = Date.now() + timeoutMs;
+  let lastConnectionError;
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const status = await readProvisionStatus(provisionUrl);
+      lastConnectionError = null;
+      const state = String(status.frame_state || 'idle');
+      onProgress?.({ stage: state, progress: state === 'displayed' ? 100 : 99 });
+      if (state === 'displayed') return status;
+      if (state === 'error') throw new Error(status.frame_error || '墨水屏刷新失败');
+    } catch (error) {
+      if (String(error.message).includes('墨水屏刷新失败')) throw error;
+      lastConnectionError = error;
+    }
+  }
+  throw new Error(lastConnectionError
+    ? `等待墨水屏刷新超时：${lastConnectionError.message}`
+    : '等待墨水屏刷新超时');
+}
+
+export async function sendLocalControl({ provisionUrl = DEFAULT_PROVISION_URL, action = 'display_test_pattern' }) {
+  const response = await fetch(`${baseUrl(provisionUrl)}/control`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  await responseJson(response);
+  return waitForLocalDisplay({ provisionUrl });
+}
+
+export async function publishLocalDisplayPhoto({
+  apiBase = DEFAULT_API_BASE,
+  provisionUrl = DEFAULT_PROVISION_URL,
+  asset,
+  onProgress,
+}) {
+  const photoForm = new FormData();
+  if (Platform.OS === 'web') {
+    const blob = await (await fetch(asset.uri)).blob();
+    photoForm.append('file', blob, asset.fileName || 'photo.jpg');
+  } else {
+    photoForm.append('file', {
+      uri: asset.uri,
+      name: asset.fileName || `photo-${Date.now()}.jpg`,
+      type: asset.mimeType || 'image/jpeg',
+    });
+  }
+
+  onProgress?.({ stage: 'preparing', progress: 0 });
+  const prepared = await expoFetch(`${baseUrl(apiBase)}/api/eink/prepare?fit=contain&enhancement=standard`, {
+    method: 'POST',
+    body: photoForm,
+  });
+  if (!prepared.ok) return responseJson(prepared);
+
+  onProgress?.({ stage: 'uploading', progress: 0 });
+  const uploadUrl = `${baseUrl(provisionUrl)}/v1/frame`;
+  if (Platform.OS === 'web') {
+    const frame = await prepared.blob();
+    if (frame.size !== PWE6_FRAME_BYTES) {
+      throw new Error(`画面数据长度异常（${frame.size} 字节）`);
+    }
+    const frameForm = new FormData();
+    frameForm.append('frame', frame, 'display.pwe6');
+    await uploadForm({
+      url: uploadUrl,
+      form: frameForm,
+      timeoutMs: 120000,
+      onProgress: fraction => onProgress?.({
+        stage: fraction >= 1 ? 'refreshing' : 'uploading',
+        progress: Math.round(fraction * 100),
+      }),
+    });
+    return waitForLocalDisplay({ provisionUrl, onProgress });
+  }
+
+  const frameBytes = await prepared.bytes();
+  if (frameBytes.byteLength !== PWE6_FRAME_BYTES) {
+    throw new Error(`画面数据长度异常（${frameBytes.byteLength} 字节）`);
+  }
+  const frameFile = new File(Paths.cache, `photowall-${Date.now()}.pwe6`);
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => abortController.abort(), 120000);
+  try {
+    frameFile.create({ overwrite: true, intermediates: true });
+    frameFile.write(frameBytes);
+    const result = await frameFile.upload(uploadUrl, {
+      uploadType: UploadType.MULTIPART,
+      fieldName: 'frame',
+      mimeType: 'application/vnd.photowall.pwe6',
+      sessionType: 'foreground',
+      signal: abortController.signal,
+      onProgress: ({ bytesSent, totalBytes }) => {
+        const progress = totalBytes > 0 ? Math.min(100, Math.round((bytesSent / totalBytes) * 100)) : 0;
+        onProgress?.({ stage: progress >= 100 ? 'refreshing' : 'uploading', progress });
+      },
+    });
+    let data = {};
+    try { data = result.body ? JSON.parse(result.body) : {}; }
+    catch { data = { error: result.body || `HTTP ${result.status}` }; }
+    if (result.status < 200 || result.status >= 300) {
+      throw new Error(data.error || `请求失败（HTTP ${result.status}）`);
+    }
+    return waitForLocalDisplay({ provisionUrl, onProgress });
+  } finally {
+    clearTimeout(timeout);
+    if (frameFile.exists) frameFile.delete();
+  }
 }
 
 export async function provisionDisplay({ provisionUrl = DEFAULT_PROVISION_URL, ssid, password, apiBase }) {
@@ -92,7 +222,7 @@ export async function publishDisplayPhoto({ apiBase = DEFAULT_API_BASE, deviceId
   });
 }
 
-async function uploadAssets({ apiBase, assets, onProgress }) {
+async function uploadAssets({ apiBase, accountToken, assets, onProgress }) {
   const form = new FormData();
   for (const asset of assets) {
     const info = await MediaLibrary.getAssetInfoAsync(asset);
@@ -102,10 +232,84 @@ async function uploadAssets({ apiBase, assets, onProgress }) {
       type: asset.mediaType === MediaLibrary.MediaType.photo ? 'image/jpeg' : 'application/octet-stream',
     });
   }
-  return uploadForm({ url: `${baseUrl(apiBase)}/api/upload`, form, onProgress });
+  return uploadForm({
+    url: `${baseUrl(apiBase)}/api/upload`,
+    form,
+    headers: accountToken ? { 'X-Account-Token': accountToken } : {},
+    onProgress,
+  });
 }
 
-export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, onProgress }) {
+export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken, album, onProgress }) {
+  if (Platform.OS === 'web') {
+    throw new Error('网页预览无法读取系统相册，请在已安装的手机 App 中同步照片');
+  }
+  const permission = await MediaLibrary.getPermissionsAsync(false, ['photo']);
+  if (permission.status !== 'granted') {
+    throw new Error('需要照片访问权限，才能同步相册');
+  }
+  const knownResponse = await fetch(`${baseUrl(apiBase)}/api/known_photos`, {
+    headers: accountToken ? { 'X-Account-Token': accountToken } : {},
+  });
+  const known = new Set((await responseJson(knownResponse)).names || []);
+  const assets = [];
+  let after;
+  onProgress?.({ stage: 'scanning', progress: 0, scanned: 0, uploaded: 0 });
+  do {
+    const page = await MediaLibrary.getAssetsAsync({
+      first: 100,
+      after,
+      album,
+      mediaType: [MediaLibrary.MediaType.photo],
+      sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+    });
+    assets.push(...page.assets.filter(asset => !known.has(asset.filename)));
+    onProgress?.({ stage: 'scanning', progress: 0, scanned: assets.length, uploaded: 0 });
+    after = page.endCursor;
+    if (!page.hasNextPage) break;
+  } while (after);
+
+  if (!assets.length) {
+    return { scanned: 0, synced: 0, unchanged: true };
+  }
+  let synced = 0;
+  for (let index = 0; index < assets.length; index += PHOTO_UPLOAD_BATCH_SIZE) {
+    const batch = assets.slice(index, index + PHOTO_UPLOAD_BATCH_SIZE);
+    const result = await uploadAssets({
+      apiBase,
+      accountToken,
+      assets: batch,
+      onProgress: fraction => onProgress?.({
+        stage: 'uploading',
+        progress: Math.round(((index + (batch.length * fraction)) / assets.length) * 100),
+        scanned: assets.length,
+        uploaded: Math.min(assets.length, Math.round(index + (batch.length * fraction))),
+      }),
+    });
+    synced += Number(result.saved) || batch.length;
+  }
+  onProgress?.({ stage: 'uploaded', progress: 100, scanned: assets.length, uploaded: synced });
+  return { scanned: assets.length, synced, unchanged: false };
+}
+
+export async function generateWall({ apiBase = DEFAULT_API_BASE, accountToken, template = 'daily_polaroid', title = '我的一天' }) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
+    body: JSON.stringify({ template, title }),
+  });
+  return responseJson(response);
+}
+
+export async function publishGeneratedWall({ apiBase, deviceId, accountToken }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/publish-last-wall`,
+    { method: 'POST', headers: { 'X-Account-Token': accountToken } },
+  );
+  return responseJson(response);
+}
+
+export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, accountToken, onProgress }) {
   if (Platform.OS === 'web') {
     throw new Error('网页预览无法读取系统相册，请在已安装的手机 App 中一键发布');
   }
@@ -147,6 +351,7 @@ export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, onProgres
     const batch = assets.slice(index, index + PHOTO_UPLOAD_BATCH_SIZE);
     const result = await uploadAssets({
       apiBase,
+      accountToken,
       assets: batch,
       onProgress: fraction => onProgress?.({
         stage: 'uploading',
