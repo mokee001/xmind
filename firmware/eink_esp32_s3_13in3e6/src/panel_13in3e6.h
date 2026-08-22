@@ -30,7 +30,7 @@ class Panel13in3E6 {
   void command(uint8_t value);
   void data(uint8_t value);
   void reset();
-  bool waitUntilIdle(uint32_t timeoutMs = 120000);
+  bool waitUntilIdle(const char* stage, uint32_t timeoutMs = 120000);
   bool initialize();
   bool refreshAndSleep();
 };

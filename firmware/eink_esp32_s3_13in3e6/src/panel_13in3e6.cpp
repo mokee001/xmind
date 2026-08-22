@@ -7,7 +7,7 @@
 namespace photowall {
 
 void Panel13in3E6::begin() {
-  pinMode(kBusy, INPUT);
+  pinMode(kBusy, INPUT_PULLUP);
   pinMode(kReset, OUTPUT);
   pinMode(kDc, OUTPUT);
   pinMode(kSck, OUTPUT);
@@ -17,7 +17,8 @@ void Panel13in3E6::begin() {
   pinMode(kPower, OUTPUT);
   digitalWrite(kCsMaster, HIGH);
   digitalWrite(kCsSlave, HIGH);
-  digitalWrite(kPower, HIGH);
+  digitalWrite(kReset, LOW);
+  digitalWrite(kPower, LOW);
   digitalWrite(kSck, LOW);
 }
 
@@ -47,25 +48,42 @@ void Panel13in3E6::data(uint8_t value) {
 
 void Panel13in3E6::reset() {
   digitalWrite(kReset, HIGH);
-  delay(200);
+  delay(30);
   digitalWrite(kReset, LOW);
-  delay(2);
+  delay(30);
   digitalWrite(kReset, HIGH);
-  delay(200);
+  delay(30);
+  digitalWrite(kReset, LOW);
+  delay(30);
+  digitalWrite(kReset, HIGH);
+  delay(30);
 }
 
-bool Panel13in3E6::waitUntilIdle(uint32_t timeoutMs) {
+bool Panel13in3E6::waitUntilIdle(const char* stage, uint32_t timeoutMs) {
   const uint32_t started = millis();
   while (digitalRead(kBusy) == LOW) {
-    if (millis() - started > timeoutMs) return false;
+    if (millis() - started > timeoutMs) {
+      Serial.printf("Panel BUSY timeout during %s (pin=%d)\n", stage, digitalRead(kBusy));
+      return false;
+    }
     delay(100);
   }
+  Serial.printf("Panel ready after %s (%lu ms)\n", stage,
+                static_cast<unsigned long>(millis() - started));
   return true;
 }
 
 bool Panel13in3E6::initialize() {
+  selectAll(false);
+  digitalWrite(kReset, LOW);
+  digitalWrite(kPower, LOW);
+  delay(100);
+  Serial.printf("Panel BUSY with power off: %d\n", digitalRead(kBusy));
+  digitalWrite(kPower, HIGH);
+  delay(10);
+  Serial.printf("Panel BUSY after power on: %d\n", digitalRead(kBusy));
   reset();
-  if (!waitUntilIdle()) return false;
+  Serial.printf("Panel BUSY after reset: %d\n", digitalRead(kBusy));
 
   digitalWrite(kCsMaster, LOW);
   command(0x74);
@@ -163,14 +181,22 @@ bool Panel13in3E6::refreshAndSleep() {
   selectAll(true);
   command(0x04);
   selectAll(false);
-  if (!waitUntilIdle()) return false;
+  if (!waitUntilIdle("power on")) {
+    digitalWrite(kReset, LOW);
+    digitalWrite(kPower, LOW);
+    return false;
+  }
 
   delay(50);
   selectAll(true);
   command(0x12);
   data(0x00);
   selectAll(false);
-  if (!waitUntilIdle()) return false;
+  if (!waitUntilIdle("display refresh")) {
+    digitalWrite(kReset, LOW);
+    digitalWrite(kPower, LOW);
+    return false;
+  }
 
   selectAll(true);
   command(0x02);
@@ -181,6 +207,9 @@ bool Panel13in3E6::refreshAndSleep() {
   command(0x07);
   data(0xA5);
   selectAll(false);
+  delay(100);
+  digitalWrite(kPower, LOW);
+  digitalWrite(kReset, LOW);
   return true;
 }
 
