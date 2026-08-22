@@ -1,13 +1,14 @@
 # PhotoWall · Waveshare ESP32-S3 13.3E6
 
-自定义固件将官方被动 Wi-Fi Loader 改成独立云端设备：
+自定义固件将官方被动 Wi-Fi Loader 改成支持局域网直传、云端轮询兜底的独立设备：
 
 1. 没有配置时创建 `PhotoWall-XXXX` 临时热点。
 2. App 向 `http://192.168.4.1/provision` 发送家庭 Wi-Fi 和云端 API 地址。
 3. 凭据保存至 ESP32 Preferences/NVS，后续开机自动联网。
-4. 设备向 `/api/devices/bootstrap` 注册，之后每 15 秒查询待显示 revision。
-5. 下载并校验 960045 字节 PWE6（含 SHA-256），写入两个 600×1600 控制器并全刷。
-6. 显示成功后保存 revision，避免同一画面重复刷新。
+4. 联网后持续提供 `http://photowall-xxxx.local` 本地服务，并通过 `_photowall._tcp` 广播。
+5. App 优先在局域网直传 PWE6；设备不可达时仍可每 15 秒查询云端待显示 revision。
+6. 固件校验 960045 字节 PWE6 的头部、尺寸和 SHA-256，之后写入两个 600×1600 控制器并全刷。
+7. 云端画面显示成功后保存 revision，避免同一画面重复刷新。
 
 ## 配网
 
@@ -18,6 +19,16 @@
 - 配置地址：`http://192.168.4.1`
 
 恢复出厂：上电时按住 BOOT（GPIO 0）至少 8 秒。清除 Wi-Fi、设备 token 和当前 revision 后重新进入配网。
+
+## 局域网发布
+
+配网热点和家庭 Wi-Fi 使用同一组设备接口：
+
+- `GET /status`：返回设备、网络和本地画面状态。
+- `POST /control`：发送开发阶段的测试刷新命令。
+- `POST /v1/frame`：以 `multipart/form-data` 上传字段 `frame`，内容必须是完整的 960045 字节 PWE6 文件。
+
+`POST /v1/frame` 分块写入 PSRAM，收完后验证 PWE6 版本、`1200×1600` 尺寸、payload 长度和 SHA-256。只有全部通过才刷新屏幕；HTTP 响应会在全刷完成后返回。
 
 ## 构建和烧录
 
@@ -37,6 +48,7 @@ pio device monitor
 
 - HTTPS 暂时使用不校验证书模式，生产版必须内置 CA 或证书 pin。
 - 配网热点使用派生密码，但 Wi-Fi 凭据尚未增加应用层 ECDH。
+- 局域网 `/control` 和 `/v1/frame` 尚未鉴权，量产前需要设备会话密钥或一次性 transfer ticket。
 - 云端 bootstrap/claim 是本地演示模型，生产版需设备出厂密钥和一次性 bootstrap token。
 - 生产版还需 Secure Boot、Flash Encryption、签名 OTA 和 token 撤销。
 

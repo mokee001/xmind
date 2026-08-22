@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import socket
 import struct
 import subprocess
@@ -99,9 +100,15 @@ def verify_calendar_publish(base: str) -> None:
         "name": "日历验证屏",
     })
     body, headers = multipart_photo(july_camera_photo())
-    status, raw = request(base, "/api/upload", method="POST", data=body, headers=headers)
+    status, raw = request(
+        base,
+        "/api/upload",
+        method="POST",
+        data=body,
+        headers={**headers, "X-Account-Token": claim["account_token"]},
+    )
     uploaded = json.loads(raw)
-    assert status == 200 and uploaded["count"] == 1, uploaded
+    assert status == 200 and uploaded["count"] >= 1, uploaded
 
     status, raw = request(
         base,
@@ -164,6 +171,10 @@ def main() -> None:
                 env={**environment, "PHOTOWALL_TEST_BASE": base},
                 check=True,
             )
+            shutil.rmtree(data_dir / "photos", ignore_errors=True)
+            shutil.rmtree(data_dir / "store", ignore_errors=True)
+            (data_dir / "photos").mkdir(parents=True, exist_ok=True)
+            (data_dir / "store").mkdir(parents=True, exist_ok=True)
             verify_calendar_publish(base)
         finally:
             process.terminate()

@@ -201,7 +201,7 @@ const REAL_DEVICE_SETUP_ADAPTER = {
   provisionWifi: async ({ ssid, password, device }) => {
     const waiter = createProvisionStatusWaiter();
     try {
-      await provisionBleWifi({ ssid, password });
+      await provisionBleWifi({ ssid, password, apiBase: DEFAULT_API_BASE });
       const status = await waiter.promise;
       return claimProvisionedDevice({ device, status });
     } catch (error) {
@@ -859,6 +859,7 @@ export default function App() {
   };
 
   const connectDevice = () => {
+    setDeviceModal(false);
     setActiveTab('home');
   };
 
@@ -869,8 +870,8 @@ export default function App() {
       setGeneratedWall(null);
     }
     else if (!connected) {
+      setDeviceModal(false);
       setActiveTab('home');
-      setDeviceModal(true);
     }
     else setDeviceModal(true);
   };
@@ -997,21 +998,10 @@ export default function App() {
             </View>
 
             {!connected ? (
-              <>
-                <ContextCard
-                  title="当前展示的是示例"
-                  description="连接照片墙后，保持相同界面并替换为真实设备和相册内容。"
-                />
-                <DeviceSetupFlow
-                  embedded
-                  visible
-                  session={null}
-                  previewMode={IS_WEB_PREVIEW}
-                  adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
-                  onClose={() => {}}
-                  onConnected={onConnected}
-                />
-              </>
+              <ContextCard
+                title="当前展示的是示例"
+                description="连接照片墙后，保持相同界面并替换为真实设备和相册内容。"
+              />
             ) : !photoAllowed ? (
               <ContextCard
                 title="设备已连接，下一步开启相册"
@@ -1199,6 +1189,20 @@ export default function App() {
           </>
         ) : null}
 
+        {!connected ? (
+          <View style={activeTab === 'home' ? undefined : styles.setupFlowHidden}>
+            <DeviceSetupFlow
+              embedded
+              visible
+              session={null}
+              previewMode={IS_WEB_PREVIEW}
+              adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
+              onClose={() => {}}
+              onConnected={onConnected}
+            />
+          </View>
+        ) : null}
+
         {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
         {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
         {!IS_WEB_PREVIEW ? <Text style={styles.footer}>照片仅在你选择相簿并主动同步时上传。</Text> : null}
@@ -1206,14 +1210,16 @@ export default function App() {
       </ScrollView>
 
       <BottomNavigation activeTab={activeTab} onChange={setActiveTab} />
-      <DeviceSetupFlow
-        visible={deviceModal}
-        session={effectiveSession}
-        previewMode={IS_WEB_PREVIEW}
-        adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
-        onClose={() => setDeviceModal(false)}
-        onConnected={onConnected}
-      />
+      {connected ? (
+        <DeviceSetupFlow
+          visible={deviceModal}
+          session={effectiveSession}
+          previewMode={IS_WEB_PREVIEW}
+          adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
+          onClose={() => setDeviceModal(false)}
+          onConnected={onConnected}
+        />
+      ) : null}
       <AlbumModal
         visible={albumModal}
         albums={albums}
@@ -1233,6 +1239,7 @@ const styles = StyleSheet.create({
   switchDisabled: { opacity: 0.42 },
   safe: { flex: 1, backgroundColor: C.canvas },
   page: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 4, paddingBottom: 112 },
+  setupFlowHidden: { display: 'none' },
   topBar: { minHeight: 88, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', backgroundColor: C.canvas },
   topBarTitle: { color: C.ink, fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.8 },
   topBarSubtitle: { color: C.muted, fontSize: 12, lineHeight: 17, marginTop: 2 },

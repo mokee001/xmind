@@ -23,9 +23,22 @@ async function writeValue(key, value) {
   }
 }
 
+async function deleteValue(key) {
+  if (Platform.OS === 'web') {
+    globalThis.sessionStorage?.removeItem(key);
+  } else {
+    await SecureStore.deleteItemAsync(key);
+  }
+}
+
 export async function loadDeviceSession() {
   try {
-    return await readValue(KEY);
+    const session = await readValue(KEY);
+    if (session?.device?.device_id?.endsWith('-demo')) {
+      await deleteValue(KEY);
+      return null;
+    }
+    return session;
   } catch {
     return null;
   }
@@ -48,11 +61,7 @@ export async function savePendingDeviceSetup(setup) {
 }
 
 export async function clearPendingDeviceSetup() {
-  if (Platform.OS === 'web') {
-    globalThis.sessionStorage?.removeItem(PENDING_SETUP_KEY);
-  } else {
-    await SecureStore.deleteItemAsync(PENDING_SETUP_KEY);
-  }
+  await deleteValue(PENDING_SETUP_KEY);
 }
 
 export async function loadPhotoSyncPreference() {

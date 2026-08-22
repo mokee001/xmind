@@ -22,6 +22,7 @@ let eventFrame;
 let wifiScanWaiter;
 let authorizationWaiter;
 let provisionCompleted = false;
+let connectionReleasePromise;
 const discoveredDevices = new Map();
 const statusListeners = new Set();
 
@@ -104,9 +105,46 @@ function emitStatus(event) {
 
 function rejectWifiScan(error) {
   if (!wifiScanWaiter) return;
-  clearTimeout(wifiScanWaiter.timeout);
-  wifiScanWaiter.reject(error);
+  const waiter = wifiScanWaiter;
   wifiScanWaiter = undefined;
+  clearTimeout(waiter.timeout);
+  waiter.reject(error);
+}
+
+function resolveWifiScan(networks) {
+  if (!wifiScanWaiter) return;
+  const waiter = wifiScanWaiter;
+  wifiScanWaiter = undefined;
+  clearTimeout(waiter.timeout);
+  waiter.resolve(networks);
+}
+
+async function releaseProvisioningConnection(reason) {
+  if (connectionReleasePromise) return connectionReleasePromise;
+  const device = connectedDevice;
+  if (!device) return;
+
+  connectedDevice = undefined;
+  connectedInfo = undefined;
+  eventSubscription?.remove();
+  eventSubscription = undefined;
+  disconnectSubscription?.remove();
+  disconnectSubscription = undefined;
+  rejectWifiScan(new Error('配网已取消'));
+  if (authorizationWaiter) {
+    authorizationWaiter.reject?.(new Error('配网已取消'));
+    authorizationWaiter = undefined;
+  }
+
+  logBle('connection_released', { reason: String(reason || 'cancelled') });
+  connectionReleasePromise = (async () => {
+    try { await device.cancelConnection(); } catch {}
+  })();
+  try {
+    await connectionReleasePromise;
+  } finally {
+    connectionReleasePromise = undefined;
+  }
 }
 
 function processEvent(event) {
@@ -124,8 +162,6 @@ function processEvent(event) {
     logBle('wifi_networks_received', {
       networkCount: Array.isArray(event.networks) ? event.networks.length : 0,
     });
-    if (!wifiScanWaiter) return;
-    clearTimeout(wifiScanWaiter.timeout);
     const networks = Array.isArray(event.networks)
       ? event.networks.map(network => ({
         ssid: String(network.ssid || ''),
@@ -133,8 +169,7 @@ function processEvent(event) {
         secure: Boolean(network.secure),
       })).filter(network => network.ssid).sort((left, right) => right.signalStrength - left.signalStrength)
       : [];
-    wifiScanWaiter.resolve(networks);
-    wifiScanWaiter = undefined;
+    resolveWifiScan(networks);
     return;
   }
   if (event?.type !== 'status') return;
@@ -144,7 +179,9 @@ function processEvent(event) {
     errorCode: String(event.errorCode || ''),
   });
   if (event.status === 'connected') provisionCompleted = true;
-  if (event.errorCode === 'scan_failed') rejectWifiScan(new Error(event.message || 'Wi-Fi 扫描失败'));
+  if (wifiScanWaiter && ['scan_failed', 'busy', 'invalid_setup_token'].includes(event.errorCode)) {
+    rejectWifiScan(new Error(event.message || 'Wi-Fi 扫描失败'));
+  }
   emitStatus(event);
 }
 
@@ -186,6 +223,11 @@ function friendlyBleError(error) {
   if (/cancel/i.test(message)) return new Error('蓝牙操作已取消');
   if (/timeout/i.test(message)) return new Error('连接设备超时，请靠近设备后重试');
   return new Error(message);
+}
+
+function normalizeApiBase(value) {
+  const normalized = String(value || '').trim().replace(/\/+$/, '');
+  return /^https?:\/\/[^/\s]+(?::\d+)?$/i.test(normalized) ? normalized : '';
 }
 
 async function requestAndroidPermissions() {
@@ -302,10 +344,11 @@ export async function startDeviceDiscovery(onDevice) {
     logBle('discovery_started');
     await waitForBluetooth();
     await stopDeviceDiscovery();
+    await releaseProvisioningConnection('discovery_restarted');
     discoveredDevices.clear();
     await getManager().startDeviceScan([SERVICE_UUID], { allowDuplicates: true }, (error, device) => {
       if (error) {
-        emitStatus({ status: 'error', message: friendlyBleError(error).message, errorCode: 'scan_failed' });
+        emitStatus({ status: 'error', message: friendlyBleError(error).message, errorCode: 'ble_scan_failed' });
         return;
       }
       if (!device) return;
@@ -416,18 +459,24 @@ export async function connectProvisioningDevice(deviceId) {
 
 export async function scanWifiNetworks() {
   requireConnection();
+  if (wifiScanWaiter) {
+    logBle('wifi_scan_reused');
+    return wifiScanWaiter.promise;
+  }
   logBle('wifi_scan_requested');
-  rejectWifiScan(new Error('新的 Wi-Fi 扫描已开始'));
+  let resolveScan;
+  let rejectScan;
   const result = new Promise((resolve, reject) => {
-    wifiScanWaiter = {
-      resolve,
-      reject,
-      timeout: setTimeout(() => {
-        wifiScanWaiter = undefined;
-        reject(new Error('Wi-Fi 扫描超时，请重试'));
-      }, WIFI_SCAN_TIMEOUT_MS),
-    };
+    resolveScan = resolve;
+    rejectScan = reject;
   });
+  const waiter = { promise: result, resolve: resolveScan, reject: rejectScan, timeout: undefined };
+  waiter.timeout = setTimeout(() => {
+    if (wifiScanWaiter !== waiter) return;
+    wifiScanWaiter = undefined;
+    rejectScan(new Error('Wi-Fi 扫描超时，请重试'));
+  }, WIFI_SCAN_TIMEOUT_MS);
+  wifiScanWaiter = waiter;
   try {
     await sendCommand({ op: 'scan' });
   } catch (error) {
@@ -436,27 +485,42 @@ export async function scanWifiNetworks() {
   return result;
 }
 
-export async function provisionWifi({ ssid, password }) {
+export async function provisionWifi({ ssid, password, apiBase }) {
   const networkName = String(ssid || '').trim();
+  const serviceBase = normalizeApiBase(apiBase);
   if (!networkName) throw new Error('请选择 Wi-Fi');
   if (networkName.length > 32 || String(password || '').length > 64) {
     throw new Error('Wi-Fi 名称或密码过长');
   }
+  if (!serviceBase) throw new Error('PhotoWall 服务地址无效');
   logBle('wifi_credentials_submitted', {
     networkNameLength: networkName.length,
     passwordPresent: String(password || '').length > 0,
+    serviceProtocol: serviceBase.startsWith('https://') ? 'https' : 'http',
   });
-  await sendCommand({ op: 'provision', ssid: networkName, password: String(password || '') });
+  await sendCommand({
+    op: 'provision',
+    ssid: networkName,
+    password: String(password || ''),
+    apiBase: serviceBase,
+  });
 }
 
 export function subscribeProvisionStatus(callback) {
   if (typeof callback !== 'function') throw new TypeError('状态订阅必须提供回调函数');
   statusListeners.add(callback);
-  return () => statusListeners.delete(callback);
+  return () => {
+    statusListeners.delete(callback);
+    if (!statusListeners.size && connectedDevice && !provisionCompleted) {
+      releaseProvisioningConnection('setup_view_closed').catch(() => {});
+    }
+  };
 }
 
 export async function cancelProvisioning() {
-  rejectWifiScan(new Error('配网已取消'));
-  if (!connectedDevice || !connectedInfo) return;
-  await sendCommand({ op: 'cancel' });
+  try {
+    if (connectedDevice && connectedInfo) await sendCommand({ op: 'cancel' });
+  } finally {
+    await releaseProvisioningConnection('cancelled');
+  }
 }

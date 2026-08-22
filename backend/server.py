@@ -121,6 +121,23 @@ def _tag_all() -> list[dict]:
     return photos
 
 
+def _account_scope(account_token: str) -> str:
+    """Use an opaque stable namespace; never put account tokens in file names."""
+    if not account_token:
+        return "legacy"
+    return hashlib.sha256(account_token.encode()).hexdigest()[:24]
+
+
+def _scoped_store_name(name: str, scope: str) -> str:
+    return name if scope == "legacy" else f"{name}_{scope}"
+
+
+def _scoped_photos_dir(scope: str) -> str:
+    directory = PHOTOS_DIR if scope == "legacy" else os.path.join(PHOTOS_DIR, scope)
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+
 def _slot_count(template_id: str) -> int:
     tpl = engine.load_template(os.path.join(TEMPLATES_DIR, f"{template_id}.json"))
     return len(tpl.get("slots", []))
@@ -206,26 +223,31 @@ async def upload(
     title: str = "我的一天",
     date: str = "",
     filters: str = "",
+    x_account_token: str = Header(default=""),
 ) -> dict:
     """专属 App：上传照片到相册目录。auto=1 时上传后自动识别→筛选→套模板→上屏。
     照片会累积进整个相册库（跨批次），精选从整库里挑最好看的，不再只看本批。
     filters：逗号分隔的筛选维度标签（如 "warm,food"），按用户吩咐的维度优先选图。"""
+    scope = _account_scope(x_account_token)
+    photo_dir = _scoped_photos_dir(scope)
     saved_paths: list[str] = []
     for f in files:
-        dest = os.path.join(PHOTOS_DIR, os.path.basename(f.filename or f"up_{int(time.time())}.jpg"))
+        dest = os.path.join(photo_dir, os.path.basename(f.filename or f"up_{int(time.time())}.jpg"))
         with open(dest, "wb") as out:
             out.write(await f.read())
         saved_paths.append(dest)
     # 记录「见过的文件名」（含之后可能被去重/废片剔除的），供 App 做增量上传：
     # 只上传后端从没见过的新照片，已识别的不再重传，大幅加快后续同步。
-    seen = set(store.load("seen_names", []))
+    seen_key = _scoped_store_name("seen_names", scope)
+    photos_key = _scoped_store_name("photos", scope)
+    seen = set(store.load(seen_key, []))
     for p in saved_paths:
         seen.add(os.path.basename(p))
-    store.save("seen_names", sorted(seen))
+    store.save(seen_key, sorted(seen))
     # 对本次上传的照片打标
     tagged = [tagger.tag_photo(p) for p in saved_paths]
     # 并入已有相册库（按 path 去重更新，让"整个相册"随每次上传累积增长）
-    existing = store.load("photos", [])
+    existing = store.load(photos_key, [])
     by_path: dict[str, dict] = {p.get("path"): p for p in existing}
     for t in tagged:
         by_path[t.get("path")] = t  # 同一张重传则用最新打标覆盖
@@ -233,7 +255,7 @@ async def upload(
     # 全库去重：跨批次去掉重复/连拍/高度相似，每簇只留画质最好的一张
     uploaded, removed = dedup.deduplicate(merged)
     # 当前相册库更新为「整库去重后的精选」，展示端/生成端都以此为准
-    store.save("photos", uploaded)
+    store.save(photos_key, uploaded)
     resp: dict = {
         "saved": len(saved_paths),
         "count": len(uploaded),
@@ -242,20 +264,21 @@ async def upload(
     }
     if auto:
         filter_list = [f for f in filters.split(",") if f.strip()] if filters else None
-        resp["wall"] = await _make_wall(template, title, date, photos=uploaded, filters=filter_list)
+        resp["wall"] = await _make_wall(template, title, date, photos=uploaded, filters=filter_list, scope=scope)
     return resp
 
 
 @app.get("/api/photos")
-def get_photos() -> dict:
-    return {"photos": store.load("photos", [])}
+def get_photos(x_account_token: str = Header(default="")) -> dict:
+    return {"photos": store.load(_scoped_store_name("photos", _account_scope(x_account_token)), [])}
 
 
 @app.get("/api/known_photos")
-def known_photos() -> dict:
+def known_photos(x_account_token: str = Header(default="")) -> dict:
     """返回后端已见过的照片文件名（含被去重/废片剔除的），供 App 做增量上传：
     App 只上传不在此集合里的新照片，已识别的不再重传，第一次识别后同步几乎瞬间完成。"""
-    return {"names": store.load("seen_names", [])}
+    scope = _account_scope(x_account_token)
+    return {"names": store.load(_scoped_store_name("seen_names", scope), [])}
 
 
 # ---------- 链路2：画面生成 ----------
@@ -330,15 +353,18 @@ def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> 
 
 
 async def _make_wall(template_id: str, title: str, date: str, photos: list[dict] | None = None,
-                     filters: list[str] | None = None) -> dict | None:
+                     filters: list[str] | None = None, scope: str = "legacy") -> dict | None:
     """核心流水线：选图→套模板渲染→存盘→推送上屏。
     photos 传入时只用这批照片（例如手机相册本次上传的近期照片）；
     不传则用相册库全部。相册为空返回 None。
     filters：用户吩咐的筛选维度（色彩/主题/情绪标签），优先只从命中的照片里选；
     命中太少（不足以填满模板）时自动回退到全部照片，保证屏幕不空。"""
     if photos is None:
-        photos = store.load("photos", [])
-        if not photos:
+        photos = store.load(_scoped_store_name("photos", scope), [])
+        # Only the legacy, unscoped API may scan the shared root photo folder.
+        # An authenticated account with an empty library must stay empty instead
+        # of falling back to photos that belong to the legacy/public namespace.
+        if not photos and scope == "legacy":
             photos = _tag_all()
     if not photos:
         return None
@@ -369,15 +395,17 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
     # 轮换序号：同一「模板+筛选」组合每生成一次自增，用于旋转子分类叉乘的取图，
     # 让同一主题反复刷新每次都出不同照片组合，避免时间久了同质化。
     seq_key = f"{template_id}|{','.join(applied_filters)}"
-    seqs = store.load("wall_seq", {})
+    seqs_key = _scoped_store_name("wall_seq", scope)
+    seqs = store.load(seqs_key, {})
     rotate = int(seqs.get(seq_key, 0))
     seqs[seq_key] = rotate + 1
-    store.save("wall_seq", seqs)
+    store.save(seqs_key, seqs)
 
     # 最近上过屏的照片：让「换一批」优先选没露过脸的，连续几屏差异更明显。
     # 只在「精选/全貌」这类大池子里避重；筛选到很小的相簿(照片本来就少)时不避重，
     # 免得反复没图可选。窗口取两屏左右，避免把整库都压成「最近」。
-    recent_shown: list[str] = store.load("recent_shown", [])
+    recent_key = _scoped_store_name("recent_shown", scope)
+    recent_shown: list[str] = store.load(recent_key, [])
     avoid = set(recent_shown) if len(photos) > slot_n * 2 else set()
 
     chosen = selector.select_for_template(photos, slot_n, rotate=rotate, avoid=avoid)
@@ -391,7 +419,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
 
     # 更新「最近上过屏」窗口（保留最近约两屏的量），供下次避重
     new_recent = [c.get("filename") for c in chosen if c.get("filename")] + recent_shown
-    store.save("recent_shown", new_recent[: max(slot_n * 2, 20)])
+    store.save(recent_key, new_recent[: max(slot_n * 2, 20)])
 
     template = engine.load_template(os.path.join(TEMPLATES_DIR, f"{template_id}.json"))
     # 时间惊喜照片：在其槽位角上加「那年今日 / 旧时光」小标签，更有仪式感
@@ -407,7 +435,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
     img = engine.render(template, photo_paths, {"title": title, "date": date},
                         badges=badges, stickers=sticker_plan)
 
-    wall_id = f"{template_id}_{int(time.time())}"
+    wall_id = f"{scope}_{template_id}_{time.time_ns()}"
     out_name = f"{wall_id}.png"
     img.save(os.path.join(OUTPUT_DIR, out_name))
 
@@ -427,7 +455,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
                    for c in chosen],
         "stickers": len(sticker_plan),
     }
-    store.save("last_wall", wall)
+    store.save(_scoped_store_name("last_wall", scope), wall)
 
     # 双端互联：实时推给所有展示屏
     await hub.broadcast({"type": "wall", **wall})
@@ -435,8 +463,11 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
 
 
 @app.post("/api/generate")
-async def generate(req: GenerateReq) -> dict:
-    wall = await _make_wall(req.template, req.title, req.date, filters=req.filters or None)
+async def generate(req: GenerateReq, x_account_token: str = Header(default="")) -> dict:
+    wall = await _make_wall(
+        req.template, req.title, req.date, filters=req.filters or None,
+        scope=_account_scope(x_account_token),
+    )
     if wall is None:
         return JSONResponse({"error": "相册为空，请先授权/上传照片"}, status_code=400)
     return wall
@@ -1284,6 +1315,31 @@ async def device_publish(
     return JSONResponse({"device": _public_device(device), "revision": revision})
 
 
+@app.post("/api/devices/{device_id}/publish-last-wall")
+def device_publish_last_wall(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Queue the most recently generated cloud template after App confirmation."""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    scope = _account_scope(str(device.get("account_token", "")))
+    wall = store.load(_scoped_store_name("last_wall", scope), {})
+    image_url = str(wall.get("image_url", ""))
+    if not image_url.startswith("/output/"):
+        return JSONResponse(status_code=404, content={"error": "没有可发布的模板预览，请先生成画面"})
+    image_path = os.path.join(OUTPUT_DIR, os.path.basename(image_url))
+    if not os.path.isfile(image_path):
+        return JSONResponse(status_code=404, content={"error": "模板预览已过期，请重新生成"})
+    with open(image_path, "rb") as image_file:
+        revision, _ = _queue_device_image(device, image_file.read())
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "revision": revision, "wall": wall})
+
+
 @app.post("/api/devices/{device_id}/calendar/july-2026/publish")
 async def device_publish_july_calendar(
     device_id: str,
@@ -1299,7 +1355,9 @@ async def device_publish_july_calendar(
     if not device or not _account_auth(device, x_account_token):
         return JSONResponse(status_code=401, content={"error": "设备授权无效"})
 
-    photos = store.load("photos", []) or _tag_all()
+    scope = _account_scope(str(device.get("account_token", "")))
+    photos_key = _scoped_store_name("photos", scope)
+    photos = store.load(photos_key, [])
     photos, _ = dedup.deduplicate(photos)
     plan, selected_count = _july_calendar_plan(photos)
     if not selected_count:

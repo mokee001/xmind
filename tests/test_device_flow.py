@@ -12,6 +12,7 @@ import os
 import struct
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -54,6 +55,25 @@ def publish_photo(photo: Path, account_token: str) -> dict:
         return json.loads(response.read())
 
 
+def upload_library_photo(photo: Path, account_token: str) -> dict:
+    boundary = "----PhotoWallLibraryBoundary"
+    body = (
+        f'--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="{photo.name}"\r\n'
+        "Content-Type: image/jpeg\r\n\r\n"
+    ).encode() + photo.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{BASE}/api/upload",
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "X-Account-Token": account_token,
+        },
+    )
+    with urllib.request.urlopen(req, timeout=120) as response:
+        return json.loads(response.read())
+
+
 def test_photo() -> tuple[Path, bool]:
     """Return an existing sample, or make a disposable image for clean checkouts."""
     photos_dir = Path("photos")
@@ -73,6 +93,43 @@ def test_photo() -> tuple[Path, bool]:
     draw.text((360, 350), "PhotoWall", fill="#24344d", stroke_width=2, stroke_fill="white")
     image.save(path, format="JPEG", quality=92)
     return path, True
+
+
+def test_library_photos() -> list[Path]:
+    paths: list[Path] = []
+    for index, color in enumerate(("#5e8ab6", "#b66e5e", "#629668"), start=1):
+        path = Path(tempfile.gettempdir()) / f"photowall-template-{RUN_ID}-{index}.jpg"
+        texture = Image.effect_noise((960, 720), 72 + index * 18).convert("RGB")
+        image = Image.blend(texture, Image.new("RGB", (960, 720), color), 0.45)
+        draw = ImageDraw.Draw(image)
+        for stripe in range(0, 960, 32):
+            draw.line((stripe, 0, 960 - stripe // 2, 720), fill=(255, 255, 255), width=2)
+        draw.rectangle((140 + index * 30, 120, 760, 620), outline="white", width=14)
+        draw.text((360, 350), f"Photo {index}", fill="white", stroke_width=2, stroke_fill="#24344d")
+        exif = image.getexif()
+        exif[271] = "Apple"
+        exif[272] = "iPhone"
+        image.save(path, format="JPEG", quality=92, exif=exif)
+        paths.append(path)
+    return paths
+
+
+def assert_account_library_isolation(legacy_photo: Path) -> None:
+    """An empty account must never generate a wall from the legacy library."""
+    upload_library_photo(legacy_photo, "")
+    isolated_token = f"isolated-{RUN_ID}"
+    try:
+        request(
+            "/api/generate",
+            "POST",
+            {"template": "daily_polaroid", "title": "不应跨账户取图"},
+            headers={"X-Account-Token": isolated_token},
+        )
+        raise AssertionError("空账户不应从旧公共图库生成照片墙")
+    except urllib.error.HTTPError as error:
+        assert error.code == 400, error.code
+        payload = json.loads(error.read())
+        assert payload.get("error") == "相册为空，请先授权/上传照片", payload
 
 
 def main() -> None:
@@ -105,11 +162,7 @@ def main() -> None:
         assert error.code == 403, error.code
 
     photo, disposable_photo = test_photo()
-    try:
-        revision = publish_photo(photo, account_token)["revision"]
-    finally:
-        if disposable_photo:
-            photo.unlink(missing_ok=True)
+    revision = publish_photo(photo, account_token)["revision"]
 
     query = urllib.parse.urlencode({"revision": "", "token": device_token})
     _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{query}")
@@ -134,6 +187,34 @@ def main() -> None:
     device = next(item for item in devices if item["device_id"] == DEVICE_ID)
     assert device["displayed_revision"] == revision
     assert device["state"] == "displayed"
+
+    library_photos = test_library_photos()
+    for library_photo in library_photos:
+        upload_library_photo(library_photo, account_token)
+    assert_account_library_isolation(library_photos[0])
+    _, _, raw = request(
+        "/api/generate",
+        "POST",
+        {"template": "daily_polaroid", "title": "集成测试模板"},
+        headers={"X-Account-Token": account_token},
+    )
+    wall = json.loads(raw)
+    assert wall["image_url"].startswith("/output/")
+    _, _, raw = request(
+        f"/api/devices/{DEVICE_ID}/publish-last-wall",
+        "POST",
+        headers={"X-Account-Token": account_token},
+    )
+    template_revision = json.loads(raw)["revision"]
+    _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{query}")
+    template_pending = json.loads(raw)
+    assert template_pending["revision"] == template_revision
+    _, _, template_frame = request(template_pending["frame_url"])
+    assert len(template_frame) == 960045
+    if disposable_photo:
+        photo.unlink(missing_ok=True)
+    for library_photo in library_photos:
+        library_photo.unlink(missing_ok=True)
     print(f"Device lifecycle OK: {revision}, {len(frame)} byte PWE6")
 
 

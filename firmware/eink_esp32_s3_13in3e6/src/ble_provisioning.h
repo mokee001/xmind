@@ -24,7 +24,8 @@ class BleProvisioningService {
 
   void processCommand(const char* command);
   void scanNetworks();
-  void startWifiConnection(const String& ssid, const String& password);
+  void startWifiConnection(
+      const String& ssid, const String& password, const String& apiBase);
   void processWifiConnection();
   void setStatus(const char* status, const String& message = "", const String& errorCode = "");
   void sendEvent(const String& json);
@@ -38,6 +39,7 @@ class BleProvisioningService {
   String setupToken_;
   String pendingSsid_;
   String pendingPassword_;
+  String pendingApiBase_;
   String status_ = "idle";
   char commandFrame_[kCommandBufferBytes] = {};
   char pendingCommand_[kCommandBufferBytes] = {};

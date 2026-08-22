@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <DNSServer.h>
+#include <ESPmDNS.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WebServer.h>
@@ -13,6 +14,11 @@
 #include "panel_13in3e6.h"
 #include "ble_provisioning.h"
 
+#if __has_include("demo_wifi_config.h")
+#include "demo_wifi_config.h"
+#define PHOTOWALL_HAS_DEMO_WIFI 1
+#endif
+
 namespace {
 
 constexpr char kFirmwareVersion[] = "0.2.0";
@@ -23,6 +29,7 @@ constexpr uint32_t kDefaultPollIntervalMs = 15000;
 constexpr uint32_t kMinimumPollIntervalMs = 5000;
 constexpr uint32_t kMaximumPollIntervalMs = 300000;
 constexpr size_t kFrameHeaderBytes = 45;
+constexpr size_t kFrameBytes = kFrameHeaderBytes + photowall::kPackedFrameBytes;
 
 Preferences prefs;
 WebServer provisionServer(kProvisionPort);
@@ -31,13 +38,101 @@ photowall::Panel13in3E6 panel;
 String deviceId;
 String pairingCode;
 String apiBase;
+String wifiSsid;
+String wifiPassword;
 String deviceToken;
 String displayedRevision;
 String setupToken;
 uint32_t lastPollAt = 0;
 uint32_t pollIntervalMs = kDefaultPollIntervalMs;
+bool panelInitialized = false;
 bool restartRequested = false;
 bool provisioningMode = false;
+uint8_t* localFrame = nullptr;
+size_t localFrameBytes = 0;
+String localFrameState = "idle";
+String localFrameError;
+bool localTestPatternPending = false;
+uint32_t localDisplayQueuedAt = 0;
+
+uint16_t readBigEndian16(const uint8_t* value) {
+  return static_cast<uint16_t>((value[0] << 8) | value[1]);
+}
+
+uint32_t readBigEndian32(const uint8_t* value) {
+  return (static_cast<uint32_t>(value[0]) << 24) |
+         (static_cast<uint32_t>(value[1]) << 16) |
+         (static_cast<uint32_t>(value[2]) << 8) | value[3];
+}
+
+void releaseLocalFrame() {
+  free(localFrame);
+  localFrame = nullptr;
+  localFrameBytes = 0;
+}
+
+bool validateLocalFrame() {
+  if (!localFrame || localFrameBytes != kFrameBytes) {
+    localFrameError = "frame size mismatch";
+    return false;
+  }
+  if (memcmp(localFrame, "PWE6", 4) != 0 || localFrame[4] != 1 ||
+      readBigEndian16(localFrame + 5) != photowall::kPanelWidth ||
+      readBigEndian16(localFrame + 7) != photowall::kPanelHeight ||
+      readBigEndian32(localFrame + 9) != photowall::kPackedFrameBytes) {
+    localFrameError = "invalid PWE6 header";
+    return false;
+  }
+
+  uint8_t digest[32];
+  mbedtls_sha256(localFrame + kFrameHeaderBytes, photowall::kPackedFrameBytes, digest, 0);
+  if (memcmp(digest, localFrame + 13, sizeof(digest)) != 0) {
+    localFrameError = "PWE6 SHA-256 mismatch";
+    return false;
+  }
+  return true;
+}
+
+bool displayLocalControlPattern() {
+  uint8_t* payload = static_cast<uint8_t*>(heap_caps_malloc(
+      photowall::kPackedFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!payload) payload = static_cast<uint8_t*>(malloc(photowall::kPackedFrameBytes));
+  if (!payload) return false;
+
+  for (size_t offset = 0; offset < photowall::kPackedFrameBytes; ++offset) {
+    payload[offset] = ((offset / 300) % 2 == 0) ? 0x00 : 0xFF;
+  }
+  if (!panelInitialized) {
+    panel.begin();
+    panelInitialized = true;
+  }
+  const bool displayed = panel.drawPackedFrame(payload, photowall::kPackedFrameBytes);
+  free(payload);
+  return displayed;
+}
+
+void processLocalDisplayJob() {
+  if (localFrameState != "queued" || millis() - localDisplayQueuedAt < 100) return;
+
+  Serial.println("Local display refresh started");
+  localFrameState = "refreshing";
+  bool displayed = false;
+  if (localTestPatternPending) {
+    localTestPatternPending = false;
+    displayed = displayLocalControlPattern();
+  } else if (localFrame) {
+    if (!panelInitialized) {
+      panel.begin();
+      panelInitialized = true;
+    }
+    displayed = panel.drawPackedFrame(
+        localFrame + kFrameHeaderBytes, photowall::kPackedFrameBytes);
+  }
+  releaseLocalFrame();
+  localFrameState = displayed ? "displayed" : "error";
+  if (!displayed) localFrameError = "panel refresh failed";
+  Serial.printf("Local display refresh %s\n", displayed ? "completed" : "failed");
+}
 
 String jsonEscape(const String& input) {
   String escaped;
@@ -90,12 +185,26 @@ void clearConfigurationIfRequested() {
 }
 
 void loadConfiguration() {
-  prefs.begin("photowall", true);
+  prefs.begin("photowall", false);
   apiBase = prefs.getString("api", "");
+  wifiSsid = prefs.getString("ssid", "");
+  wifiPassword = prefs.getString("pass", "");
   deviceToken = prefs.getString("token", "");
   displayedRevision = prefs.getString("revision", "");
   setupToken = prefs.getString("setup", "");
   prefs.end();
+}
+
+void applyDemoWifiConfiguration() {
+#if PHOTOWALL_HAS_DEMO_WIFI
+  if (wifiSsid.isEmpty() && kDemoWifiSsid[0] != '\0') {
+    wifiSsid = kDemoWifiSsid;
+    wifiPassword = kDemoWifiPassword;
+    const String configuredApi = normalizeApiBase(kDemoApiBase);
+    if (!configuredApi.isEmpty()) apiBase = configuredApi;
+    Serial.printf("Using fixed demonstration Wi-Fi: %s\n", wifiSsid.c_str());
+  }
+#endif
 }
 
 void saveDeviceToken(const String& token) {
@@ -114,25 +223,17 @@ void saveRevision(const String& revision) {
 }
 
 bool hasWifiConfiguration() {
-  prefs.begin("photowall", true);
-  const bool configured = prefs.getString("ssid", "").length() > 0 &&
-                          prefs.getString("api", "").length() > 0;
-  prefs.end();
-  return configured;
+  return !wifiSsid.isEmpty() && !apiBase.isEmpty();
 }
 
 bool connectWifi() {
-  prefs.begin("photowall", true);
-  const String ssid = prefs.getString("ssid", "");
-  const String password = prefs.getString("pass", "");
-  prefs.end();
-  if (ssid.isEmpty()) return false;
+  if (wifiSsid.isEmpty()) return false;
 
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
-  WiFi.begin(ssid.c_str(), password.c_str());
-  Serial.printf("Connecting to Wi-Fi %s", ssid.c_str());
+  WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
+  Serial.printf("Connecting to Wi-Fi %s", wifiSsid.c_str());
   const uint32_t started = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - started < kWifiConnectTimeoutMs) {
     delay(400);
@@ -150,28 +251,145 @@ void sendProvisionCors() {
   provisionServer.sendHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
 }
 
-void startProvisioning() {
-  provisioningMode = true;
-  setupToken = createSetupToken();
-  const String apName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
-  const String apPassword = "PhotoWall" + pairingCode.substring(2);
-  WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(apName.c_str(), apPassword.c_str());
-  dnsServer.start(53, "*", WiFi.softAPIP());
-  photowall::bleProvisioning.begin(deviceId, kFirmwareVersion, setupToken);
+void startDeviceServer(bool provisioning) {
+  provisioningMode = provisioning;
+  String apName;
+  String apPassword;
+  if (provisioning) {
+    Serial.println("Creating setup token");
+    setupToken = createSetupToken();
+    Serial.println("Setup token ready");
+    apName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
+    apPassword = "PhotoWall" + pairingCode.substring(2);
+    Serial.printf("Starting provisioning AP: %s\n", apName.c_str());
+    WiFi.mode(WIFI_AP_STA);
+    if (!WiFi.softAP(apName.c_str(), apPassword.c_str())) {
+      Serial.println("Provisioning AP failed to start");
+      return;
+    }
+    Serial.printf("Provisioning AP ready: %s\n", WiFi.softAPIP().toString().c_str());
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    photowall::bleProvisioning.begin(deviceId, kFirmwareVersion, setupToken);
+  } else {
+    String mdnsHost = "photowall-" + deviceId.substring(deviceId.length() - 4);
+    mdnsHost.toLowerCase();
+    if (MDNS.begin(mdnsHost.c_str())) {
+      MDNS.addService("photowall", "tcp", kProvisionPort);
+      MDNS.addServiceTxt("photowall", "tcp", "device_id", deviceId);
+      Serial.printf("Local device service: http://%s.local\n", mdnsHost.c_str());
+    } else {
+      Serial.println("mDNS service failed to start");
+    }
+  }
 
   provisionServer.on("/status", HTTP_GET, []() {
+    const bool provisioning = provisioningMode;
+    const String address = provisioning ? WiFi.softAPIP().toString() : WiFi.localIP().toString();
     sendProvisionCors();
     provisionServer.send(200, "application/json",
-      "{\"state\":\"provisioning\",\"device_id\":\"" + jsonEscape(deviceId) +
+      "{\"state\":\"" + String(provisioning ? "provisioning" : "online") +
+      "\",\"device_id\":\"" + jsonEscape(deviceId) +
       "\",\"firmware_version\":\"" + kFirmwareVersion +
-      "\",\"setup_token\":\"" + setupToken + "\"}");
+      "\",\"ip\":\"" + address +
+      "\",\"frame_state\":\"" + jsonEscape(localFrameState) +
+      "\",\"frame_error\":\"" + jsonEscape(localFrameError) +
+      "\",\"setup_token\":\"" + (provisioning ? setupToken : "") + "\"}");
+  });
+  provisionServer.on("/control", HTTP_OPTIONS, []() {
+    sendProvisionCors();
+    provisionServer.send(204);
+  });
+  provisionServer.on("/control", HTTP_POST, []() {
+    JsonDocument document;
+    if (deserializeJson(document, provisionServer.arg("plain"))) {
+      sendProvisionCors();
+      provisionServer.send(400, "application/json", "{\"error\":\"invalid command\"}");
+      return;
+    }
+    const String action = document["action"] | "";
+    if (action != "display_test_pattern") {
+      sendProvisionCors();
+      provisionServer.send(400, "application/json", "{\"error\":\"unsupported command\"}");
+      return;
+    }
+    if (localFrameState == "queued" || localFrameState == "refreshing") {
+      sendProvisionCors();
+      provisionServer.send(409, "application/json", "{\"error\":\"display is busy\"}");
+      return;
+    }
+    localFrameError = "";
+    localFrameState = "queued";
+    localTestPatternPending = true;
+    localDisplayQueuedAt = millis();
+    sendProvisionCors();
+    provisionServer.send(202, "application/json", "{\"state\":\"queued\"}");
+  });
+  provisionServer.on("/v1/frame", HTTP_OPTIONS, []() {
+    sendProvisionCors();
+    provisionServer.send(204);
+  });
+  provisionServer.on("/v1/frame", HTTP_POST, []() {
+    int responseCode = 400;
+    if (localFrameState == "received") {
+      if (!validateLocalFrame()) {
+        localFrameState = "error";
+        responseCode = 422;
+      } else {
+        localFrameState = "queued";
+        localDisplayQueuedAt = millis();
+        responseCode = 202;
+      }
+    }
+    if (responseCode != 202) releaseLocalFrame();
+    sendProvisionCors();
+    if (responseCode == 202) {
+      provisionServer.send(202, "application/json", "{\"state\":\"queued\"}");
+    } else {
+      provisionServer.send(responseCode, "application/json",
+        "{\"state\":\"error\",\"error\":\"" + jsonEscape(localFrameError) + "\"}");
+    }
+  }, []() {
+    HTTPUpload& upload = provisionServer.upload();
+    if (upload.status == UPLOAD_FILE_START) {
+      releaseLocalFrame();
+      localFrameError = "";
+      localFrameState = "receiving";
+      localFrame = static_cast<uint8_t*>(heap_caps_malloc(kFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      if (!localFrame) localFrame = static_cast<uint8_t*>(malloc(kFrameBytes));
+      if (!localFrame) {
+        localFrameState = "error";
+        localFrameError = "frame allocation failed";
+      }
+    } else if (upload.status == UPLOAD_FILE_WRITE && localFrameState == "receiving") {
+      if (localFrameBytes + upload.currentSize > kFrameBytes) {
+        localFrameState = "error";
+        localFrameError = "frame exceeds expected size";
+      } else {
+        memcpy(localFrame + localFrameBytes, upload.buf, upload.currentSize);
+        localFrameBytes += upload.currentSize;
+      }
+    } else if (upload.status == UPLOAD_FILE_END && localFrameState == "receiving") {
+      if (localFrameBytes == kFrameBytes) {
+        localFrameState = "received";
+      } else {
+        localFrameState = "error";
+        localFrameError = "incomplete frame";
+      }
+    } else if (upload.status == UPLOAD_FILE_ABORTED) {
+      localFrameState = "error";
+      localFrameError = "upload aborted";
+    }
   });
   provisionServer.on("/provision", HTTP_OPTIONS, []() {
     sendProvisionCors();
     provisionServer.send(204);
   });
   provisionServer.on("/provision", HTTP_POST, []() {
+    if (!provisioningMode) {
+      sendProvisionCors();
+      provisionServer.send(404, "application/json", "{\"error\":\"provisioning is not active\"}");
+      return;
+    }
     JsonDocument document;
     const bool formSubmission = provisionServer.hasArg("ssid");
     const DeserializationError error = formSubmission
@@ -203,10 +421,13 @@ void startProvisioning() {
     prefs.end();
     sendProvisionCors();
     if (formSubmission) {
-      provisionServer.send(202, "text/html; charset=utf-8",
-        "<!doctype html><meta name=viewport content='width=device-width'><h2>Connecting PhotoWall</h2>"
-        "<p>The display is joining your home Wi-Fi now. This page will close shortly.</p>"
-        "<p>Return to the PhotoWall app to finish the connection.</p>");
+      provisionServer.send(200, "text/html; charset=utf-8",
+        "<!doctype html><html lang='zh-CN'><meta name=viewport content='width=device-width,initial-scale=1'>"
+        "<title>PhotoWall 配网完成</title><style>body{font:17px -apple-system,system-ui,sans-serif;max-width:480px;margin:48px auto;padding:0 24px;color:#18211b}"
+        "h1{font-size:28px}p{line-height:1.6;color:#5d665f}a{display:block;margin-top:28px;padding:14px;border-radius:9px;background:#176b45;color:#fff;text-align:center;text-decoration:none;font-weight:600}</style>"
+        "<h1>屏幕正在连接</h1><p>配置已保存，正在返回 PhotoWall App。</p>"
+        "<a href='photowall://setup-complete'>返回 PhotoWall App</a>"
+        "<script>setTimeout(function(){location.href='photowall://setup-complete'},350)</script></html>");
     } else {
       provisionServer.send(202, "application/json",
         "{\"accepted\":true,\"device_id\":\"" + jsonEscape(deviceId) +
@@ -216,6 +437,10 @@ void startProvisioning() {
   });
   provisionServer.onNotFound([]() {
     sendProvisionCors();
+    if (!provisioningMode) {
+      provisionServer.send(404, "application/json", "{\"error\":\"not found\"}");
+      return;
+    }
     provisionServer.send(200, "text/html; charset=utf-8",
       "<!doctype html><html><meta name=viewport content='width=device-width,initial-scale=1'>"
       "<title>PhotoWall setup</title><style>body{font:17px -apple-system,system-ui,sans-serif;max-width:480px;margin:36px auto;padding:0 22px;color:#18211b}"
@@ -228,8 +453,10 @@ void startProvisioning() {
       "<p>After connecting, return to the PhotoWall app to finish setup.</p></html>");
   });
   provisionServer.begin();
-  Serial.printf("Provisioning AP: %s\nPassword: %s\nPairing code: %s\n", apName.c_str(),
-                apPassword.c_str(), pairingCode.c_str());
+  if (provisioning) {
+    Serial.printf("Provisioning AP: %s\nPassword: %s\nPairing code: %s\n", apName.c_str(),
+                  apPassword.c_str(), pairingCode.c_str());
+  }
 }
 
 bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure, const String& url) {
@@ -257,7 +484,7 @@ bool postJson(const String& path, const String& body, String* response = nullptr
   return code >= 200 && code < 300;
 }
 
-bool bootstrapDevice(String* errorMessage = nullptr) {
+bool bootstrapDevice() {
   JsonDocument request;
   request["device_id"] = deviceId;
   request["pairing_code"] = pairingCode;
@@ -272,26 +499,12 @@ bool bootstrapDevice(String* errorMessage = nullptr) {
   Serial.println("Cloud bootstrap request: POST /api/devices/bootstrap");
   if (!postJson("/api/devices/bootstrap", body, &response, &bootstrapHttpStatus)) {
     Serial.printf("Device bootstrap failed: HTTP %d %s\n", bootstrapHttpStatus, response.c_str());
-    if (errorMessage) {
-      JsonDocument errorDocument;
-      if (!deserializeJson(errorDocument, response)) {
-        *errorMessage = String(errorDocument["error"] | "云端暂时不可用，请稍后重试");
-      } else {
-        *errorMessage = "云端暂时不可用，请检查家庭网络后重试";
-      }
-    }
     return false;
   }
   JsonDocument document;
-  if (deserializeJson(document, response)) {
-    if (errorMessage) *errorMessage = "云端响应格式异常，请稍后重试";
-    return false;
-  }
+  if (deserializeJson(document, response)) return false;
   const String receivedToken = document["device_token"] | "";
-  if (receivedToken.isEmpty()) {
-    if (errorMessage) *errorMessage = "云端未返回设备凭据，请稍后重试";
-    return false;
-  }
+  if (receivedToken.isEmpty()) return false;
   if (receivedToken != deviceToken) saveDeviceToken(receivedToken);
   const uint32_t pollSeconds = document["poll_seconds"] | (kDefaultPollIntervalMs / 1000);
   pollIntervalMs = constrain(pollSeconds,
@@ -307,16 +520,6 @@ bool bootstrapDevice(String* errorMessage = nullptr) {
   }
   Serial.println("Device registered with cloud");
   return true;
-}
-
-uint16_t readBigEndian16(const uint8_t* value) {
-  return static_cast<uint16_t>((value[0] << 8) | value[1]);
-}
-
-uint32_t readBigEndian32(const uint8_t* value) {
-  return (static_cast<uint32_t>(value[0]) << 24) |
-         (static_cast<uint32_t>(value[1]) << 16) |
-         (static_cast<uint32_t>(value[2]) << 8) | value[3];
 }
 
 bool readExactly(WiFiClient* stream, uint8_t* target, size_t length, uint32_t timeoutMs) {
@@ -435,6 +638,10 @@ void pollForFrame() {
     return;
   }
   reportStatus("refreshing", revision, 50);
+  if (!panelInitialized) {
+    panel.begin();
+    panelInitialized = true;
+  }
   const bool displayed = panel.drawPackedFrame(payload, photowall::kPackedFrameBytes);
   free(payload);
   if (!displayed) {
@@ -450,35 +657,39 @@ void pollForFrame() {
 
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  delay(6000);
+  Serial.println("PhotoWall startup diagnostics ready");
   deriveIdentity();
   clearConfigurationIfRequested();
   loadConfiguration();
-  panel.begin();
+  applyDemoWifiConfiguration();
 
   Serial.printf("PhotoWall E6 %s, device %s, pairing %s\n", kFirmwareVersion,
                 deviceId.c_str(), pairingCode.c_str());
   if (!hasWifiConfiguration() || !connectWifi()) {
-    startProvisioning();
+    startDeviceServer(true);
     return;
   }
+  startDeviceServer(false);
   if (!bootstrapDevice()) lastPollAt = millis();
 }
 
 void loop() {
+  provisionServer.handleClient();
   photowall::bleProvisioning.loop();
   if (provisioningMode && photowall::bleProvisioning.cloudBootstrapPending()) {
     loadConfiguration();
-    String bootstrapError;
-    if (bootstrapDevice(&bootstrapError)) {
-      photowall::bleProvisioning.completeCloudBootstrap(true, "设备已连接 PhotoWall 云端");
+    if (bootstrapDevice()) {
+      photowall::bleProvisioning.completeCloudBootstrap(
+          true, "设备已连接 PhotoWall 服务");
     } else {
-      photowall::bleProvisioning.completeCloudBootstrap(false, bootstrapError);
+      photowall::bleProvisioning.completeCloudBootstrap(
+          false, "PhotoWall 服务暂时不可用，请检查家庭网络后重试");
     }
   }
+  processLocalDisplayJob();
   if (provisioningMode) {
     dnsServer.processNextRequest();
-    provisionServer.handleClient();
     if (restartRequested) {
       delay(500);
       ESP.restart();

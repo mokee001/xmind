@@ -21,6 +21,7 @@ constexpr size_t kEventChunkBytes = 140;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
 constexpr uint32_t kRestartDelayMs = 5000;
 constexpr size_t kMaximumNetworks = 20;
+constexpr size_t kMaximumApiBaseBytes = 192;
 constexpr uint8_t kProofButton = 0;
 
 BleProvisioningService* activeService = nullptr;
@@ -64,6 +65,16 @@ String jsonString(const JsonDocument& document) {
   return output;
 }
 
+String normalizeApiBase(String value) {
+  value.trim();
+  while (value.endsWith("/")) value.remove(value.length() - 1);
+  if (value.length() > kMaximumApiBaseBytes ||
+      (!value.startsWith("http://") && !value.startsWith("https://"))) {
+    return "";
+  }
+  return value;
+}
+
 }  // namespace
 
 BleProvisioningService bleProvisioning;
@@ -77,6 +88,10 @@ void BleProvisioningService::begin(
   status_ = "idle";
   activeService = this;
   pinMode(kProofButton, INPUT_PULLUP);
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(false, false);
+  WiFi.scanDelete();
 
   String advertisedName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
   advertisedName.toUpperCase();
@@ -277,8 +292,12 @@ void BleProvisioningService::processCommand(const char* command) {
   }
 
   if (operation == "scan") {
-    if (wifiConnecting_) {
+    if (wifiConnecting_ || cloudBootstrapPending_ || restartAt_ != 0) {
       setStatus("error", "设备正在连接 Wi-Fi", "busy");
+      return;
+    }
+    if (scanRequested_) {
+      setStatus("scanning", "正在扫描附近 Wi-Fi");
       return;
     }
     scanRequested_ = true;
@@ -288,18 +307,31 @@ void BleProvisioningService::processCommand(const char* command) {
   if (operation == "provision") {
     const String ssid = document["ssid"] | "";
     const String password = document["password"] | "";
+    const String requestedApiBase = normalizeApiBase(String(document["apiBase"] | ""));
     if (ssid.isEmpty() || ssid.length() > 32 || password.length() > 64) {
       setStatus("error", "Wi-Fi 凭据格式无效", "invalid_credentials");
       return;
     }
-    startWifiConnection(ssid, password);
+    if (requestedApiBase.isEmpty()) {
+      setStatus("error", "PhotoWall 服务地址无效", "invalid_api_base");
+      return;
+    }
+    if (wifiConnecting_ || cloudBootstrapPending_) {
+      setStatus("connecting", "正在连接家庭 Wi-Fi");
+      return;
+    }
+    startWifiConnection(ssid, password, requestedApiBase);
     return;
   }
   if (operation == "cancel") {
+    scanRequested_ = false;
+    WiFi.scanDelete();
     WiFi.disconnect(false, false);
     wifiConnecting_ = false;
     cloudBootstrapPending_ = false;
+    pendingSsid_ = "";
     pendingPassword_ = "";
+    pendingApiBase_ = "";
     setStatus("idle", "已取消配网");
     return;
   }
@@ -307,8 +339,18 @@ void BleProvisioningService::processCommand(const char* command) {
 }
 
 void BleProvisioningService::scanNetworks() {
-  const int count = WiFi.scanNetworks(false, true);
+  WiFi.scanDelete();
+  delay(50);
+  int count = WiFi.scanNetworks(false, true);
+  Serial.printf("BLE Wi-Fi scan result: %d\n", count);
   if (count < 0) {
+    WiFi.scanDelete();
+    delay(100);
+    count = WiFi.scanNetworks(false, true);
+    Serial.printf("BLE Wi-Fi scan retry result: %d\n", count);
+  }
+  if (count < 0) {
+    WiFi.scanDelete();
     setStatus("error", "Wi-Fi 扫描失败", "scan_failed");
     return;
   }
@@ -339,11 +381,16 @@ void BleProvisioningService::scanNetworks() {
   setStatus("awaiting_credentials", "请选择家庭 Wi-Fi");
 }
 
-void BleProvisioningService::startWifiConnection(const String& ssid, const String& password) {
+void BleProvisioningService::startWifiConnection(
+    const String& ssid, const String& password, const String& apiBase) {
   pendingSsid_ = ssid;
   pendingPassword_ = password;
+  pendingApiBase_ = apiBase;
+  scanRequested_ = false;
   cloudBootstrapPending_ = false;
+  WiFi.scanDelete();
   WiFi.disconnect(false, false);
+  delay(100);
   WiFi.begin(pendingSsid_.c_str(), pendingPassword_.c_str());
   wifiConnectStartedAt_ = millis();
   wifiConnecting_ = true;
@@ -358,25 +405,28 @@ void BleProvisioningService::processWifiConnection() {
     preferences.begin("photowall", false);
     preferences.putString("ssid", pendingSsid_);
     preferences.putString("pass", pendingPassword_);
-    preferences.putString("api", "https://api.mokeedesign.cn");
+    preferences.putString("api", pendingApiBase_);
     preferences.putString("setup", setupToken_);
     preferences.remove("token");
     preferences.remove("revision");
     preferences.end();
     pendingPassword_ = "";
+    pendingApiBase_ = "";
     wifiConnecting_ = false;
     cloudBootstrapPending_ = true;
-    setStatus("connecting", "Wi-Fi 已连接，正在连接 PhotoWall 云端");
+    setStatus("connecting", "Wi-Fi 已连接，正在连接 PhotoWall 服务");
     return;
   }
   if (wifiStatus == WL_CONNECT_FAILED) {
     pendingPassword_ = "";
+    pendingApiBase_ = "";
     wifiConnecting_ = false;
     setStatus("wrong_password", "Wi-Fi 密码错误，请重试", "wrong_password");
     return;
   }
   if (wifiStatus == WL_NO_SSID_AVAIL) {
     pendingPassword_ = "";
+    pendingApiBase_ = "";
     wifiConnecting_ = false;
     setStatus("network_not_found", "没有找到该 Wi-Fi", "network_not_found");
     return;
@@ -384,6 +434,7 @@ void BleProvisioningService::processWifiConnection() {
   if (millis() - wifiConnectStartedAt_ >= kWifiConnectTimeoutMs) {
     WiFi.disconnect(false, false);
     pendingPassword_ = "";
+    pendingApiBase_ = "";
     wifiConnecting_ = false;
     setStatus("timeout", "连接 Wi-Fi 超时，请重试", "timeout");
   }

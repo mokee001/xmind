@@ -123,6 +123,10 @@ export default function DeviceSetupFlow({
   const pulseMotion = useRef(new Animated.Value(0)).current;
   const discoveryStopRef = useRef(null);
   const discoveryTimeoutRef = useRef(null);
+  const flowGenerationRef = useRef(0);
+  const requestSequenceRef = useRef(0);
+  const wifiScanRequestRef = useRef(0);
+  const deviceConnectionRef = useRef(false);
 
   const transition = nextStage => {
     stageMotion.setValue(0);
@@ -170,6 +174,9 @@ export default function DeviceSetupFlow({
   }, [visible, previewMode, adapter]);
 
   useEffect(() => () => {
+    flowGenerationRef.current += 1;
+    wifiScanRequestRef.current = 0;
+    deviceConnectionRef.current = false;
     if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
     discoveryStopRef.current?.();
   }, []);
@@ -225,7 +232,32 @@ export default function DeviceSetupFlow({
     discoverDevices();
   }, [visible, session]);
 
+  const scanConnectedNetworks = async () => {
+    if (wifiScanRequestRef.current) return;
+    const generation = flowGenerationRef.current;
+    const requestId = ++requestSequenceRef.current;
+    wifiScanRequestRef.current = requestId;
+    setBusy(true);
+    setError('');
+    setStatusText('已连接，正在读取附近网络…');
+    try {
+      const found = await adapter.scanWifiNetworks();
+      if (flowGenerationRef.current !== generation) return;
+      setNetworks(Array.isArray(found) ? found : []);
+    } catch (caught) {
+      if (flowGenerationRef.current !== generation) return;
+      setError(caught.message || '无法读取附近的 Wi-Fi');
+    } finally {
+      if (wifiScanRequestRef.current === requestId) {
+        wifiScanRequestRef.current = 0;
+        if (flowGenerationRef.current === generation) setBusy(false);
+      }
+    }
+  };
+
   const chooseDevice = async device => {
+    if (deviceConnectionRef.current) return;
+    deviceConnectionRef.current = true;
     if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
     await discoveryStopRef.current?.();
     discoveryStopRef.current = null;
@@ -242,14 +274,29 @@ export default function DeviceSetupFlow({
       }
       const connected = await adapter.connectProvisioningDevice(device.deviceId);
       setSelectedDevice(current => ({ ...current, ...connected }));
-      setStatusText('已连接，正在读取附近网络…');
-      const found = await adapter.scanWifiNetworks();
-      setNetworks(Array.isArray(found) ? found : []);
+      await scanConnectedNetworks();
     } catch (caught) {
       setError(caught.message || '无法读取附近的 Wi-Fi');
     } finally {
+      deviceConnectionRef.current = false;
       setBusy(false);
     }
+  };
+
+  const restartDeviceConnection = async () => {
+    flowGenerationRef.current += 1;
+    wifiScanRequestRef.current = 0;
+    deviceConnectionRef.current = false;
+    setBusy(true);
+    setError('');
+    try { await adapter?.cancelProvisioning?.(); } catch {}
+    setNetworks([]);
+    setSelectedDevice(null);
+    setSelectedNetwork(null);
+    setPassword('');
+    setStatusText('');
+    transition('device');
+    await discoverDevices();
   };
 
   const chooseNetwork = network => {
@@ -399,6 +446,12 @@ export default function DeviceSetupFlow({
             ))}
           </View>
           {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
+          {!busy && error ? (
+            <>
+              <PrimaryButton onPress={scanConnectedNetworks}>重新连接 Wi-Fi</PrimaryButton>
+              <PrimaryButton secondary onPress={restartDeviceConnection}>重新连接设备</PrimaryButton>
+            </>
+          ) : null}
         </>
       );
     }
