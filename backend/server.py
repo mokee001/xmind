@@ -20,6 +20,7 @@ from __future__ import annotations
 import datetime
 import glob
 import io
+import ipaddress
 import json
 import os
 import random
@@ -38,7 +39,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
-from . import dedup, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
+from . import dedup, eink_push, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
 PHOTOS_DIR = os.path.join(_ROOT, "photos")
@@ -46,6 +47,7 @@ OUTPUT_DIR = os.path.join(_ROOT, "output")
 TEMPLATES_DIR = os.path.join(_ROOT, "templates")
 WEBAPP_DIR = os.path.join(_ROOT, "webapp")
 DISPLAY_DIR = os.path.join(_ROOT, "display")
+EINK_UI_DIR = os.path.join(_ROOT, "eink")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(stickers.STICKERS_DIR, exist_ok=True)
@@ -797,6 +799,107 @@ def frame(w: int = 320, h: int = 480) -> Response:
     return Response(content=buf.getvalue(), media_type="image/jpeg")
 
 
+def _spectra6_palette() -> Image.Image:
+    """创建 E Ink Spectra 6 的六色调色板：黑、白、红、黄、绿、蓝。
+    面板不是连续 RGB 彩屏；后端先收敛颜色，固件只需按厂商色码送屏即可。
+    """
+    palette = Image.new("P", (1, 1))
+    colors = [
+        (0, 0, 0),        # black
+        (255, 255, 255),  # white
+        (220, 30, 30),    # red
+        (242, 201, 32),   # yellow
+        (35, 142, 70),    # green
+        (35, 92, 184),    # blue
+    ]
+    raw = [value for color in colors for value in color]
+    palette.putpalette(raw + [0] * (768 - len(raw)))
+    return palette
+
+
+@app.get("/api/frame_eink.png")
+def frame_eink() -> Response:
+    """给 13.3 寸 E Ink Spectra 6 用的原生画面。
+
+    固定输出 1600×1200 横屏 PNG，并用 Floyd-Steinberg 抖动压到 E6 的六种可显示
+    颜色。它和 /api/frame.jpg 完全独立，保留旧 LCD 的 800×480 JPEG 传输路径。
+    """
+    w, h = 1600, 1200
+    last = store.load("last_wall", None)
+    if not last:
+        img = Image.new("RGB", (w, h), "#FFFFFF")
+    else:
+        src_path = os.path.join(OUTPUT_DIR, os.path.basename(last["image_url"]))
+        if not os.path.exists(src_path):
+            img = Image.new("RGB", (w, h), "#FFFFFF")
+        else:
+            src = Image.open(src_path).convert("RGB")
+            from PIL import ImageOps
+            # 先保持原图比例，避免把现有 16:9 模板拉伸；4:3 墨水屏多出的区域用模板背景补齐。
+            pad_color = src.getpixel((0, 0))
+            fitted = ImageOps.contain(src, (w, h), method=Image.LANCZOS)
+            img = Image.new("RGB", (w, h), pad_color)
+            img.paste(fitted, ((w - fitted.width) // 2, (h - fitted.height) // 2))
+
+    # Spectra 6 是有限色面板；抖动能让照片的明暗/细节在六色中保留得更自然。
+    eink = img.quantize(palette=_spectra6_palette(), dither=Image.Dither.FLOYDSTEINBERG)
+    buf = io.BytesIO()
+    eink.save(buf, format="PNG", optimize=True)
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/api/eink/upload")
+async def eink_upload(
+    file: UploadFile,
+    host: str = "192.168.1.200",
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+) -> dict:
+    """上传单张照片，并通过微雪官方 Wi-Fi Loader 协议直接刷新 13.3E6。"""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "墨水屏地址必须是局域网 IP"})
+    if not address.is_private:
+        return JSONResponse(status_code=400, content={"error": "只允许局域网墨水屏地址"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.verify()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别该图片格式"})
+
+    preview_name = "eink_live_preview.png"
+    try:
+        return eink_push.start_upload(
+            image_bytes,
+            host=host,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            enhancement=enhancement,
+            preview_path=os.path.join(OUTPUT_DIR, preview_name),
+            preview_url=f"/output/{preview_name}",
+        )
+    except RuntimeError as exc:
+        return JSONResponse(status_code=409, content={"error": str(exc)})
+
+
+@app.get("/api/eink/status")
+def eink_status() -> dict:
+    """查询当前照片转换、传输与全刷进度。"""
+    return eink_push.status()
+
+
 @app.get("/photos/{name}")
 def serve_photo(name: str) -> FileResponse:
     return FileResponse(os.path.join(PHOTOS_DIR, name))
@@ -826,6 +929,7 @@ def thumb(name: str, s: int = 160) -> Response:
 app.include_router(content.router)
 
 
+app.mount("/eink", StaticFiles(directory=EINK_UI_DIR, html=True), name="eink")
 app.mount("/studio", StaticFiles(directory=os.path.join(_ROOT, "studio"), html=True), name="studio")
 app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="app")
 app.mount("/screen", StaticFiles(directory=DISPLAY_DIR, html=True), name="screen")

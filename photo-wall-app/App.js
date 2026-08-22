@@ -1,512 +1,148 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  StyleSheet, Text, View, TextInput, TouchableOpacity,
-  Image, ScrollView, ActivityIndicator, Alert, Switch, Linking,
+  Image, Modal, Platform, Pressable, SafeAreaView, ScrollView, StatusBar,
+  StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import * as MediaLibrary from 'expo-media-library';
+import { albums as seedAlbums, candidates as seedCandidates, devices, initialMembers, people as seedPeople } from './src/mockData';
+import { claimDisplay } from './src/deviceConnection';
+import { colors, shadow } from './src/theme';
 
-// 三套模板，和后端 templates/*.json 对应
-const TEMPLATES = [
-  { id: 'daily_polaroid', name: '每日拍立得' },
-  { id: 'editorial_magazine', name: '杂志编辑风 ✨' },
-  { id: 'minimal_gallery', name: '美术馆三联 ✨' },
-  { id: 'film_strip', name: '胶片胶卷 ✨' },
-  { id: 'collage_pop', name: '撞色拼贴 ✨' },
-  { id: 'scrapbook_echoes', name: '手帐拼贴·城市回响 ✨' },
-  { id: 'corkboard_recap', name: '软木板手帐·月度回顾 ✨' },
-  { id: 'july_dumps', name: '深海拼贴·本周随记 ✨' },
-  { id: 'travel_grid', name: '旅行方格' },
-  { id: 'monthly_collage', name: '月度手帐' },
-  { id: 'grid_5', name: '精选5张' },
-  { id: 'grid_10', name: '拾光10张' },
-  { id: 'grid_15', name: '手刐15张' },
-  { id: 'grid_20', name: '满屏20张' },
-  { id: 'grid_24', name: '拼贴24张' },
+const API = Platform.OS === 'web' ? 'http://localhost:8000' : 'http://HJFG3FGM46.local:8000';
+const photoUrl = (file) => `${API}/api/thumb/${encodeURIComponent(file)}?s=640`;
+const TABS = [
+  { id: 'home', label: '首页', icon: '⌂' }, { id: 'albums', label: '相册', icon: '▧' },
+  { id: 'compose', label: '创作', icon: '＋' }, { id: 'people', label: '人物', icon: '◎' },
+  { id: 'settings', label: '设置', icon: '☷' },
 ];
+const POLICY = {
+  allow: { label: '允许展示', color: colors.moss, soft: colors.mossSoft },
+  review: { label: '每次审核', color: '#95651F', soft: colors.amberSoft },
+  block: { label: '不展示', color: colors.danger, soft: colors.dangerSoft },
+};
 
-// 每次抓取上传的候选照片数量。注意：数字太大（如 300）会让手机逐张读取 HEIC + 打包上传
-// 卡好几分钟、界面假死。后端会「累积入库」——每次传近期几十张，多次同步就能覆盖整个相册，
-// 所以这里保持一个手机能快速处理的小批量即可。
-// 说明：拉取 CANDIDATE_COUNT 张只是取「照片引用+文件名」很轻量；真正耗时的
-// getAssetInfoAsync + 上传只对「后端没见过的新照片」做（增量上传）。因此可放大到 500，
-// 让候选库覆盖更长时间跨度的照片，配合后端「历史上的今天/更久以前」惊喜规则更出彩。
-const CANDIDATE_COUNT = 500;
-// 自动模式的轮询间隔（毫秒）
-const AUTO_INTERVAL_MS = 5 * 60 * 1000;
-
-export default function App() {
-  const [server, setServer] = useState('http://HJFG3FGM46.local:8000');
-  const [template, setTemplate] = useState('daily_polaroid');
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState('准备中…');
-  const [wallUrl, setWallUrl] = useState(null);
-  const [autoMode, setAutoMode] = useState(true); // 默认全自动：打开即抓取
-  const [filters, setFilters] = useState([]); // 当前生效的筛选标签（由所选相簿决定）
-  const [albums, setAlbums] = useState([]); // AI 端出的智能相簿（人物/宠物/主题/精选）
-  const [activeAlbum, setActiveAlbum] = useState(null); // 当前选中的相簿 id（单选）
-  const [junkInfo, setJunkInfo] = useState({ good: 0, junk: 0 }); // 废片过滤统计
-  const [photoAccess, setPhotoAccess] = useState(''); // 相册权限级别：all/limited/denied（可见诊断用）
-  const timerRef = useRef(null);
-  const lastSyncedId = useRef(null); // 记录上次同步过的最新照片id，自动模式只在有新照片时才刷新
-  const filtersRef = useRef(filters); // 供轮询回调读取最新筛选值
-  filtersRef.current = filters;
-  const activeLabelRef = useRef('精选'); // 供轮询回调读取当前相簿名（闭包里 albums/activeAlbum 会过期）
-
-  // 智能相簿：问后端「你的相册里都有什么」，AI 主动端出少数语义相簿（借鉴苹果 Photos）。
-  async function fetchAlbums() {
-    try {
-      const res = await fetch(`${server}/api/smart_albums`);
-      const data = await res.json();
-      setAlbums(data.albums || []);
-      setJunkInfo({ good: data.good_total || 0, junk: data.junk_total || 0 });
-    } catch (e) {
-      // 相簿获取失败不影响主流程
-    }
-  }
-
-  // 人物聚合：让后端跑人脸聚类（较慢），完成后刷新相簿（此时才有「人物」相簿）。
-  async function clusterPeople() {
-    try {
-      const res = await fetch(`${server}/api/cluster_people`, { method: 'POST' });
-      await res.json();
-      fetchAlbums();
-    } catch (e) {
-      // 人脸功能不可用不影响主流程
-    }
-  }
-
-  // 自动换一批：不重新上传，只请求后端用当前模板+筛选再出一屏。
-  // 后端每生成同一「模板|筛选」组合会让 rotate 计数自增 -> 子分类叉乘+游标轮换 -> 每次照片组合不同。
-  // 用于自动模式定时刷新：即使没有新照片，也能保持画面新鲜、避免长期同质化。
-  async function rotateWall(activeFilters) {
-    const name = activeLabelRef.current || '精选';
-    try {
-      const res = await fetch(`${server}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template, title: name === '精选' ? '我的一天' : name, filters: activeFilters || [] }),
-      });
-      const data = await res.json();
-      if (data.image_url) {
-        setWallUrl(`${server}${data.image_url}?t=${Date.now()}`);
-        setStatus(`🔄 自动换一批｜${name}｜选用 ${data.chosen.length} 张（每5分钟刷新）`);
-      }
-    } catch (e) {
-      // 轮换失败不影响下个周期
-    }
-  }
-
-  // 只改了筛选（选了某个相簿）时：从已识别相册快速重出一屏（不重新上传，保留人物标签、更快）。
-  async function regenerate(label, tplOverride) {
-    if (busy) return;
-    try {
-      setBusy(true);
-      const activeFilters = filtersRef.current;
-      const tpl = tplOverride || template; // 相簿自动切模板时 setTemplate 还没生效，用显式覆盖值
-      const name = label || '精选';
-      setStatus(`AI 正在生成「${name}」这一屏…`);
-      const res = await fetch(`${server}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ template: tpl, title: name === '精选' ? '我的一天' : name, filters: activeFilters }),
-      });
-      const data = await res.json();
-      if (data.image_url) {
-        setWallUrl(`${server}${data.image_url}?t=${Date.now()}`);
-        const fb = data.filter_fallback ? '（该相簿照片太少，已回退全部）' : '';
-        setStatus(`✅ 已上屏｜${name}｜选用 ${data.chosen.length} 张${fb}`);
-      } else {
-        setStatus('生成失败：' + JSON.stringify(data));
-      }
-    } catch (e) {
-      setStatus('出错：' + (e && e.message ? e.message : String(e)));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // 授权 + 读取最近照片 + 上传 + 触发后端自动生成上屏
-  async function syncNow(silent = false, force = false) {
-    if (busy) return;
-    try {
-      setBusy(true);
-      if (!silent) setStatus('请求相册权限…');
-      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
-      setPhotoAccess(perm.accessPrivileges || perm.status || ''); // 记录权限级别供界面显示
-      if (perm.status !== 'granted') {
-        setStatus('相册权限被拒绝，请到系统设置里允许访问照片');
-        if (!silent) Alert.alert('需要相册权限', '请在系统设置 → 本App → 照片 里允许访问');
-        return;
-      }
-
-      // iOS「仅选中的照片」(Limited Access)：系统只让 App 看到你当初勾选的那几张，
-      // 所以无论怎么刷新，getAssetsAsync 读到的永远是同一批照片。检测到就引导用户
-      // 改成「所有照片」，或用系统面板补选更多照片（不用去设置里翻）。
-      if (perm.accessPrivileges === 'limited') {
-        if (!silent) {
-          Alert.alert(
-            '相册权限是「仅选中的照片」',
-            '这样 App 只能看到你勾选过的那几张，所以每次刷新都是同一批。\n\n建议改成「所有照片」：系统设置 → 本App → 照片 → 所有照片；\n或点下面「补选照片」临时多选一些。',
-            [
-              {
-                text: '补选照片',
-                onPress: async () => {
-                  try {
-                    if (MediaLibrary.presentPermissionsPickerAsync) {
-                      await MediaLibrary.presentPermissionsPickerAsync();
-                    }
-                  } catch (e) {}
-                },
-              },
-              { text: '知道了', style: 'cancel' },
-            ]
-          );
-        }
-        // 不中断：仍用当前可见的照片继续出图，同时已提示用户为何总是同一批。
-      }
-
-      if (!silent) setStatus('AI 读取最近照片…');
-      const page = await MediaLibrary.getAssetsAsync({
-        first: CANDIDATE_COUNT,
-        mediaType: 'photo',
-        sortBy: [[MediaLibrary.SortBy.creationTime, false]], // 最新在前
-      });
-      if (!page.assets.length) {
-        setStatus('相册里没有照片');
-        return;
-      }
-
-      // 每张照片的稳定文件名（和上传时一致），用于判断后端是否已识别过
-      const assetName = (a) => a.filename || `photo_${a.id}.jpg`;
-
-      // 增量识别的核心：先问后端「你已经认识哪些照片」，只上传它没见过的新照片。
-      // 这样第一次授权识别之后，后续同步几乎瞬间完成，不再重复上传/重复识别整批。
-      let known = new Set();
-      try {
-        const kr = await fetch(`${server}/api/known_photos`);
-        const kd = await kr.json();
-        known = new Set(kd.names || []);
-      } catch (e) {
-        // 拿不到已知列表就退化为「全部当新照片」，功能不受影响，只是这次慢一点
-      }
-      const newAssets = page.assets.filter((a) => !known.has(assetName(a)));
-
-      // 没有新照片：完全不上传/不重识别，直接用后端已有的整库出一屏（秒级）。
-      if (newAssets.length === 0) {
-        if (silent && !force && lastSyncedId.current === page.assets[0].id) {
-          await rotateWall(filtersRef.current);  // 自动模式无新图 -> 轮换换一批
-        } else {
-          await regenerate(activeLabelRef.current);  // 首次打开/手动 -> 用现有库直接出图
-          lastSyncedId.current = page.assets[0].id;
-        }
-        return;
-      }
-
-      const newestId = page.assets[0].id;
-      const total = newAssets.length;
-      setStatus(`发现 ${total} 张新照片，读取中 0/${total}…`);
-      const form = new FormData();
-      for (let i = 0; i < total; i++) {
-        const a = newAssets[i];
-        const info = await MediaLibrary.getAssetInfoAsync(a);
-        const uri = info.localUri || a.uri; // iOS 的 ph:// 要用 localUri 才能上传
-        form.append('files', { uri, name: assetName(a), type: 'image/jpeg' });
-        if ((i + 1) % 5 === 0 || i + 1 === total) {
-          setStatus(`发现 ${total} 张新照片，读取中 ${i + 1}/${total}…`);
-        }
-      }
-      setStatus(`AI 识别 ${total} 张新照片（上传中…）`);
-
-      // 抓取识别一律不带筛选：先出一屏「精选」全貌，之后用户点相簿再快速切换。
-      const url =
-        `${server}/api/upload?auto=1&template=${template}` +
-        `&title=${encodeURIComponent('我的一天')}`;
-      const res = await fetch(url, { method: 'POST', body: form });
-      const data = await res.json();
-
-      if (data.wall && data.wall.image_url) {
-        lastSyncedId.current = newestId;
-        setWallUrl(`${server}${data.wall.image_url}?t=${Date.now()}`);
-        // 抓到新照片 -> 回到「精选」全貌，清掉旧相簿选择（避免残留过期筛选）
-        setActiveAlbum(null);
-        setFilters([]);
-        filtersRef.current = [];
-        activeLabelRef.current = '精选';
-        setStatus(
-          `✅ 已上屏｜新增识别 ${total} 张，选用 ${data.wall.chosen.length} 张` +
-          (autoMode ? '（自动运行中）' : '')
-        );
-        fetchAlbums();      // 先刷新非人物相簿（宠物/主题/精选）
-        clusterPeople();    // 人脸聚类，完成后再刷新出「人物」相簿（较慢，后台跑）
-      } else {
-        setStatus('生成失败：' + JSON.stringify(data));
-      }
-    } catch (e) {
-      setStatus('出错：' + (e && e.message ? e.message : String(e)));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // 相册权限管理：让用户直接查看/扩展可访问的照片（iOS「仅选中」→ 补选或改所有照片）。
-  async function managePhotoAccess() {
-    try {
-      const perm = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
-      const level = perm.accessPrivileges || perm.status || '';
-      setPhotoAccess(level);
-      if (level === 'limited') {
-        Alert.alert(
-          '相册权限：仅选中的照片',
-          '只能看到你勾选的那几张，所以每次刷新都是同一批。\n\n点「补选照片」多选一些；或点「去设置」改成「所有照片」（推荐）。',
-          [
-            {
-              text: '补选照片',
-              onPress: async () => {
-                try {
-                  if (MediaLibrary.presentPermissionsPickerAsync) {
-                    await MediaLibrary.presentPermissionsPickerAsync();
-                  }
-                } catch (e) {}
-              },
-            },
-            { text: '去设置', onPress: () => Linking.openSettings() },
-            { text: '取消', style: 'cancel' },
-          ]
-        );
-      } else if (level === 'all') {
-        Alert.alert('相册权限：所有照片 ✅', '已是完整访问。若刷新仍像同一批，多为选图轮换问题而非权限。');
-      } else {
-        Alert.alert('相册权限：' + (level || '未授权'), '请到 系统设置 → 本App → 照片 里允许访问。', [
-          { text: '去设置', onPress: () => Linking.openSettings() },
-          { text: '取消', style: 'cancel' },
-        ]);
-      }
-    } catch (e) {
-      setStatus('权限检查出错：' + (e && e.message ? e.message : String(e)));
-    }
-  }
-
-  // 选择某个智能相簿（单选）：点一下 -> 只看这个相簿的照片墙；再点一次 -> 回到「精选」全貌。
-  function selectAlbum(album) {
-    const isOn = activeAlbum === album.id;
-    const nextId = isOn ? null : album.id;
-    const nextFilters = isOn ? [] : (album.filter || []);
-    setActiveAlbum(nextId);
-    setFilters(nextFilters);
-    filtersRef.current = nextFilters;
-    activeLabelRef.current = nextId ? album.label : '精选';
-    // 自动套用该相簿的推荐模板（人物→拍立得 / 美食→网格10 / 情绪→月度手帐…），保持与网页端一致
-    const nextTpl = nextId && album.template ? album.template : template;
-    if (nextId && album.template) setTemplate(album.template);
-    // 从已识别相册快速重出一屏（不重新上传，保留人物标签）
-    setTimeout(() => regenerate(nextId ? album.label : '精选', nextTpl), 0);
-  }
-
-  // 自动模式：定时静默同步
-  useEffect(() => {
-    if (autoMode) {
-      syncNow(false); // 打开时先立即同步一次
-      timerRef.current = setInterval(() => syncNow(true), AUTO_INTERVAL_MS);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoMode]);
-
-  // 启动时先把已识别的智能相簿拉回来（无需等一次新同步）
-  useEffect(() => {
-    fetchAlbums();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <ScrollView contentContainerStyle={styles.wrap}>
-      <StatusBar style="dark" />
-      <Text style={styles.h1}>手帐照片墙</Text>
-      <Text style={styles.sub}>授权相册即可 · AI 自动抓取识别 · 挑图套模板 · 投屏</Text>
-
-      <TouchableOpacity style={styles.permRow} onPress={managePhotoAccess}>
-        <Text style={styles.permTxt}>
-          相册权限：{photoAccess === 'all' ? '所有照片 ✅' : photoAccess === 'limited' ? '仅选中的照片 ⚠️（点此扩展）' : photoAccess === 'denied' ? '已拒绝 ❌（点此开启）' : '未检测（点此检查）'}
-        </Text>
-      </TouchableOpacity>
-
-      <Text style={styles.label}>后端地址（跑服务的电脑）</Text>
-      <TextInput
-        style={styles.input}
-        value={server}
-        onChangeText={setServer}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="http://192.168.0.102:8000"
-      />
-
-      <Text style={styles.label}>模板</Text>
-      <View style={styles.row}>
-        {TEMPLATES.map((t) => (
-          <TouchableOpacity
-            key={t.id}
-            style={[styles.chip, template === t.id && styles.chipOn]}
-            onPress={() => setTemplate(t.id)}
-          >
-            <Text style={[styles.chipTxt, template === t.id && styles.chipTxtOn]}>{t.name}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={styles.label}>智能相簿（AI 已读懂你的相册，点一下只看这一类）</Text>
-
-      {junkInfo.junk > 0 && (
-        <Text style={styles.junkHint}>
-          🧹 已自动剔除 {junkInfo.junk} 张废片（截图/文档/模糊/过曝），只保留 {junkInfo.good} 张好片上墙
-        </Text>
-      )}
-
-      {albums.length === 0 ? (
-        <Text style={styles.emptyHint}>还没识别到内容，正在分析你的相册…</Text>
-      ) : (
-        ['人物', '宠物', '主题', '精选'].map((groupName) => {
-          const groupAlbums = albums.filter((a) => a.group === groupName);
-          if (groupAlbums.length === 0) return null;
-          return (
-            <View key={groupName} style={styles.filterGroup}>
-              <Text style={styles.groupLabel}>{groupName}</Text>
-              <View style={styles.row}>
-                {groupAlbums.map((a) => {
-                  const on = activeAlbum === a.id;
-                  return (
-                    <TouchableOpacity
-                      key={a.id}
-                      style={[styles.albumChip, on && styles.albumChipOn]}
-                      onPress={() => selectAlbum(a)}
-                    >
-                      <Text style={[styles.albumTxt, on && styles.albumTxtOn]}>
-                        {a.label}
-                      </Text>
-                      <Text style={[styles.albumCount, on && styles.albumCountOn]}>
-                        {a.count}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          );
-        })
-      )}
-
-      {activeAlbum && (
-        <TouchableOpacity onPress={() => { setActiveAlbum(null); setFilters([]); filtersRef.current = []; setTimeout(() => regenerate('精选'), 0); }}>
-          <Text style={styles.clearTxt}>← 返回「精选」全貌</Text>
-        </TouchableOpacity>
-      )}
-
-      <TouchableOpacity
-        style={[styles.btn, busy && { opacity: 0.6 }]}
-        disabled={busy}
-        onPress={() => syncNow(false, true)}
-      >
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnTxt}>立即刷新一屏</Text>}
-      </TouchableOpacity>
-
-      <View style={styles.autoRow}>
-        <Text style={styles.label}>自动模式（每 5 分钟检测新照片自动换屏）</Text>
-        <Switch value={autoMode} onValueChange={setAutoMode} />
-      </View>
-
-      <Text style={styles.status}>{status}</Text>
-
-      {wallUrl && (
-        <>
-          <Text style={styles.label}>当前上屏画面</Text>
-          <Image source={{ uri: wallUrl }} style={styles.preview} resizeMode="contain" />
-        </>
-      )}
-    </ScrollView>
-  );
+function Button({ children, onPress, secondary, disabled, small }) {
+  return <TouchableOpacity disabled={disabled} onPress={onPress} activeOpacity={0.82} style={[s.button, secondary && s.buttonSecondary, small && s.buttonSmall, disabled && s.disabled]}><Text style={[s.buttonText, secondary && s.buttonTextDark]}>{children}</Text></TouchableOpacity>;
+}
+function Pill({ children, tone = 'green' }) {
+  const meta = tone === 'red' ? [colors.dangerSoft, colors.danger] : tone === 'amber' ? [colors.amberSoft, '#95651F'] : [colors.mossSoft, colors.moss];
+  return <View style={[s.pill, { backgroundColor: meta[0] }]}><Text style={[s.pillText, { color: meta[1] }]}>{children}</Text></View>;
+}
+function Heading({ eyebrow, title, action, onAction }) {
+  return <View style={s.heading}><View>{eyebrow ? <Text style={s.eyebrow}>{eyebrow}</Text> : null}<Text style={s.headingTitle}>{title}</Text></View>{action ? <TouchableOpacity onPress={onAction}><Text style={s.action}>{action}</Text></TouchableOpacity> : null}</View>;
+}
+function DeviceArt({ small }) {
+  return <View style={[s.device, small && s.deviceSmall]}><View style={s.deviceScreen}><View style={s.sky}/><View style={s.sun}/><View style={s.mountain1}/><View style={s.mountain2}/><View style={s.artLabel}><Text style={s.artLabelText}>夏日记忆</Text></View></View></View>;
 }
 
-const styles = StyleSheet.create({
-  wrap: { padding: 20, paddingTop: 60, backgroundColor: '#faf7f2', minHeight: '100%' },
-  h1: { fontSize: 26, fontWeight: '800', color: '#3a3a3a' },
-  sub: { color: '#8a8a8a', marginTop: 4, marginBottom: 16 },
-  permRow: {
-    backgroundColor: '#fbf3e9', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-    borderWidth: 1, borderColor: '#efdcc4', marginBottom: 6,
-  },
-  permTxt: { color: '#a56a3a', fontSize: 13, fontWeight: '600' },
-  label: { fontSize: 13, color: '#7a7a7a', marginTop: 14, marginBottom: 6 },
-  input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5ded3',
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15,
-  },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5ded3',
-  },
-  chipOn: { backgroundColor: '#d98c5f', borderColor: '#d98c5f' },
-  chipTxt: { color: '#6a6a6a', fontSize: 14 },
-  chipTxtOn: { color: '#fff', fontWeight: '700' },
-  filterGroup: { marginTop: 8 },
-  groupLabel: { fontSize: 12, color: '#a58b6f', marginBottom: 6, marginTop: 4 },
-  suggestBox: {
-    backgroundColor: '#fbf3e9', borderRadius: 12, padding: 12, marginTop: 6,
-    borderWidth: 1, borderColor: '#efdcc4',
-  },
-  suggestTitle: { fontSize: 13, color: '#a5713f', marginBottom: 8, fontWeight: '600' },
-  sugChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e0b98c',
-  },
-  sugChipOn: { backgroundColor: '#d98c5f', borderColor: '#d98c5f' },
-  sugChipTxt: { color: '#b07235', fontSize: 13, fontWeight: '600' },
-  sugChipTxtOn: { color: '#fff', fontWeight: '700' },
-  fchip: {
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5ded3',
-  },
-  fchipOn: { backgroundColor: '#6a8caf', borderColor: '#6a8caf' },
-  fchipRec: { borderColor: '#e0b98c', backgroundColor: '#fdf7ef' },
-  fchipTxt: { color: '#6a6a6a', fontSize: 13 },
-  fchipTxtOn: { color: '#fff', fontWeight: '700' },
-  albumChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5ded3',
-  },
-  albumChipOn: { backgroundColor: '#d98c5f', borderColor: '#d98c5f' },
-  albumTxt: { color: '#5a5a5a', fontSize: 15, fontWeight: '600' },
-  albumTxtOn: { color: '#fff', fontWeight: '800' },
-  albumCount: {
-    color: '#b98a5f', fontSize: 12, fontWeight: '700',
-    backgroundColor: '#f4ead9', paddingHorizontal: 7, paddingVertical: 1, borderRadius: 9,
-    overflow: 'hidden',
-  },
-  albumCountOn: { color: '#d98c5f', backgroundColor: '#fff' },
-  junkHint: {
-    color: '#7a9a6a', fontSize: 12, marginTop: 4, marginBottom: 4,
-    backgroundColor: '#f1f6ec', borderRadius: 8, padding: 8,
-  },
-  emptyHint: { color: '#a0a0a0', fontSize: 13, marginTop: 8, fontStyle: 'italic' },
-  clearTxt: { color: '#b06a4f', fontSize: 13, marginTop: 10, textDecorationLine: 'underline' },
-  btn: {
-    marginTop: 20, backgroundColor: '#d98c5f', borderRadius: 12,
-    paddingVertical: 15, alignItems: 'center',
-  },
-  btnTxt: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  autoRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 18, gap: 10,
-  },
-  status: { marginTop: 16, color: '#5a5a5a', fontSize: 14, lineHeight: 20 },
-  preview: {
-    width: '100%', aspectRatio: 5 / 3, marginTop: 10,
-    borderRadius: 12, backgroundColor: '#000',
-  },
+function Home({ connected, setTab, show }) {
+  return <>
+    <View style={s.hero}><Text style={s.eyebrow}>TUESDAY · JUL 28</Text><Text style={s.heroTitle}>下午好，王欢</Text><Text style={s.intro}>把值得记住的时刻，留在每天都能看见的地方。</Text></View>
+    <View style={s.deviceCard}>
+      <View style={s.between}><Pill tone={connected ? 'green' : 'red'}>{connected ? '● 在线' : '● 未连接'}</Pill><TouchableOpacity onPress={() => show('device')}><Text style={s.more}>•••</Text></TouchableOpacity></View>
+      <View style={s.deviceBody}><DeviceArt/><View style={s.deviceCopy}><Text style={s.kicker}>当前画面</Text><Text style={s.deviceName}>{connected ? devices[0].name : '还没有连接设备'}</Text><Text style={s.meta}>{connected ? `${devices[0].model}\n更新于 2 分钟前` : '连接你的墨水屏，开始展示家庭照片。'}</Text><Button small onPress={() => connected ? setTab('compose') : show('device')}>{connected ? '创建新画面' : '连接设备'}</Button></View></View>
+    </View>
+    <View style={s.stats}>{[['558','已同步照片'],['4','已识别人物'],['12','本月画面']].map(([value,label]) => <View key={label} style={s.stat}><Text style={s.statValue}>{value}</Text><Text style={s.meta}>{label}</Text></View>)}</View>
+    <Heading title="需要处理"/>
+    <TouchableOpacity style={s.notice} onPress={() => setTab('people')}><View style={s.noticeIcon}><Text style={s.noticeIconText}>◎</Text></View><View style={s.flex}><Text style={s.itemTitle}>发现 1 位新人物</Text><Text style={s.meta}>确认是否允许这个人物出现在照片墙。</Text></View><Text style={s.chevron}>›</Text></TouchableOpacity>
+    <Heading title="最近展示" action="查看全部" onAction={() => show('history')}/>
+    <View style={s.history}>{['IMG_1067.JPG','IMG_1077.JPG','IMG_1080.JPG'].map((file,i) => <View key={file} style={s.historyItem}><Image source={{uri: photoUrl(file)}} style={s.historyImage}/><Text style={s.historyName}>{['周末散步','家常味道','盛夏球场'][i]}</Text><Text style={s.meta}>{['今天','昨天','7 月 25 日'][i]}</Text></View>)}</View>
+  </>;
+}
+
+function Albums({ albums, setAlbums, show }) {
+  const selected = albums.filter(x => x.selected);
+  const toggle = id => setAlbums(current => current.map(x => x.id === id ? {...x, selected: !x.selected} : x));
+  return <>
+    <Heading eyebrow="照片来源" title="选择同步相册" action="权限设置" onAction={() => show('permission')}/>
+    <Text style={s.intro}>只会同步你明确选择的相册。原始照片保留在手机中，设备使用经过筛选的展示版本。</Text>
+    <View style={s.notice}><View style={[s.noticeIcon,{backgroundColor:colors.mossSoft}]}><Text style={[s.noticeIconText,{color:colors.moss}]}>▧</Text></View><View style={s.flex}><Text style={s.itemTitle}>照片访问权限</Text><Text style={s.meta}>当前为“所有照片”，可随时在系统设置中修改。</Text></View><Pill>已授权</Pill></View>
+    <View style={s.summary}><Text style={s.meta}>已选 <Text style={s.strong}>{selected.length} 个相册</Text></Text><Text style={s.meta}>约 <Text style={s.strong}>{selected.reduce((a,x)=>a+x.count,0)} 张照片</Text></Text></View>
+    <View style={s.albumGrid}>{albums.map((album,i) => <TouchableOpacity key={album.id} style={s.albumCard} onPress={() => toggle(album.id)}><View style={[s.albumCover,{backgroundColor:album.accent}]}><Image source={{uri:photoUrl(['IMG_1067.JPG','IMG_1077.JPG','IMG_1080.JPG','IMG_1081.JPG'][i])}} style={s.coverImage}/><View style={[s.check,album.selected&&s.checkOn]}><Text style={s.checkText}>{album.selected?'✓':''}</Text></View></View><Text style={s.albumName}>{album.name}</Text><Text style={s.meta}>{album.count} 张照片</Text></TouchableOpacity>)}</View>
+    <View style={s.sync}><View style={s.between}><View><Text style={s.itemTitle}>同步状态</Text><Text style={s.meta}>上次同步：今天 14:32</Text></View><Pill>已完成</Pill></View><View style={s.track}><View style={s.fill}/></View><Text style={s.meta}>558 张已处理 · 12 张重复照片已跳过</Text></View>
+  </>;
+}
+
+function People({ people, setPeople }) {
+  const [filter,setFilter] = useState('all');
+  const shown = people.filter(x => filter === 'all' || x.policy === filter);
+  const change = (id,policy) => setPeople(current => current.map(x => x.id === id ? {...x,policy} : x));
+  return <>
+    <Heading eyebrow="隐私与展示" title="人物管理"/><Text style={s.intro}>设置每位人物是否可以出现在自动生成的画面中。策略由家庭管理员统一管理。</Text>
+    <View style={s.segments}>{[['all','全部'],['allow','允许'],['review','待审核'],['block','不展示']].map(([id,label]) => <TouchableOpacity key={id} style={[s.segment,filter===id&&s.segmentOn]} onPress={()=>setFilter(id)}><Text style={[s.segmentText,filter===id&&s.strong]}>{label}</Text></TouchableOpacity>)}</View>
+    <View style={s.list}>{shown.map(person => { const meta=POLICY[person.policy]; return <View key={person.id} style={s.person}><Image source={{uri:photoUrl(person.file)}} style={s.personImage}/><View style={s.personCopy}><Text style={s.itemTitle}>{person.name}</Text><Text style={s.meta}>{person.count} 张相关照片</Text><View style={s.policyChoices}>{Object.keys(POLICY).map(policy => <TouchableOpacity key={policy} onPress={()=>change(person.id,policy)} style={[s.policyChoice,person.policy===policy&&{backgroundColor:POLICY[policy].soft,borderColor:POLICY[policy].color}]}><Text style={[s.policyText,person.policy===policy&&{color:POLICY[policy].color}]}>{POLICY[policy].label}</Text></TouchableOpacity>)}</View></View><View style={[s.policyBadge,{backgroundColor:meta.soft}]}><Text style={[s.policyBadgeText,{color:meta.color}]}>{meta.label}</Text></View></View>})}</View>
+    <View style={s.info}><Text style={[s.itemTitle,{color:colors.moss}]}>策略如何生效？</Text><Text style={[s.meta,{color:colors.moss}]}>包含“不展示”人物的照片会由后端直接排除；包含“每次审核”人物的照片只能进入草稿，确认后才可发布。</Text></View>
+  </>;
+}
+
+function Compose({ candidates, setCandidates, show }) {
+  const [template,setTemplate]=useState('留白画廊');
+  const selected=candidates.filter(x=>x.selected);
+  const toggle=id=>setCandidates(current=>current.map(x=>x.id===id?{...x,selected:!x.selected}:x));
+  return <>
+    <Heading eyebrow="新建画面" title="预览与发布"/><Text style={s.intro}>AI 已根据画质、人物权限和近期展示记录推荐以下照片。发布前可以自由调整。</Text>
+    <View style={s.composer}><View style={s.previewPanel}><View style={s.between}><Text style={s.previewLabel}>SPECTRA 6 模拟预览</Text><Pill tone="amber">六色</Pill></View><View style={s.eink}>{selected.slice(0,4).map((item,i)=><Image key={item.id} source={{uri:photoUrl(item.file)}} style={[s.collage,s[`collage${i}`]]}/>)}<View style={s.collageTitle}><Text style={s.collageMain}>OUR DAYS</Text><Text style={s.collageSub}>JULY · 2026</Text></View></View><Text style={s.previewNote}>最终墨水屏会因环境光与面板批次产生轻微色差。</Text></View>
+      <View style={s.composeControls}><Text style={s.controlLabel}>模板</Text><View style={s.templateRow}>{['留白画廊','手帐拼贴','每日精选'].map(name=><TouchableOpacity key={name} onPress={()=>setTemplate(name)} style={[s.template,template===name&&s.templateOn]}><Text style={[s.templateText,template===name&&{color:colors.terracotta}]}>{name}</Text></TouchableOpacity>)}</View><View style={s.draftMeta}>{[['发布设备','客厅照片墙'],['人物策略','已通过检查 ✓'],['预计刷新','约 2 分钟']].map(([a,b],i)=><View key={a}>{i?<View style={s.divider}/>:null}<View style={s.between}><Text style={s.meta}>{a}</Text><Text style={s.strong}>{b}</Text></View></View>)}</View><Button disabled={selected.length<3} onPress={()=>show('publish')}>确认并发布</Button><Button secondary onPress={()=>show('saved')}>保存为草稿</Button></View>
+    </View>
+    <Heading title={`候选照片 · 已选择 ${selected.length} 张`} action="重新推荐" onAction={()=>setCandidates(seedCandidates)}/>
+    <View style={s.candidates}>{candidates.map(item=><TouchableOpacity key={item.id} style={s.candidate} onPress={()=>toggle(item.id)}><Image source={{uri:photoUrl(item.file)}} style={[s.candidateImage,!item.selected&&{opacity:.36}]}/><View style={[s.check,s.candidateCheck,item.selected&&s.checkOn]}><Text style={s.checkText}>{item.selected?'✓':''}</Text></View>{!item.selected?<View style={s.excluded}><Text style={s.excludedText}>未选择</Text></View>:null}</TouchableOpacity>)}</View>
+  </>;
+}
+
+function Settings({ members, setMembers, show }) {
+  const [auto,setAuto]=useState(true),[approval,setApproval]=useState(true);
+  return <>
+    <Heading eyebrow="家庭空间" title="账号与设置"/><View style={s.profile}><View style={s.avatar}><Text style={s.avatarText}>WH</Text></View><View style={s.flex}><Text style={s.profileName}>王欢的家庭</Text><Text style={s.meta}>家庭编号 PW-0726 · 所有者</Text></View><Button small secondary onPress={()=>show('profile')}>编辑</Button></View>
+    <Heading title={`家庭成员 · ${members.length}`} action="邀请成员" onAction={()=>show('invite')}/><View style={s.memberList}>{members.map(m=><View key={m.id} style={s.member}><View style={[s.memberAvatar,{backgroundColor:m.color}]}><Text style={s.memberAvatarText}>{m.initials}</Text></View><View style={s.flex}><Text style={s.itemTitle}>{m.name}</Text><Text style={s.meta}>{m.detail}</Text></View><TouchableOpacity onPress={()=>m.role!=='owner'&&setMembers(current=>current.filter(x=>x.id!==m.id))}><Text style={m.role==='owner'?s.owner:s.action}>{m.role==='owner'?'Owner':'管理'}</Text></TouchableOpacity></View>)}</View>
+    <Heading title="设备与自动化"/><View style={s.settingGroup}><TouchableOpacity style={s.setting} onPress={()=>show('device')}><View style={s.settingIcon}><Text>▣</Text></View><View style={s.flex}><Text style={s.itemTitle}>客厅照片墙</Text><Text style={s.meta}>在线 · 192.168.1.200</Text></View><Text style={s.chevron}>›</Text></TouchableOpacity><View style={s.divider}/><View style={s.setting}><View style={s.settingIcon}><Text>↻</Text></View><View style={s.flex}><Text style={s.itemTitle}>自动更新</Text><Text style={s.meta}>每天从允许内容中生成新画面</Text></View><Switch value={auto} onValueChange={setAuto} trackColor={{true:colors.moss}}/></View><View style={s.divider}/><View style={s.setting}><View style={s.settingIcon}><Text>✓</Text></View><View style={s.flex}><Text style={s.itemTitle}>投稿需要管理员确认</Text><Text style={s.meta}>投稿者的草稿不会直接上屏</Text></View><Switch value={approval} onValueChange={setApproval} trackColor={{true:colors.moss}}/></View></View>
+    <Heading title="账号"/><View style={s.settingGroup}>{['登录与安全','通知设置','隐私与数据','帮助与反馈'].map((item,i)=><React.Fragment key={item}>{i?<View style={s.divider}/>:null}<TouchableOpacity style={s.simpleSetting} onPress={()=>show('generic')}><Text style={s.itemTitle}>{item}</Text><Text style={s.chevron}>›</Text></TouchableOpacity></React.Fragment>)}</View>
+  </>;
+}
+
+function Dialog({ type, close, connect, invite, published }) {
+  const [name,setName]=useState(''),[role,setRole]=useState('contributor'),[step,setStep]=useState('confirm'),[pairingCode,setPairingCode]=useState(''),[connecting,setConnecting]=useState(false),[connectionError,setConnectionError]=useState('');
+  const copy={history:['展示历史','正式版本会保存每次实际发布的不可变版本，可重新展示或复制为新草稿。'],permission:['系统照片权限','真机版会调用 iOS/Android 系统相册选择器，并只同步明确选择的相册。'],saved:['草稿已保存','可以稍后继续编辑；保存草稿不会改变墨水屏当前画面。'],profile:['家庭资料','正式版本可以修改家庭名称、头像和成员加入规则。'],generic:['功能预览','该入口已完成信息架构，下一阶段接入真实账号和后端配置。']};
+  const dismiss=()=>{setStep('confirm');close();};
+  const publish=()=>{setStep('uploading');setTimeout(()=>{setStep('done');published();},1400)};
+  return <Modal visible={Boolean(type)} transparent animationType="fade" onRequestClose={dismiss}><Pressable style={s.backdrop} onPress={dismiss}><Pressable style={s.modal} onPress={e=>e.stopPropagation()}><TouchableOpacity style={s.close} onPress={dismiss}><Text style={s.closeText}>×</Text></TouchableOpacity>
+    {type==='device'?<><Text style={s.eyebrow}>设备连接</Text><Text style={s.modalTitle}>绑定 PhotoWall 墨水屏</Text><Text style={s.modalBody}>1. 在 iPhone Wi-Fi 中连接 PhotoWall-XXXX。2. 在自动打开的网页填写家庭 Wi-Fi。3. 回到这里输入网页显示的六位配对码。</Text><View style={s.found}><DeviceArt small/><View style={s.flex}><Text style={s.itemTitle}>PhotoWall E6</Text><Text style={s.meta}>屏幕联网后将主动连接云端。</Text></View></View><Text style={s.controlLabel}>六位配对码</Text><TextInput value={pairingCode} onChangeText={value=>setPairingCode(value.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" maxLength={6} placeholder="例如 072826" style={s.input}/>{connectionError?<Text style={{color:colors.danger,fontSize:11,marginTop:10}}>{connectionError}</Text>:null}<Button disabled={connecting||pairingCode.length!==6} onPress={async()=>{setConnecting(true);setConnectionError('');try{await connect(pairingCode);setPairingCode('');dismiss()}catch(error){setConnectionError(error.message)}finally{setConnecting(false)}}}>{connecting?'正在绑定…':'绑定屏幕'}</Button></>:
+    type==='invite'?<><Text style={s.eyebrow}>家庭成员</Text><Text style={s.modalTitle}>邀请新成员</Text><Text style={s.controlLabel}>成员姓名</Text><TextInput value={name} onChangeText={setName} placeholder="例如：爸爸" style={s.input}/><Text style={s.controlLabel}>角色</Text><View style={s.roleRow}>{[['admin','管理员'],['contributor','投稿者'],['viewer','仅查看']].map(([id,label])=><TouchableOpacity key={id} onPress={()=>setRole(id)} style={[s.role,role===id&&s.roleOn]}><Text style={[s.roleText,role===id&&{color:colors.terracotta}]}>{label}</Text></TouchableOpacity>)}</View><Button disabled={!name.trim()} onPress={()=>{invite(name.trim(),role);setName('');dismiss()}}>生成邀请</Button></>:
+    type==='publish'?<><Text style={s.eyebrow}>发布确认</Text><Text style={s.modalTitle}>{step==='done'?'画面已发布':step==='uploading'?'正在发送到墨水屏':'要更新客厅照片墙吗？'}</Text>{step==='confirm'?<><Text style={s.modalBody}>将使用 5 张已审核照片。真实设备刷新约需 1–3 分钟，期间闪烁属于正常现象。</Text><View style={s.publishSummary}><Text style={s.meta}>目标设备</Text><Text style={s.strong}>客厅照片墙 · 在线</Text></View><Button onPress={publish}>开始发布</Button></>:step==='uploading'?<View style={s.progressState}><View style={s.spinner}><Text style={s.spinnerText}>↻</Text></View><Text style={s.modalBody}>正在生成六色画面并建立设备连接…</Text></View>:<><View style={s.success}><Text style={s.successText}>✓</Text></View><Button onPress={dismiss}>完成</Button></>}</>:
+    <><Text style={s.eyebrow}>产品预览</Text><Text style={s.modalTitle}>{copy[type]?.[0]||copy.generic[0]}</Text><Text style={s.modalBody}>{copy[type]?.[1]||copy.generic[1]}</Text><Button onPress={dismiss}>知道了</Button></>}
+  </Pressable></Pressable></Modal>;
+}
+
+function Nav({ item, active, onPress, wide }) {
+  return <TouchableOpacity onPress={onPress} style={[wide?s.sideNav:s.bottomItem,active&&(wide?s.sideNavOn:s.bottomItemOn)]}><Text style={[wide?s.sideIcon:s.bottomIcon,active&&s.navOn]}>{item.icon}</Text><Text style={[wide?s.sideText:s.bottomText,active&&s.navOn]}>{item.label}</Text></TouchableOpacity>;
+}
+
+export default function App() {
+  const {width}=useWindowDimensions(),wide=width>=900;
+  const [tab,setTab]=useState('home'),[session,setSession]=useState(null),[albums,setAlbums]=useState(seedAlbums),[people,setPeople]=useState(seedPeople),[candidates,setCandidates]=useState(seedCandidates),[members,setMembers]=useState(initialMembers),[dialog,setDialog]=useState(null),[toast,setToast]=useState('');
+  const connected=Boolean(session?.device?.device_id);
+  const title=useMemo(()=>TABS.find(x=>x.id===tab)?.label,[tab]);
+  const notify=text=>{setToast(text);setTimeout(()=>setToast(''),2300)};
+  const invite=(name,role)=>{const roleName={admin:'管理员',contributor:'投稿者',viewer:'仅查看'}[role];setMembers(current=>[...current,{id:`m${Date.now()}`,name,detail:`${roleName} · 等待加入`,role,initials:name[0],color:colors.terracotta}]);notify(`已生成给“${name}”的邀请`)};
+  const screens={home:<Home connected={connected} setTab={setTab} show={setDialog}/>,albums:<Albums albums={albums} setAlbums={setAlbums} show={setDialog}/>,people:<People people={people} setPeople={setPeople}/>,compose:<Compose candidates={candidates} setCandidates={setCandidates} show={setDialog}/>,settings:<Settings members={members} setMembers={setMembers} show={setDialog}/>};
+  const connect=async pairingCode=>{const result=await claimDisplay(pairingCode);setSession({device:result.device,accountToken:result.account_token});notify(`${result.device?.name||'客厅照片墙'}已连接`)};
+  return <SafeAreaView style={s.safe}><StatusBar barStyle="dark-content"/><View style={[s.app,wide&&s.appWide]}>
+    {wide?<View style={s.sidebar}><View style={s.brand}><Text style={s.brandText}>P</Text></View><View style={s.sideTabs}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)} wide/>)}</View><View style={s.sideAccount}><View style={s.miniAvatar}><Text style={s.miniText}>WH</Text></View><View><Text style={s.accountName}>王欢的家庭</Text><Text style={s.meta}>所有者</Text></View></View></View>:null}
+    <View style={s.main}><View style={s.topbar}><View><Text style={wide?s.topTitle:s.mobileBrand}>{wide?title:'PhotoWall'}</Text>{!wide?<Text style={s.meta}>{title}</Text>:null}</View><View style={s.topActions}><View style={s.online}/><TouchableOpacity style={s.avatarButton} onPress={()=>setTab('settings')}><Text style={s.avatarText}>WH</Text></TouchableOpacity></View></View><ScrollView style={s.scroll} contentContainerStyle={[s.content,!wide&&s.contentMobile]} showsVerticalScrollIndicator={false}>{screens[tab]}</ScrollView>{!wide?<View style={s.bottom}>{TABS.map(item=><Nav key={item.id} item={item} active={tab===item.id} onPress={()=>setTab(item.id)}/>)}</View>:null}</View>
+  </View>{toast?<View style={s.toast}><Text style={s.toastText}>✓ {toast}</Text></View>:null}<Dialog type={dialog} close={()=>setDialog(null)} connect={connect} invite={invite} published={()=>notify('发布任务已创建')}/></SafeAreaView>;
+}
+
+const serif=Platform.OS==='ios'?'Georgia':'serif';
+const s=StyleSheet.create({
+  safe:{flex:1,backgroundColor:colors.canvas},app:{flex:1,backgroundColor:colors.canvas},appWide:{flexDirection:'row'},main:{flex:1},flex:{flex:1},between:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:10},strong:{color:colors.ink,fontWeight:'800',fontSize:11},meta:{color:colors.muted,fontSize:11,lineHeight:17,marginTop:2},itemTitle:{color:colors.ink,fontSize:13,fontWeight:'800'},intro:{color:colors.muted,fontSize:13,lineHeight:21,maxWidth:650,marginTop:5,marginBottom:20},eyebrow:{color:colors.terracotta,fontSize:10,fontWeight:'900',letterSpacing:1.6},action:{color:colors.terracotta,fontSize:11,fontWeight:'800'},chevron:{color:colors.faint,fontSize:24},more:{color:colors.faint,letterSpacing:2},divider:{height:1,backgroundColor:colors.line,marginVertical:8},disabled:{opacity:.35},
+  sidebar:{width:236,backgroundColor:colors.paper,borderRightWidth:1,borderRightColor:colors.line,padding:24},brand:{width:42,height:42,borderRadius:13,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center'},brandText:{color:colors.paper,fontFamily:serif,fontSize:25,fontWeight:'700'},sideTabs:{marginTop:45,gap:7},sideNav:{flexDirection:'row',gap:13,alignItems:'center',paddingHorizontal:13,paddingVertical:12,borderRadius:12},sideNavOn:{backgroundColor:colors.terracottaSoft},sideIcon:{width:21,textAlign:'center',color:colors.muted,fontSize:18},sideText:{color:colors.muted,fontSize:14,fontWeight:'600'},navOn:{color:colors.terracotta,fontWeight:'800'},sideAccount:{marginTop:'auto',flexDirection:'row',alignItems:'center',gap:10,paddingTop:20,borderTopWidth:1,borderTopColor:colors.line},miniAvatar:{width:36,height:36,borderRadius:18,backgroundColor:colors.moss,alignItems:'center',justifyContent:'center'},miniText:{color:colors.white,fontSize:10,fontWeight:'800'},accountName:{color:colors.ink,fontSize:12,fontWeight:'700'},
+  topbar:{minHeight:70,paddingHorizontal:28,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomWidth:1,borderBottomColor:colors.line},topTitle:{color:colors.muted,fontSize:14,fontWeight:'700'},mobileBrand:{color:colors.ink,fontFamily:serif,fontSize:20,fontWeight:'700'},topActions:{flexDirection:'row',alignItems:'center',gap:12},online:{width:8,height:8,borderRadius:4,backgroundColor:'#50A06D'},avatarButton:{width:36,height:36,borderRadius:18,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center'},avatarText:{color:colors.white,fontSize:10,fontWeight:'800'},scroll:{flex:1},content:{width:'100%',maxWidth:1030,alignSelf:'center',padding:40,paddingBottom:90},contentMobile:{padding:18,paddingBottom:104},
+  bottom:{position:'absolute',left:10,right:10,bottom:8,minHeight:68,padding:5,borderRadius:20,backgroundColor:colors.paper,flexDirection:'row',...shadow},bottomItem:{flex:1,alignItems:'center',justifyContent:'center',borderRadius:14,gap:2},bottomItemOn:{backgroundColor:colors.terracottaSoft},bottomIcon:{color:colors.muted,fontSize:18},bottomText:{color:colors.muted,fontSize:10,fontWeight:'600'},
+  hero:{marginBottom:23},heroTitle:{fontFamily:serif,color:colors.ink,fontSize:38,lineHeight:48,fontWeight:'500',marginTop:5},heading:{flexDirection:'row',alignItems:'flex-end',justifyContent:'space-between',gap:10,marginTop:31,marginBottom:13},headingTitle:{fontFamily:serif,color:colors.ink,fontSize:23,fontWeight:'600',marginTop:3},
+  button:{minHeight:47,borderRadius:12,paddingHorizontal:19,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center',marginTop:10},buttonSecondary:{backgroundColor:colors.paper,borderWidth:1,borderColor:colors.line},buttonSmall:{alignSelf:'flex-start',minHeight:38,marginTop:0},buttonText:{color:colors.white,fontSize:12,fontWeight:'800'},buttonTextDark:{color:colors.ink},pill:{alignSelf:'flex-start',borderRadius:18,paddingHorizontal:9,paddingVertical:5},pillText:{fontSize:9,fontWeight:'900'},
+  deviceCard:{backgroundColor:colors.paper,borderRadius:22,padding:21,borderWidth:1,borderColor:colors.line,...shadow},deviceBody:{flexDirection:'row',alignItems:'center',gap:27,marginTop:16,flexWrap:'wrap'},deviceCopy:{flex:1,minWidth:200},deviceName:{fontFamily:serif,color:colors.ink,fontSize:25,fontWeight:'600',marginTop:5},kicker:{color:colors.faint,fontSize:10,fontWeight:'800',letterSpacing:1},device:{width:250,height:184,borderRadius:8,padding:9,backgroundColor:'#30312E',...shadow},deviceSmall:{width:105,height:78,padding:4,borderRadius:5},deviceScreen:{flex:1,overflow:'hidden',position:'relative',backgroundColor:'#E9C95F'},sky:{...StyleSheet.absoluteFillObject,backgroundColor:'#EACB6A'},sun:{position:'absolute',width:'25%',aspectRatio:1,borderRadius:100,backgroundColor:'#C54E35',right:'13%',top:'12%'},mountain1:{position:'absolute',width:'70%',height:'65%',backgroundColor:'#58776C',transform:[{rotate:'34deg'}],left:'-18%',bottom:'-28%'},mountain2:{position:'absolute',width:'66%',height:'74%',backgroundColor:'#2F4C45',transform:[{rotate:'42deg'}],right:'-18%',bottom:'-35%'},artLabel:{position:'absolute',left:'7%',bottom:'8%',backgroundColor:colors.paper,paddingHorizontal:7,paddingVertical:4},artLabelText:{fontSize:8,fontWeight:'800'},stats:{flexDirection:'row',gap:12,marginTop:14,flexWrap:'wrap'},stat:{flex:1,minWidth:110,backgroundColor:colors.paperMuted,borderRadius:15,borderWidth:1,borderColor:colors.line,padding:15},statValue:{fontFamily:serif,color:colors.ink,fontSize:25,fontWeight:'600'},
+  notice:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.amberSoft,borderRadius:15,padding:14,borderWidth:1,borderColor:'#E4D2AD'},noticeIcon:{width:40,height:40,borderRadius:20,backgroundColor:colors.amber,alignItems:'center',justifyContent:'center'},noticeIconText:{color:colors.white,fontSize:19},history:{flexDirection:'row',gap:12,flexWrap:'wrap'},historyItem:{flex:1,minWidth:135},historyImage:{width:'100%',aspectRatio:1.35,borderRadius:12,backgroundColor:colors.line},historyName:{color:colors.ink,fontSize:12,fontWeight:'800',marginTop:7},
+  summary:{flexDirection:'row',justifyContent:'space-between',marginVertical:18,paddingHorizontal:3},albumGrid:{flexDirection:'row',flexWrap:'wrap',gap:14},albumCard:{width:'47%',flexGrow:1,minWidth:140,maxWidth:300},albumCover:{width:'100%',aspectRatio:1.35,borderRadius:15,overflow:'hidden'},coverImage:{width:'100%',height:'100%',opacity:.84},check:{position:'absolute',right:9,top:9,width:25,height:25,borderRadius:13,borderWidth:2,borderColor:colors.white,backgroundColor:'rgba(30,30,30,.25)',alignItems:'center',justifyContent:'center'},checkOn:{backgroundColor:colors.terracotta},checkText:{color:colors.white,fontSize:13,fontWeight:'900'},albumName:{color:colors.ink,fontSize:13,fontWeight:'800',marginTop:7},sync:{marginTop:25,backgroundColor:colors.paperMuted,borderRadius:15,padding:15,borderWidth:1,borderColor:colors.line},track:{height:5,borderRadius:4,overflow:'hidden',backgroundColor:colors.line,marginVertical:12},fill:{height:'100%',width:'100%',backgroundColor:colors.moss},
+  segments:{flexDirection:'row',alignSelf:'flex-start',backgroundColor:colors.paperMuted,borderRadius:12,padding:4,borderWidth:1,borderColor:colors.line,marginBottom:14},segment:{paddingHorizontal:14,paddingVertical:8,borderRadius:9},segmentOn:{backgroundColor:colors.paper,...shadow},segmentText:{color:colors.muted,fontSize:10,fontWeight:'700'},list:{gap:10},person:{flexDirection:'row',alignItems:'center',gap:13,flexWrap:'wrap',backgroundColor:colors.paper,borderRadius:16,padding:13,borderWidth:1,borderColor:colors.line},personImage:{width:70,height:70,borderRadius:35,backgroundColor:colors.line},personCopy:{flex:1,minWidth:230},policyChoices:{flexDirection:'row',flexWrap:'wrap',gap:5,marginTop:8},policyChoice:{borderWidth:1,borderColor:colors.line,borderRadius:14,paddingHorizontal:8,paddingVertical:5},policyText:{color:colors.muted,fontSize:8,fontWeight:'800'},policyBadge:{borderRadius:12,paddingHorizontal:9,paddingVertical:6},policyBadgeText:{fontSize:8,fontWeight:'900'},info:{marginTop:18,backgroundColor:colors.mossSoft,borderRadius:14,padding:15},
+  composer:{flexDirection:'row',gap:19,flexWrap:'wrap'},previewPanel:{flex:1.4,minWidth:280,backgroundColor:'#2A2B28',borderRadius:19,padding:17},previewLabel:{color:'#CECBC3',fontSize:9,fontWeight:'800',letterSpacing:1},eink:{aspectRatio:4/3,backgroundColor:'#EFE7D3',position:'relative',overflow:'hidden',marginTop:12},collage:{position:'absolute',borderWidth:4,borderColor:'#F8F0DE'},collage0:{left:'6%',top:'8%',width:'39%',height:'54%',transform:[{rotate:'-3deg'}]},collage1:{right:'7%',top:'6%',width:'40%',height:'41%',transform:[{rotate:'2deg'}]},collage2:{right:'8%',bottom:'8%',width:'35%',height:'38%',transform:[{rotate:'-2deg'}]},collage3:{left:'15%',bottom:'5%',width:'31%',height:'30%',transform:[{rotate:'4deg'}]},collageTitle:{position:'absolute',left:'44%',top:'48%',backgroundColor:'#E2B54C',padding:7,transform:[{rotate:'-4deg'}]},collageMain:{fontSize:11,fontWeight:'900',letterSpacing:1},collageSub:{fontSize:6,fontWeight:'700'},previewNote:{color:'#AAA79E',fontSize:9,marginTop:9},composeControls:{flex:.8,minWidth:230,backgroundColor:colors.paper,borderRadius:19,padding:17,borderWidth:1,borderColor:colors.line},controlLabel:{color:colors.muted,fontSize:9,fontWeight:'900',marginTop:11,marginBottom:7},templateRow:{flexDirection:'row',flexWrap:'wrap',gap:5},template:{borderRadius:15,paddingHorizontal:9,paddingVertical:7,borderWidth:1,borderColor:colors.line},templateOn:{backgroundColor:colors.terracottaSoft,borderColor:colors.terracotta},templateText:{color:colors.muted,fontSize:8,fontWeight:'800'},draftMeta:{backgroundColor:colors.paperMuted,borderRadius:12,padding:11,marginVertical:13},candidates:{flexDirection:'row',flexWrap:'wrap',gap:9},candidate:{width:'31%',minWidth:105,flexGrow:1,aspectRatio:1.25,borderRadius:12,overflow:'hidden',position:'relative'},candidateImage:{width:'100%',height:'100%'},candidateCheck:{left:8,top:8,right:undefined},excluded:{position:'absolute',left:0,right:0,bottom:0,padding:5,alignItems:'center',backgroundColor:'rgba(30,32,29,.72)'},excludedText:{color:colors.white,fontSize:8,fontWeight:'900'},
+  profile:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:colors.paper,borderRadius:16,padding:15,borderWidth:1,borderColor:colors.line},avatar:{width:52,height:52,borderRadius:26,backgroundColor:colors.ink,alignItems:'center',justifyContent:'center'},avatarText:{color:colors.white,fontSize:13,fontWeight:'900'},profileName:{color:colors.ink,fontSize:15,fontWeight:'800'},memberList:{backgroundColor:colors.paper,borderRadius:16,borderWidth:1,borderColor:colors.line,overflow:'hidden'},member:{flexDirection:'row',alignItems:'center',gap:11,padding:13,borderBottomWidth:1,borderBottomColor:colors.line},memberAvatar:{width:39,height:39,borderRadius:20,alignItems:'center',justifyContent:'center'},memberAvatarText:{color:colors.white,fontSize:10,fontWeight:'900'},owner:{color:colors.faint,fontSize:8,fontWeight:'900',textTransform:'uppercase'},settingGroup:{backgroundColor:colors.paper,borderRadius:16,borderWidth:1,borderColor:colors.line,paddingHorizontal:14},setting:{minHeight:64,flexDirection:'row',alignItems:'center',gap:11,paddingVertical:9},settingIcon:{width:35,height:35,borderRadius:10,backgroundColor:colors.paperMuted,alignItems:'center',justifyContent:'center'},simpleSetting:{minHeight:48,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
+  backdrop:{flex:1,backgroundColor:'rgba(24,25,22,.55)',alignItems:'center',justifyContent:'center',padding:18},modal:{width:'100%',maxWidth:470,backgroundColor:colors.paper,borderRadius:22,padding:24,...shadow},close:{position:'absolute',right:15,top:13,width:32,height:32,borderRadius:16,backgroundColor:colors.paperMuted,alignItems:'center',justifyContent:'center',zIndex:2},closeText:{fontSize:22,color:colors.muted},modalTitle:{fontFamily:serif,color:colors.ink,fontSize:25,fontWeight:'600',marginTop:5,paddingRight:35},modalBody:{color:colors.muted,fontSize:12,lineHeight:20,marginVertical:15},found:{flexDirection:'row',alignItems:'center',gap:13,backgroundColor:colors.paperMuted,borderRadius:14,padding:13,marginTop:17},deviceCode:{color:colors.terracotta,fontSize:9,fontWeight:'900',marginTop:6},input:{height:45,borderRadius:11,borderWidth:1,borderColor:colors.line,paddingHorizontal:12,color:colors.ink},roleRow:{flexDirection:'row',gap:6,marginBottom:12},role:{flex:1,alignItems:'center',paddingVertical:10,borderRadius:10,borderWidth:1,borderColor:colors.line},roleOn:{backgroundColor:colors.terracottaSoft,borderColor:colors.terracotta},roleText:{color:colors.muted,fontSize:9,fontWeight:'800'},publishSummary:{flexDirection:'row',justifyContent:'space-between',backgroundColor:colors.paperMuted,borderRadius:11,padding:13,marginBottom:8},progressState:{alignItems:'center',paddingVertical:12},spinner:{width:58,height:58,borderRadius:29,backgroundColor:colors.terracottaSoft,alignItems:'center',justifyContent:'center'},spinnerText:{color:colors.terracotta,fontSize:28},success:{width:70,height:70,borderRadius:35,backgroundColor:colors.mossSoft,alignSelf:'center',alignItems:'center',justifyContent:'center',marginVertical:24},successText:{color:colors.moss,fontSize:35,fontWeight:'800'},toast:{position:'absolute',top:22,alignSelf:'center',backgroundColor:colors.ink,borderRadius:20,paddingHorizontal:16,paddingVertical:10,...shadow},toastText:{color:colors.white,fontSize:10,fontWeight:'800'},
 });
