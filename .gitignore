@@ -52,6 +52,9 @@ env/
 *.key
 *.secret
 credentials.json
+firmware/eink_esp32_s3_13in3e6/src/demo_wifi_config.h
+firmware/eink_esp32_s3_13in3e6/src/demo_wifi_config.h.*
+firmware/display_esp32/local_config.h
 
 # --- 编辑器 / 系统 ---
 .idea/
