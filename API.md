@@ -68,6 +68,10 @@ SSID、密码和固定云端地址发送给设备。设备联网后向云端 boo
 
 ### 1. 相册授权 / 上传（A）
 
+App 调用本节以及“画面生成 / 人物”接口时统一携带
+`X-Account-Token: <account_token>`。服务端按账户隔离照片、已识别文件名、人物和智能相簿；
+不带 Header 的调用只进入旧版 `legacy` 调试空间。
+
 **POST `/api/authorize`** — 扫描服务器 `photos/` 目录并全部打标（调试用）。
 返回：
 ```json
@@ -101,8 +105,17 @@ Body：`files`（可多张）。
 
 **POST `/api/generate`** — Body（JSON）：
 ```json
-{ "template": "daily_polaroid", "title": "我的一天", "date": "", "filters": ["warm","food"] }
+{
+  "template": "daily_polaroid",
+  "title": "我的一天",
+  "date": "",
+  "filters": ["warm", "food"],
+  "exclude_filters": ["person_2"]
+}
 ```
+
+`exclude_filters` 用于“不展示”人物或主题；命中任一排除标签的照片都不会进入候选，
+优先级高于 `filters` ，也不会因为主题回退而重新入选。
 返回 `Wall`；相册为空返回 `400 {"error": "..."}`。
 
 **GET `/api/suggest_filters`** — "更懂你的相册"，返回真实存在且占比够高的可选筛选：
@@ -122,6 +135,7 @@ Body：`files`（可多张）。
 
 - **POST `/api/cluster_people`** → 聚类人脸，给照片打 `person_1/person_2…`。人脸库没装时 `{"available": false, ...}`。
 - **GET `/api/people`** → `{ "people": [...], "available": bool }`
+- **GET `/api/smart_albums`** → 返回该账户真实照片生成的人物、宠物、主题、情绪、色彩和精选相簿。
 - **POST `/api/retag`** → 用最新规则重打库里已有照片。
 
 ### 4. 网页展示端（A）

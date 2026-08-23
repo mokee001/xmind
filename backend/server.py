@@ -166,6 +166,7 @@ class GenerateReq(BaseModel):
     title: str = "我的一天"
     date: str = ""
     filters: list[str] = []  # 用户吩咐的筛选维度标签（色彩/主题/情绪等）
+    exclude_filters: list[str] = []  # 用户明确关闭的人物/主题，命中任一标签即排除
 
 
 class LabelSample(BaseModel):
@@ -353,12 +354,13 @@ def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> 
 
 
 async def _make_wall(template_id: str, title: str, date: str, photos: list[dict] | None = None,
-                     filters: list[str] | None = None, scope: str = "legacy") -> dict | None:
+                     filters: list[str] | None = None, exclude_filters: list[str] | None = None,
+                     scope: str = "legacy") -> dict | None:
     """核心流水线：选图→套模板渲染→存盘→推送上屏。
     photos 传入时只用这批照片（例如手机相册本次上传的近期照片）；
     不传则用相册库全部。相册为空返回 None。
     filters：用户吩咐的筛选维度（色彩/主题/情绪标签），优先只从命中的照片里选；
-    命中太少（不足以填满模板）时自动回退到全部照片，保证屏幕不空。"""
+    exclude_filters：用户关闭的人物/主题，命中任一项就严格排除，不会回退。"""
     if photos is None:
         photos = store.load(_scoped_store_name("photos", scope), [])
         # Only the legacy, unscoped API may scan the shared root photo folder.
@@ -373,6 +375,17 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
     photos, _ = dedup.deduplicate(photos)
     if not photos:
         return None
+
+    # “不展示”是隐私约束，优先级高于主题筛选：一张照片只要命中任一关闭的
+    # 人物或主题标签，就不能因为同时命中另一个开启主题而重新进入候选池。
+    excluded = {item.strip().lower() for item in (exclude_filters or []) if item and item.strip()}
+    if excluded:
+        photos = [
+            photo for photo in photos
+            if excluded.isdisjoint({str(tag).lower() for tag in photo.get("tags", [])})
+        ]
+        if not photos:
+            return None
 
     slot_n = _slot_count(template_id)
 
@@ -394,7 +407,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
 
     # 轮换序号：同一「模板+筛选」组合每生成一次自增，用于旋转子分类叉乘的取图，
     # 让同一主题反复刷新每次都出不同照片组合，避免时间久了同质化。
-    seq_key = f"{template_id}|{','.join(applied_filters)}"
+    seq_key = f"{template_id}|{','.join(applied_filters)}|!{','.join(sorted(excluded))}"
     seqs_key = _scoped_store_name("wall_seq", scope)
     seqs = store.load(seqs_key, {})
     rotate = int(seqs.get(seq_key, 0))
@@ -449,6 +462,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
         "image_url": f"/output/{out_name}",
         "elements": elements,
         "filters": applied_filters,
+        "excluded_filters": sorted(excluded),
         "filter_fallback": filter_fallback,
         "chosen": [{"filename": c["filename"], "final_score": c["final_score"],
                     **({"surprise_label": c["surprise_label"]} if c.get("surprise_label") else {})}
@@ -466,6 +480,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
 async def generate(req: GenerateReq, x_account_token: str = Header(default="")) -> dict:
     wall = await _make_wall(
         req.template, req.title, req.date, filters=req.filters or None,
+        exclude_filters=req.exclude_filters or None,
         scope=_account_scope(x_account_token),
     )
     if wall is None:
@@ -482,13 +497,14 @@ _SUGGEST_VOCAB: dict[str, list[str]] = {
 
 
 @app.get("/api/suggest_filters")
-def suggest_filters() -> dict:
+def suggest_filters(x_account_token: str = Header(default="")) -> dict:
     """
     「更懂你的相册」：扫描当前相册库，统计每个筛选维度的照片数，
     只把「真实存在、且占比够高」的标签推荐出来，并按数量排序。
     App 拿到后直接高亮推荐，用户不用在一大堆标签里自己猜。
     """
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos = store.load(_scoped_store_name("photos", scope), [])
     total = len(photos)
     if not total:
         return {"total": 0, "suggestions": {}, "top": []}
@@ -522,7 +538,7 @@ def suggest_filters() -> dict:
 # ---------- 人物聚合（人脸识别聚类） ----------
 
 @app.post("/api/cluster_people")
-def cluster_people() -> dict:
+def cluster_people(x_account_token: str = Header(default="")) -> dict:
     """
     对当前相册做人物聚合：检测+编码人脸→聚类成「人」→给每张照片打上
     person_1/person_2… 标签并写回相册库。之后就能像普通维度一样按人物筛选
@@ -532,7 +548,10 @@ def cluster_people() -> dict:
     if not faces.available():
         return {"available": False, "people": [], "photos_with_face": 0}
 
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos_key = _scoped_store_name("photos", scope)
+    people_key = _scoped_store_name("people", scope)
+    photos = store.load(photos_key, [])
     if not photos:
         return {"available": True, "people": [], "photos_with_face": 0}
 
@@ -544,8 +563,8 @@ def cluster_people() -> dict:
         base = [t for t in p.get("tags", []) if not t.startswith("person_")]
         persons = photo_persons.get(p.get("path"), [])
         p["tags"] = sorted(set(base) | set(persons))
-    store.save("photos", photos)
-    store.save("people", result["people"])
+    store.save(photos_key, photos)
+    store.save(people_key, result["people"])
 
     return {
         "available": True,
@@ -556,23 +575,32 @@ def cluster_people() -> dict:
 
 
 @app.get("/api/people")
-def get_people() -> dict:
+def get_people(x_account_token: str = Header(default="")) -> dict:
     """返回上次聚合出的人物列表（供 App 展示成「按人物筛选」的选项）。"""
-    return {"people": store.load("people", []), "available": faces.available()}
+    scope = _account_scope(x_account_token)
+    return {
+        "people": store.load(_scoped_store_name("people", scope), []),
+        "available": faces.available(),
+    }
 
 
 @app.post("/api/retag")
-def retag() -> dict:
+def retag(x_account_token: str = Header(default="")) -> dict:
     """
     用当前打标规则重新给「库里已有照片」打标（应用新的画质/美观/构图/废片判定），
     然后重新聚类人物把 person_* 标签补回。
     关键：只重打「库里已有路径」的照片（含 HEIC），不重新扫目录——避免把
     _list_photo_files 不识别的 HEIC 照片丢掉。路径已不存在的照片会被剔除。
     """
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos_key = _scoped_store_name("photos", scope)
+    people_key = _scoped_store_name("people", scope)
+    photos = store.load(photos_key, [])
     if not photos:
-        photos = _tag_all()
-        return {"retagged": len(photos), "people": store.load("people", [])}
+        if scope == "legacy":
+            photos = _tag_all()
+            return {"retagged": len(photos), "people": store.load("people", [])}
+        return {"retagged": 0, "people": []}
 
     retagged: list[dict] = []
     for p in photos:
@@ -586,7 +614,7 @@ def retag() -> dict:
             fresh["tags"] = sorted(set(fresh.get("tags", [])) | set(persons))
         retagged.append(fresh)
 
-    store.save("photos", retagged)
+    store.save(photos_key, retagged)
 
     # 重新聚类人物（用新标签做 YOLO 交叉验证），把 person_* 重新写回
     people = []
@@ -597,8 +625,8 @@ def retag() -> dict:
             base = [t for t in p.get("tags", []) if not t.startswith("person_")]
             base += photo_persons.get(p.get("path"), [])
             p["tags"] = sorted(set(base))
-        store.save("photos", retagged)
-        store.save("people", result["people"])
+        store.save(photos_key, retagged)
+        store.save(people_key, result["people"])
         people = result["people"]
 
     return {"retagged": len(retagged), "people": people}
@@ -668,14 +696,15 @@ def _album_template(group: str, tag: str | None = None) -> str:
 
 
 @app.get("/api/smart_albums")
-def smart_albums() -> dict:
+def smart_albums(x_account_token: str = Header(default="")) -> dict:
     """
     智能相簿：不再让用户勾一堆底层标签（暖色/冷色/红/蓝…），
     而是像苹果相册一样，AI 主动端出少数几个语义相簿——人物 / 宠物 / 主题 / 精选，
     每个相簿只有在相册里真实存在时才出现。前端单选点一下即出对应照片墙。
     每个相簿自带 filter（发给 /api/generate 就能出这个相簿的墙）。
     """
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos = store.load(_scoped_store_name("photos", scope), [])
     total = len(photos)
     # 只统计非废片（junk 已在打标时把 quality 清零 + 打 junk 标签）
     good = [p for p in photos if "junk" not in p.get("tags", []) and p.get("quality", 0) > 0]
@@ -691,7 +720,7 @@ def smart_albums() -> dict:
 
     # 1) 人物（人脸聚类结果）——只展示「高频出现」的人（借鉴苹果：路人/单张不建相簿）。
     #    count 按非废片重新计，封面也避开废片、选最美观的一张。
-    people = store.load("people", [])
+    people = store.load(_scoped_store_name("people", scope), [])
     person_albums = []
     for person in people:
         pid = person.get("id")

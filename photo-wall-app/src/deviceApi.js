@@ -292,11 +292,55 @@ export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken,
   return { scanned: assets.length, synced, unchanged: false };
 }
 
-export async function generateWall({ apiBase = DEFAULT_API_BASE, accountToken, template = 'daily_polaroid', title = '我的一天' }) {
+export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken }) {
+  const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
+  const [peopleResponse, albumsResponse] = await Promise.all([
+    fetch(`${baseUrl(apiBase)}/api/people`, { headers }),
+    fetch(`${baseUrl(apiBase)}/api/smart_albums`, { headers }),
+  ]);
+  const [people, albums] = await Promise.all([
+    responseJson(peopleResponse),
+    responseJson(albumsResponse),
+  ]);
+  return {
+    total: Number(albums.total) || 0,
+    goodTotal: Number(albums.good_total) || 0,
+    peopleAvailable: Boolean(people.available),
+    people: people.people || [],
+    albums: albums.albums || [],
+  };
+}
+
+export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken }) {
+  const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
+  let cluster = null;
+  try {
+    const response = await fetch(`${baseUrl(apiBase)}/api/cluster_people`, {
+      method: 'POST',
+      headers,
+    });
+    cluster = await responseJson(response);
+  } catch (error) {
+    // Topic/album recognition is already produced during upload. Face
+    // clustering is optional and may be unavailable on a lightweight server,
+    // so keep the rest of the real recognition result usable.
+    cluster = { available: false, error: error.message };
+  }
+  return { ...(await readRecognizedContent({ apiBase, accountToken })), cluster };
+}
+
+export async function generateWall({
+  apiBase = DEFAULT_API_BASE,
+  accountToken,
+  template = 'daily_polaroid',
+  title = '我的一天',
+  filters = [],
+  excludeFilters = [],
+}) {
   const response = await fetch(`${baseUrl(apiBase)}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
-    body: JSON.stringify({ template, title }),
+    body: JSON.stringify({ template, title, filters, exclude_filters: excludeFilters }),
   });
   return responseJson(response);
 }

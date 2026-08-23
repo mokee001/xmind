@@ -118,12 +118,20 @@ def assert_account_library_isolation(legacy_photo: Path) -> None:
     """An empty account must never generate a wall from the legacy library."""
     upload_library_photo(legacy_photo, "")
     isolated_token = f"isolated-{RUN_ID}"
+    _, _, raw = request("/api/smart_albums")
+    assert json.loads(raw)["total"] >= 1
+    isolated_headers = {"X-Account-Token": isolated_token}
+    _, _, raw = request("/api/smart_albums", headers=isolated_headers)
+    isolated_albums = json.loads(raw)
+    assert isolated_albums["total"] == 0 and isolated_albums["albums"] == []
+    _, _, raw = request("/api/people", headers=isolated_headers)
+    assert json.loads(raw)["people"] == []
     try:
         request(
             "/api/generate",
             "POST",
             {"template": "daily_polaroid", "title": "不应跨账户取图"},
-            headers={"X-Account-Token": isolated_token},
+            headers=isolated_headers,
         )
         raise AssertionError("空账户不应从旧公共图库生成照片墙")
     except urllib.error.HTTPError as error:
@@ -298,15 +306,26 @@ def main() -> None:
     library_photos = test_library_photos()
     for library_photo in library_photos:
         upload_library_photo(library_photo, account_token)
+    _, _, raw = request(
+        "/api/smart_albums",
+        headers={"X-Account-Token": account_token},
+    )
+    recognition = json.loads(raw)
+    assert recognition["total"] >= 1
     assert_account_library_isolation(library_photos[0])
     _, _, raw = request(
         "/api/generate",
         "POST",
-        {"template": "daily_polaroid", "title": "集成测试模板"},
+        {
+            "template": "daily_polaroid",
+            "title": "集成测试模板",
+            "exclude_filters": ["__never__"],
+        },
         headers={"X-Account-Token": account_token},
     )
     wall = json.loads(raw)
     assert wall["image_url"].startswith("/output/")
+    assert wall["excluded_filters"] == ["__never__"]
     _, _, raw = request(
         f"/api/devices/{DEVICE_ID}/publish-last-wall",
         "POST",

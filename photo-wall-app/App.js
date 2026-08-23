@@ -25,7 +25,9 @@ import {
   generateWall,
   publishGeneratedWall,
   publishJulyCalendar,
+  readRecognizedContent,
   readDisplayStatus,
+  refreshRecognizedContent,
   removeDisplay,
   reprovisionDisplay,
   sendLocalControl,
@@ -106,7 +108,40 @@ const PREVIEW_MEMBERS = [
   { id: 'member-guest', name: '共享用户', role: '成员', avatar: '共', detail: '照片可以参与展示' },
 ];
 
-const EMPTY_RECOGNIZED_CONTENT = { people: [], topics: [], albums: [] };
+const EMPTY_RECOGNITION_SNAPSHOT = {
+  total: 0,
+  goodTotal: 0,
+  peopleAvailable: false,
+  people: [],
+  albums: [],
+};
+
+function recognizedItem(album) {
+  const label = String(album?.label || '未命名内容');
+  return {
+    id: `cloud-${album?.id || label}`,
+    label,
+    detail: `${Number(album?.count) || 0} 张照片`,
+    icon: label.slice(0, 1),
+    filters: Array.isArray(album?.filter) ? album.filter : [],
+    template: album?.template || 'daily_polaroid',
+  };
+}
+
+function recognizedContentFrom(snapshot, photoSync) {
+  const smartAlbums = Array.isArray(snapshot?.albums) ? snapshot.albums : [];
+  const people = smartAlbums.filter(album => album.group === '人物').map(recognizedItem);
+  const topics = smartAlbums.filter(album => album.group !== '人物').map(recognizedItem);
+  const albums = photoSync?.id ? [{
+    id: `source-${photoSync.id}`,
+    label: photoSync.title,
+    detail: `${Number(snapshot?.total) || 0} 张云端已识别照片`,
+    icon: '册',
+    filters: [],
+    template: 'daily_polaroid',
+  }] : [];
+  return { people, topics, albums };
+}
 
 function localUrlForDevice(deviceId) {
   const suffix = String(deviceId || '').slice(-4).toLowerCase();
@@ -543,6 +578,8 @@ export default function App() {
   const [albumModal, setAlbumModal] = useState(false);
   const [albums, setAlbums] = useState([]);
   const [photoSync, setPhotoSync] = useState(null);
+  const [recognitionSnapshot, setRecognitionSnapshot] = useState(EMPTY_RECOGNITION_SNAPSHOT);
+  const [recognitionLoading, setRecognitionLoading] = useState(false);
   const [generatedWall, setGeneratedWall] = useState(null);
   const [deviceModal, setDeviceModal] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -564,11 +601,16 @@ export default function App() {
   const photoAllowed = IS_WEB_PREVIEW ? webPhotoAuthorized : permission?.status === 'granted';
   const connected = IS_WEB_PREVIEW ? webConnected : Boolean(session?.device?.device_id);
   const contentMode = !connected ? 'demo' : !photoAllowed ? 'permission' : 'live';
+  const liveRecognizedContent = useMemo(
+    () => recognizedContentFrom(recognitionSnapshot, photoSync),
+    [recognitionSnapshot, photoSync],
+  );
   const recognizedContent = contentMode !== 'live' || IS_WEB_PREVIEW
     ? PREVIEW_RECOGNIZED_CONTENT
-    : EMPTY_RECOGNIZED_CONTENT;
+    : liveRecognizedContent;
   const recognizedItems = Object.values(recognizedContent).flat();
   const enabledSelectionCount = recognizedItems.filter(item => displayRules[item.id] !== false).length;
+  const recognizedPhotoCount = contentMode === 'live' ? recognitionSnapshot.total : 0;
   const selectionIsSample = contentMode !== 'live';
   const nextUpdateLabel = updateFrequency === '关闭' ? '自动更新已关闭' : `${updateFrequency} ${updateTime} 自动更新`;
   const householdMembers = connected && !IS_WEB_PREVIEW
@@ -650,6 +692,35 @@ export default function App() {
     if (IS_WEB_PREVIEW || !connected || permission?.status !== 'undetermined') return;
     requestPhotoPermission().catch(() => {});
   }, [connected, permission?.status]);
+
+  useEffect(() => {
+    if (IS_WEB_PREVIEW || !session?.accountToken || !photoAllowed) return undefined;
+    let active = true;
+    setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
+    setRecognitionLoading(true);
+    readRecognizedContent({
+      apiBase: DEFAULT_API_BASE,
+      accountToken: session.accountToken,
+    }).then(result => {
+      if (active) setRecognitionSnapshot(result);
+    }).catch(caught => {
+      if (active) setError(`读取云端识别结果失败：${caught.message}`);
+    }).finally(() => {
+      if (active) setRecognitionLoading(false);
+    });
+    return () => { active = false; };
+  }, [session?.accountToken, photoAllowed]);
+
+  useEffect(() => {
+    if (contentMode !== 'live' || !recognizedItems.length) return;
+    setDisplayRules(current => {
+      const next = { ...current };
+      recognizedItems.forEach(item => {
+        if (!(item.id in next)) next[item.id] = true;
+      });
+      return next;
+    });
+  }, [contentMode, recognizedItems.map(item => item.id).join('|')]);
 
   useEffect(() => {
     if (IS_WEB_PREVIEW) return undefined;
@@ -787,11 +858,25 @@ export default function App() {
           message: update.stage === 'scanning'
             ? `正在检查新增照片 · 已找到 ${update.scanned || 0} 张`
             : `正在上传新照片 · ${update.progress || 0}%`,
-        }),
+          }),
       });
       await savePhotoSyncPreference({ id: album.id, title: album.title });
-      setOperation({ state: 'idle', progress: 100, message: synced.unchanged ? '没有需要同步的新照片' : '同步完成，可以生成模板预览' });
-      setNotice(synced.unchanged ? '这个相簿没有新的照片需要上传。' : `已同步 ${synced.synced} 张新照片，云端已完成打标和去重。`);
+      setOperation({ state: 'generating', progress: 100, message: '照片已同步，正在读取云端识别结果' });
+      try {
+        const recognition = await refreshRecognizedContent({
+          apiBase: DEFAULT_API_BASE,
+          accountToken: session?.accountToken,
+        });
+        setRecognitionSnapshot(recognition);
+        setOperation({ state: 'idle', progress: 100, message: synced.unchanged ? '没有需要同步的新照片' : '同步完成，可以生成模板预览' });
+        const recognizedCount = recognition.albums?.length || 0;
+        setNotice(synced.unchanged
+          ? `这个相簿没有新的照片；已读取 ${recognizedCount} 个云端内容分类。`
+          : `已同步 ${synced.synced} 张新照片，云端已完成打标、去重并返回 ${recognizedCount} 个内容分类。`);
+      } catch (recognitionError) {
+        setOperation({ state: 'idle', progress: 100, message: '照片已同步，识别结果可稍后重试读取' });
+        setNotice(`照片同步已完成，但云端识别结果暂时无法读取：${recognitionError.message}`);
+      }
     } catch (caught) {
       setOperation({ state: 'failed', progress: 0, message: caught.message });
       setError(`相簿同步失败：${caught.message}`);
@@ -802,9 +887,28 @@ export default function App() {
     setPublishing(true); setError(''); setNotice(''); setLastAction('template');
     setOperation({ state: 'generating', progress: 40, message: '云端正在筛选照片并生成模板' });
     try {
+      const sourceItems = recognizedContent.albums || [];
+      if (!IS_WEB_PREVIEW && sourceItems.length && sourceItems.every(item => displayRules[item.id] === false)) {
+        throw new Error('当前照片来源已关闭，请先到“选择”页重新开启');
+      }
+      const filterItems = [...(recognizedContent.people || []), ...(recognizedContent.topics || [])]
+        .filter(item => Array.isArray(item.filters) && item.filters.length);
+      const enabledFilterItems = filterItems.filter(item => displayRules[item.id] !== false);
+      const excludeFilters = [...new Set(
+        filterItems
+          .filter(item => displayRules[item.id] === false)
+          .flatMap(item => item.filters),
+      )];
+      const focusedItem = enabledFilterItems.length === 1 ? enabledFilterItems[0] : null;
       const wall = IS_WEB_PREVIEW
         ? await new Promise(resolve => setTimeout(() => resolve({ previewOnly: true, chosen: recognizedItems.slice(0, 6) }), 700))
-        : await generateWall({ apiBase: DEFAULT_API_BASE, accountToken: session?.accountToken });
+        : await generateWall({
+          apiBase: DEFAULT_API_BASE,
+          accountToken: session?.accountToken,
+          template: focusedItem?.template || 'daily_polaroid',
+          filters: focusedItem?.filters || [],
+          excludeFilters,
+        });
       setGeneratedWall(wall);
       setActiveTab('home');
       setOperation({ state: 'idle', progress: 100, message: '模板预览已生成，等待确认发布' });
@@ -936,6 +1040,7 @@ export default function App() {
     setSession(null);
     setReconfigurationSession(null);
     setPhotoSync(null);
+    setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
     setGeneratedWall(null);
     setOperation({ state: 'idle', progress: 0, message: '尚未开始发布' });
     setDeviceModal(false);
@@ -1091,7 +1196,7 @@ export default function App() {
                     {publishing ? '正在发布…' : '发布到照片墙'}
                   </ActionButton>
                 ) : (
-                  <ActionButton disabled={publishing || !enabledSelectionCount} onPress={generateTemplatePreview}>
+                  <ActionButton disabled={publishing || !recognizedPhotoCount} onPress={generateTemplatePreview}>
                     {publishing ? '正在生成…' : '生成精选预览'}
                   </ActionButton>
                 )}
@@ -1186,8 +1291,10 @@ export default function App() {
             ) : (
               <View style={styles.permissionGate}>
                 <View style={styles.permissionGateIcon}><Text style={styles.permissionGateIconText}>◌</Text></View>
-                <Text style={styles.heroTitle}>正在等待识别结果</Text>
-                <Text style={styles.cardDescription}>相册识别接口接入后，人物、主题和相簿会自动出现在这里。</Text>
+                <Text style={styles.heroTitle}>{recognitionLoading ? '正在读取识别结果' : '还没有可管理的内容'}</Text>
+                <Text style={styles.cardDescription}>{recognitionLoading
+                  ? '正在从云端读取人物、主题和智能相簿。'
+                  : '请到“设置”选择一个照片来源；同步完成后，真实识别结果会自动出现在这里。'}</Text>
               </View>
             )}
           </>
