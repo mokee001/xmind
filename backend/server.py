@@ -284,7 +284,8 @@ def known_photos(x_account_token: str = Header(default="")) -> dict:
 
 # ---------- 链路2：画面生成 ----------
 
-def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> list[dict]:
+def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int,
+                          model: dict | None = None) -> list[dict]:
     """给整墙加「时间维度的惊喜」：不局限于近期照片，偶尔翻出老照片换进来。
       · 历史上的今天：拍摄月-日与今天相同、且已是 20 天前的老照片（最惊喜，优先注入）。
       · 更久以前：老照片随机挑（制造惊喜而非每屏都换，故按概率触发）。
@@ -343,7 +344,7 @@ def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> 
     order = sorted(range(len(chosen)), key=lambda i: chosen[i].get("final_score", 0.0))
     # 惊喜老照片来自原始相册库，没经过 rank_photos，本身没有 final_score；
     # 这里统一补算真实综合分，避免它们在墙上显示成 0.0，也保证按分排序/训练拿到真实分。
-    scored = selector.rank_photos([s for s, _ in surprises])
+    scored = selector.rank_photos([s for s, _ in surprises], model=model)
     score_by_path = {p.get("path"): p.get("final_score", 0.0) for p in scored}
     result = list(chosen)
     for (s, label), idx in zip(surprises, order):
@@ -420,13 +421,16 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
     recent_key = _scoped_store_name("recent_shown", scope)
     recent_shown: list[str] = store.load(recent_key, [])
     avoid = set(recent_shown) if len(photos) > slot_n * 2 else set()
+    preference_model = trainer.load_model(_scoped_store_name("model", scope))
 
-    chosen = selector.select_for_template(photos, slot_n, rotate=rotate, avoid=avoid)
+    chosen = selector.select_for_template(
+        photos, slot_n, model=preference_model, rotate=rotate, avoid=avoid,
+    )
 
     # 时间维度惊喜：不局限于近期，偶尔翻出「历史上的今天/更久以前」的老照片换进来。
     # 只在「全貌/精选」(无筛选)时注入；筛选到具体相簿(人物/主题…)时保持纯净不掺入。
     if not applied_filters and slot_n >= 2 and len(photos) > slot_n:
-        chosen = _inject_time_surprise(chosen, photos, slot_n)
+        chosen = _inject_time_surprise(chosen, photos, slot_n, model=preference_model)
 
     photo_paths = [c["path"] for c in chosen]
 
@@ -816,30 +820,43 @@ def smart_albums(x_account_token: str = Header(default="")) -> dict:
 # ---------- 链路4：模型训练 ----------
 
 @app.post("/api/label")
-def label(req: LabelReq) -> dict:
+def label(req: LabelReq, x_account_token: str = Header(default="")) -> dict:
     """人工打标：对本次画面涉及的元素维度评分，并立即训练偏好模型。"""
-    labels = store.load("labels", [])
+    scope = _account_scope(x_account_token)
+    labels_key = _scoped_store_name("labels", scope)
+    model_key = _scoped_store_name("model", scope)
+    labels = store.load(labels_key, [])
     for s in req.samples:
         labels.append({"wall_id": req.wall_id, "tag": s.tag, "score": s.score, "ts": time.time()})
-    store.save("labels", labels)
+    store.save(labels_key, labels)
 
-    model = trainer.train([{"tag": s.tag, "score": s.score} for s in req.samples])
+    model = trainer.train(
+        [{"tag": s.tag, "score": s.score} for s in req.samples],
+        storage_key=model_key,
+    )
     return {"labeled": len(req.samples), "total_labels": len(labels), "model": model}
 
 
 @app.post("/api/train")
-def train_all() -> dict:
+def train_all(x_account_token: str = Header(default="")) -> dict:
     """用累计的全部标签重新训练（长期训练）。"""
-    labels = store.load("labels", [])
+    scope = _account_scope(x_account_token)
+    labels_key = _scoped_store_name("labels", scope)
+    model_key = _scoped_store_name("model", scope)
+    labels = store.load(labels_key, [])
     if not labels:
-        return {"trained": 0, "model": trainer.load_model()}
-    model = trainer.train([{"tag": l["tag"], "score": l["score"]} for l in labels])
+        return {"trained": 0, "model": trainer.load_model(model_key)}
+    model = trainer.train(
+        [{"tag": l["tag"], "score": l["score"]} for l in labels],
+        storage_key=model_key,
+    )
     return {"trained": len(labels), "model": model}
 
 
 @app.get("/api/model")
-def get_model() -> dict:
-    return trainer.load_model()
+def get_model(x_account_token: str = Header(default="")) -> dict:
+    scope = _account_scope(x_account_token)
+    return trainer.load_model(_scoped_store_name("model", scope))
 
 
 # ---------- 双端互联 WebSocket ----------
@@ -1095,7 +1112,7 @@ def _queue_reprovision(device: dict[str, Any], preserve_binding: bool) -> None:
         device.pop("setup_token_expires_at", None)
 
 
-def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
+def _july_calendar_plan(photos: list[dict], model: dict | None = None) -> tuple[dict[str, Any], int]:
     """Build a deterministic July 2026 calendar plan from the existing album.
 
     The normal selector remains the only photo-ranking authority.  Calendar
@@ -1125,7 +1142,7 @@ def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
             })
             continue
 
-        chosen = selector.rank_photos(candidates)[0]
+        chosen = selector.rank_photos(candidates, model=model)[0]
         selected_count += 1
         days.append({
             "day": day,
@@ -1471,7 +1488,8 @@ async def device_publish_july_calendar(
     photos_key = _scoped_store_name("photos", scope)
     photos = store.load(photos_key, [])
     photos, _ = dedup.deduplicate(photos)
-    plan, selected_count = _july_calendar_plan(photos)
+    preference_model = trainer.load_model(_scoped_store_name("model", scope))
+    plan, selected_count = _july_calendar_plan(photos, model=preference_model)
     if not selected_count:
         return JSONResponse(
             status_code=400,

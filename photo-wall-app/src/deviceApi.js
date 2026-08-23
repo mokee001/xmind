@@ -12,6 +12,10 @@ function baseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
 }
 
+function requestError(message, status, data = {}) {
+  return Object.assign(new Error(message), { status, data });
+}
+
 async function responseJson(response) {
   const text = await response.text();
   let data = {};
@@ -20,7 +24,9 @@ async function responseJson(response) {
   } catch {
     data = { error: text || `HTTP ${response.status}` };
   }
-  if (!response.ok) throw new Error(data.error || `请求失败（HTTP ${response.status}）`);
+  if (!response.ok) {
+    throw requestError(data.error || `请求失败（HTTP ${response.status}）`, response.status, data);
+  }
   return data;
 }
 
@@ -43,7 +49,7 @@ function uploadForm({ url, form, headers = {}, onProgress, timeoutMs = 0 }) {
       try { data = request.responseText ? JSON.parse(request.responseText) : {}; }
       catch { data = { error: request.responseText || `HTTP ${request.status}` }; }
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error(data.error || `请求失败（HTTP ${request.status}）`));
+        reject(requestError(data.error || `请求失败（HTTP ${request.status}）`, request.status, data));
         return;
       }
       onProgress?.(1);
@@ -311,6 +317,13 @@ export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accoun
   };
 }
 
+export async function readSelectionModel({ apiBase = DEFAULT_API_BASE, accountToken }) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/model`, {
+    headers: accountToken ? { 'X-Account-Token': accountToken } : {},
+  });
+  return responseJson(response);
+}
+
 export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken }) {
   const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
   let cluster = null;
@@ -444,6 +457,11 @@ export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, acco
 export async function readDisplayStatus({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
   const result = await listDisplays({ apiBase, accountToken });
   const device = (result.devices || []).find(item => item.device_id === deviceId);
-  if (!device) throw new Error('线上服务中没有找到已绑定的墨水屏');
+  if (!device) {
+    throw Object.assign(new Error('线上服务中没有找到已绑定的墨水屏'), {
+      status: 404,
+      code: 'DEVICE_NOT_FOUND',
+    });
+  }
   return device;
 }

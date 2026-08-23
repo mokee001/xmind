@@ -140,6 +140,37 @@ def assert_account_library_isolation(legacy_photo: Path) -> None:
         assert payload.get("error") == "相册为空，请先授权/上传照片", payload
 
 
+def assert_account_model_isolation(account_token: str) -> None:
+    """Preference learning for one family must never affect another family."""
+    account_headers = {"X-Account-Token": account_token}
+    other_headers = {"X-Account-Token": f"other-account-{RUN_ID}"}
+
+    _, _, raw = request("/api/model", headers=account_headers)
+    assert json.loads(raw)["trained_samples"] == 0
+    _, _, raw = request("/api/model", headers=other_headers)
+    assert json.loads(raw)["trained_samples"] == 0
+    _, _, raw = request("/api/model")
+    legacy_before = json.loads(raw)
+
+    _, _, raw = request(
+        "/api/label",
+        "POST",
+        {"wall_id": "account-wall", "samples": [{"tag": "warm", "score": 1.0}]},
+        headers=account_headers,
+    )
+    trained = json.loads(raw)["model"]
+    assert trained["trained_samples"] == 1
+    assert trained["weights"]["warm"] > 0.5
+
+    _, _, raw = request("/api/model", headers=account_headers)
+    assert json.loads(raw) == trained
+    _, _, raw = request("/api/model", headers=other_headers)
+    other_model = json.loads(raw)
+    assert other_model["trained_samples"] == 0 and "warm" not in other_model["weights"]
+    _, _, raw = request("/api/model")
+    assert json.loads(raw) == legacy_before
+
+
 def assert_reprovision_and_delete_lifecycle(device_token: str, account_token: str) -> None:
     """Exercise Wi-Fi replacement, removal, and a clean second pairing."""
     account_headers = {"X-Account-Token": account_token}
@@ -313,6 +344,7 @@ def main() -> None:
     recognition = json.loads(raw)
     assert recognition["total"] >= 1
     assert_account_library_isolation(library_photos[0])
+    assert_account_model_isolation(account_token)
     _, _, raw = request(
         "/api/generate",
         "POST",

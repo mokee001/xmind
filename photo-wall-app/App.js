@@ -27,6 +27,7 @@ import {
   publishJulyCalendar,
   readRecognizedContent,
   readDisplayStatus,
+  readSelectionModel,
   refreshRecognizedContent,
   removeDisplay,
   reprovisionDisplay,
@@ -115,6 +116,8 @@ const EMPTY_RECOGNITION_SNAPSHOT = {
   people: [],
   albums: [],
 };
+
+const EMPTY_OPERATION = { state: 'idle', progress: 0, message: '尚未开始发布' };
 
 function recognizedItem(album) {
   const label = String(album?.label || '未命名内容');
@@ -580,10 +583,13 @@ export default function App() {
   const [photoSync, setPhotoSync] = useState(null);
   const [recognitionSnapshot, setRecognitionSnapshot] = useState(EMPTY_RECOGNITION_SNAPSHOT);
   const [recognitionLoading, setRecognitionLoading] = useState(false);
+  const [selectionModel, setSelectionModel] = useState(null);
+  const [selectionModelLoading, setSelectionModelLoading] = useState(false);
+  const [selectionModelError, setSelectionModelError] = useState('');
   const [generatedWall, setGeneratedWall] = useState(null);
   const [deviceModal, setDeviceModal] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [operation, setOperation] = useState({ state: 'idle', progress: 0, message: '尚未开始发布' });
+  const [operation, setOperation] = useState(EMPTY_OPERATION);
   const [lastAction, setLastAction] = useState(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -623,6 +629,30 @@ export default function App() {
     if (permission.accessPrivileges === 'limited') return '已允许访问你选择的照片。';
     return '已允许访问照片。';
   }, [permission, webPhotoAuthorized]);
+  const selectionModelDescription = !connected
+    ? '连接设备后自动读取。'
+    : selectionModelLoading
+      ? '正在读取云端精选模型…'
+      : selectionModel
+        ? Number(selectionModel.trained_samples) > 0
+          ? `已加载 · ${Number(selectionModel.trained_samples)} 条偏好样本`
+          : '已加载 · 等待根据你的选择学习偏好'
+        : `暂未加载${selectionModelError ? `：${selectionModelError}` : ''}`;
+
+  const clearDeviceRuntimeState = () => {
+    setSession(null);
+    setReconfigurationSession(null);
+    setPhotoSync(null);
+    setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
+    setRecognitionLoading(false);
+    setSelectionModel(null);
+    setSelectionModelLoading(false);
+    setSelectionModelError('');
+    setGeneratedWall(null);
+    setOperation(EMPTY_OPERATION);
+    setDeviceModal(false);
+    setActiveTab('home');
+  };
 
   useEffect(() => {
     screenMotion.setValue(0);
@@ -694,6 +724,30 @@ export default function App() {
   }, [connected, permission?.status]);
 
   useEffect(() => {
+    if (IS_WEB_PREVIEW || !session?.accountToken) {
+      setSelectionModel(null);
+      setSelectionModelLoading(false);
+      setSelectionModelError('');
+      return undefined;
+    }
+    let active = true;
+    setSelectionModel(null);
+    setSelectionModelLoading(true);
+    setSelectionModelError('');
+    readSelectionModel({
+      apiBase: DEFAULT_API_BASE,
+      accountToken: session.accountToken,
+    }).then(model => {
+      if (active) setSelectionModel(model);
+    }).catch(caught => {
+      if (active) setSelectionModelError(caught.message || '读取失败');
+    }).finally(() => {
+      if (active) setSelectionModelLoading(false);
+    });
+    return () => { active = false; };
+  }, [session?.accountToken]);
+
+  useEffect(() => {
     if (IS_WEB_PREVIEW || !session?.accountToken || !photoAllowed) return undefined;
     let active = true;
     setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
@@ -726,6 +780,7 @@ export default function App() {
     if (IS_WEB_PREVIEW) return undefined;
     if (!session?.device?.device_id || !session.accountToken) return undefined;
     let active = true;
+    let invalidStatusCount = 0;
     const refreshDevice = async () => {
       try {
         const device = await readDisplayStatus({
@@ -734,6 +789,7 @@ export default function App() {
           accountToken: session.accountToken,
         });
         if (!active) return;
+        invalidStatusCount = 0;
         const nextSession = { ...session, apiBase: DEFAULT_API_BASE, device };
         setSession(nextSession);
         saveDeviceSession(nextSession).catch(() => {});
@@ -744,7 +800,23 @@ export default function App() {
             : { ...current, ...status }
         ));
       } catch (caught) {
-        if (active) setOperation(current => current.state === 'idle'
+        if (!active) return;
+        const invalidSession = caught.status === 401 || caught.code === 'DEVICE_NOT_FOUND';
+        if (invalidSession) {
+          invalidStatusCount += 1;
+          if (invalidStatusCount >= 2) {
+            Promise.allSettled([
+              clearDeviceSession(),
+              clearPendingDeviceSetup(),
+              clearPhotoSyncPreference(),
+            ]).catch(() => {});
+            clearDeviceRuntimeState();
+            setNotice('这台照片墙的绑定已经失效，请重新连接设备。');
+          }
+          return;
+        }
+        invalidStatusCount = 0;
+        setOperation(current => current.state === 'idle'
           ? { ...current, message: `暂时无法读取设备状态：${caught.message}` }
           : current);
       }
@@ -1022,30 +1094,33 @@ export default function App() {
   };
 
   const removeConnectedDevice = async () => {
+    let cleanupWarning = '';
     if (IS_WEB_PREVIEW) {
       setWebConnected(false);
       setWebPhotoAuthorized(false);
     } else if (session?.device?.device_id && session.accountToken) {
-      await removeDisplay({
-        apiBase: DEFAULT_API_BASE,
-        deviceId: session.device.device_id,
-        accountToken: session.accountToken,
-      });
-      await Promise.all([
+      try {
+        await removeDisplay({
+          apiBase: DEFAULT_API_BASE,
+          deviceId: session.device.device_id,
+          accountToken: session.accountToken,
+        });
+      } catch (caught) {
+        // A second client may already have removed the display. The local App
+        // should still discard that unusable binding and allow a clean setup.
+        if (caught.status !== 401 && caught.status !== 404) throw caught;
+      }
+      const cleanup = await Promise.allSettled([
         clearDeviceSession(),
         clearPendingDeviceSetup(),
         clearPhotoSyncPreference(),
       ]);
+      if (cleanup.some(result => result.status === 'rejected')) {
+        cleanupWarning = '设备已删除；本机安全存储清理未完全完成，如重启后仍显示旧设备，请再次删除。';
+      }
     }
-    setSession(null);
-    setReconfigurationSession(null);
-    setPhotoSync(null);
-    setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
-    setGeneratedWall(null);
-    setOperation({ state: 'idle', progress: 0, message: '尚未开始发布' });
-    setDeviceModal(false);
-    setActiveTab('home');
-    setNotice('设备已删除。屏幕会清除原网络并重新进入连接模式。');
+    clearDeviceRuntimeState();
+    setNotice(cleanupWarning || '设备已删除。屏幕会清除原网络并重新进入连接模式。');
   };
 
   const manageDevice = () => {
@@ -1357,6 +1432,7 @@ export default function App() {
             <View style={styles.settingCard}>
               <Text style={styles.settingValue}>{connected ? effectiveSession.device.name || '客厅照片墙' : '尚未绑定'}</Text>
               <Text style={styles.settingHint}>{connected ? effectiveSession.device.device_id : '通过蓝牙发现并完成首次配对。'}</Text>
+              <Text style={styles.settingHint}>云端精选模型：{selectionModelDescription}</Text>
               <ActionButton secondary onPress={connected ? manageDevice : connectDevice}>
                 {IS_WEB_PREVIEW ? (connected ? '管理设备' : '进入连接流程') : (connected ? '查看设备' : '连接设备')}
               </ActionButton>

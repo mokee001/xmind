@@ -151,9 +151,11 @@ Body：`files`（可多张）。
 
 ### 5. 模型训练（A）
 
-- **POST `/api/label`** — Body：`{ "wall_id": "", "samples": [ {"tag":"warm","score":1.0} ] }`（score 0=差 1=好）。
-- **POST `/api/train`** — 触发训练。
-- **GET `/api/model`** — 模型状态。
+三个接口均接受 `X-Account-Token`，标签和模型会按家庭账户隔离；不带 Header 时仅访问历史兼容的本地模型。
+
+- **POST `/api/label`** — Body：`{ "wall_id": "", "samples": [ {"tag":"warm","score":1.0} ] }`（score 0=差 1=好），立即更新当前账户模型。
+- **POST `/api/train`** — 用当前账户累计标签重新训练。
+- **GET `/api/model`** — 返回当前账户模型；App 在设备绑定/配网成功后自动读取。
 
 ---
 
