@@ -25,7 +25,7 @@
 | `/api/generate` `/api/suggest_filters` | A | `backend/server.py` |
 | `/api/cluster_people` `/api/people` `/api/retag` `/api/smart_albums` | A | `backend/server.py` |
 | `/api/label` `/api/train` `/api/model` | A | `backend/server.py` |
-| `/api/devices/bootstrap` `/api/devices/auto-claim` | A | `backend/server.py` |
+| `/api/devices/bootstrap` `/api/devices/auto-claim` `/api/devices/*` | A | `backend/server.py` |
 | `/ws/display` `/output/{name}` `/api/thumb/{name}` `/photos/{name}` | A | `backend/server.py` |
 | `/api/frame_id` `/api/frame.jpg` | Legacy LCD only | `backend/server.py` |
 | `/api/stickers` `/api/upload_sticker` `/api/sticker.png/{name}` | B | `backend/routers/content.py` |
@@ -36,11 +36,12 @@
 
 ## 二、核心链路
 
-### 0. 无输入首次绑定（A）
+### 0. BLE 首次绑定与重新配网（A）
 
-设备处于 `PhotoWall-XXXX` 配网热点时，App 从 `GET http://192.168.4.1/status`
-读取 `device_id` 和一次性 `setup_token`。用户完成设备网页 Wi-Fi 配置后，设备向
-云端 bootstrap；App 使用下列接口自动绑定，不需要输入配对码。
+设备没有网络配置时广播 `PhotoWall-XXXX` BLE 服务。App 连接后要求用户按住设备
+BOOT 键确认，通过 BLE 读取一次性 `setup_token`，让设备扫描附近 Wi-Fi，并将所选
+SSID、密码和固定云端地址发送给设备。设备联网后向云端 bootstrap；App 使用下列
+接口自动绑定，不需要输入配对码。临时热点网页保留为兼容恢复路径，不是 App 主流程。
 
 **POST `/api/devices/auto-claim`** — Body：
 ```json
@@ -48,6 +49,22 @@
 ```
 令牌仅在设备 bootstrap 后有效 10 分钟，只能使用一次。成功返回 `device` 和
 `account_token`。原 `POST /api/devices/claim` 继续保留，作为手动恢复路径。
+
+**POST `/api/devices/{device_id}/reprovision`** — Header：
+`X-Account-Token: <account_token>`。保留设备绑定和相册账户，下发重新配网命令。
+设备下一次轮询收到：
+```json
+{ "command": "reprovision", "preserve_binding": true }
+```
+设备清除原 Wi-Fi、重启并重新广播 BLE；新 Wi-Fi 配置成功后继续使用原设备与账户凭据。
+
+**DELETE `/api/devices/{device_id}`** — Header：
+`X-Account-Token: <account_token>`。立即撤销 App 绑定，并让设备清除 Wi-Fi 和设备凭据。
+设备下一次轮询收到：
+```json
+{ "command": "reprovision", "preserve_binding": false }
+```
+设备确认后从服务端设备表移除，再次添加必须完整执行 BLE 配网和自动绑定。
 
 ### 1. 相册授权 / 上传（A）
 

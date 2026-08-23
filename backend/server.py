@@ -1044,6 +1044,28 @@ def _account_auth(device: dict[str, Any], token: str) -> bool:
     return bool(expected and token and secrets.compare_digest(expected, token))
 
 
+def _queue_reprovision(device: dict[str, Any], preserve_binding: bool) -> None:
+    """Ask the authenticated display to restart in BLE provisioning mode.
+
+    A Wi-Fi change keeps the account binding. Removing a display revokes the
+    account immediately, while retaining the device credential only long enough
+    for the display to receive and acknowledge the reset command.
+    """
+    device["pending_command"] = {
+        "type": "reprovision",
+        "preserve_binding": bool(preserve_binding),
+        "created_at": time.time(),
+    }
+    device["state"] = "reprovision_pending"
+    device["progress"] = 0.0
+    device["error"] = ""
+    if not preserve_binding:
+        device["claimed"] = False
+        device["account_token"] = ""
+        device.pop("setup_token_digest", None)
+        device.pop("setup_token_expires_at", None)
+
+
 def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
     """Build a deterministic July 2026 calendar plan from the existing album.
 
@@ -1167,7 +1189,18 @@ def device_bootstrap(req: DeviceBootstrapReq) -> Response:
     devices_data = _devices()
     existing = devices_data.get(req.device_id)
     if existing and existing.get("device_token") and not _device_auth(existing, req.device_token):
-        return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
+        pending = existing.get("pending_command")
+        reset_is_pending = (
+            not req.device_token and
+            not existing.get("claimed") and
+            isinstance(pending, dict) and
+            pending.get("type") == "reprovision" and
+            not pending.get("preserve_binding")
+        )
+        if reset_is_pending:
+            existing = None
+        else:
+            return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
 
     now = time.time()
     device = existing or {
@@ -1189,6 +1222,18 @@ def device_bootstrap(req: DeviceBootstrapReq) -> Response:
         "error": "",
     })
     setup_token = req.setup_token.strip()
+    pending = device.get("pending_command")
+    if (
+        setup_token and
+        device.get("claimed") and
+        isinstance(pending, dict) and
+        pending.get("type") == "reprovision" and
+        pending.get("preserve_binding")
+    ):
+        # A retained device credential plus a fresh setup token proves that the
+        # display completed its replacement Wi-Fi setup, even if the earlier
+        # acknowledgement was lost on the old network.
+        device.pop("pending_command", None)
     if not device.get("claimed") and setup_token:
         token_digest = hashlib.sha256(setup_token.encode()).hexdigest()
         if device.get("setup_token_digest") != token_digest:
@@ -1260,6 +1305,44 @@ def device_list(x_account_token: str = Header(default="")) -> Response:
     devices_data = _devices()
     visible = [_public_device(d) for d in devices_data.values() if _account_auth(d, x_account_token)]
     return JSONResponse({"devices": visible})
+
+
+@app.post("/api/devices/{device_id}/reprovision")
+def device_reprovision(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Keep the binding but make the display re-enter BLE Wi-Fi setup."""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    _queue_reprovision(device, preserve_binding=True)
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse(
+        status_code=202,
+        content={"device": _public_device(device), "reprovision_required": True},
+    )
+
+
+@app.delete("/api/devices/{device_id}")
+def device_delete(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Revoke the App binding and ask the display to erase its setup."""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    _queue_reprovision(device, preserve_binding=False)
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse(
+        status_code=202,
+        content={"device_id": device_id, "removed": True, "reprovision_required": True},
+    )
 
 
 @app.post("/api/devices/{device_id}/publish")
@@ -1403,10 +1486,17 @@ def device_next(device_id: str, revision: str = "", token: str = "") -> Response
     device = devices_data.get(device_id)
     if not device or not _device_auth(device, token):
         return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    pending = device.get("pending_command")
     device["last_seen"] = time.time()
-    device["state"] = "online" if not device.get("revision") else device.get("state", "online")
+    if not isinstance(pending, dict):
+        device["state"] = "online" if not device.get("revision") else device.get("state", "online")
     devices_data[device_id] = device
     store.save("eink_devices", devices_data)
+    if isinstance(pending, dict) and pending.get("type") == "reprovision":
+        return JSONResponse({
+            "command": "reprovision",
+            "preserve_binding": bool(pending.get("preserve_binding")),
+        })
     target = str(device.get("revision", ""))
     if not target or target == revision:
         return Response(status_code=204)
@@ -1434,6 +1524,17 @@ def device_status(device_id: str, req: DeviceStatusReq, token: str = "") -> Resp
     device = devices_data.get(device_id)
     if not device or not _device_auth(device, token):
         return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    pending = device.get("pending_command")
+    if req.state == "unbound":
+        if not isinstance(pending, dict) or pending.get("type") != "reprovision" or pending.get("preserve_binding"):
+            return JSONResponse(status_code=409, content={"error": "设备没有待执行的删除命令"})
+        devices_data.pop(device_id, None)
+        store.save("eink_devices", devices_data)
+        return JSONResponse({"ok": True, "removed": True})
+    if req.state == "reprovisioning":
+        if not isinstance(pending, dict) or pending.get("type") != "reprovision" or not pending.get("preserve_binding"):
+            return JSONResponse(status_code=409, content={"error": "设备没有待执行的重新配网命令"})
+        device.pop("pending_command", None)
     device.update({
         "state": req.state[:24],
         "progress": max(0.0, min(float(req.progress), 100.0)),

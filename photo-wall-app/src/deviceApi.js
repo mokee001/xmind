@@ -381,6 +381,22 @@ export async function listDisplays({ apiBase, accountToken }) {
   return responseJson(response);
 }
 
+export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/reprovision`,
+    { method: 'POST', headers: { 'X-Account-Token': accountToken } },
+  );
+  return responseJson(response);
+}
+
+export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}`,
+    { method: 'DELETE', headers: { 'X-Account-Token': accountToken } },
+  );
+  return responseJson(response);
+}
+
 export async function readDisplayStatus({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
   const result = await listDisplays({ apiBase, accountToken });
   const device = (result.devices || []).find(item => item.device_id === deviceId);

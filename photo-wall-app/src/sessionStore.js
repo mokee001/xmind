@@ -48,6 +48,10 @@ export async function saveDeviceSession(session) {
   await writeValue(KEY, session);
 }
 
+export async function clearDeviceSession() {
+  await deleteValue(KEY);
+}
+
 export async function loadPendingDeviceSetup() {
   try {
     return await readValue(PENDING_SETUP_KEY);
@@ -74,4 +78,8 @@ export async function loadPhotoSyncPreference() {
 
 export async function savePhotoSyncPreference(preference) {
   await writeValue(PHOTO_SYNC_KEY, preference);
+}
+
+export async function clearPhotoSyncPreference() {
+  await deleteValue(PHOTO_SYNC_KEY);
 }

@@ -80,11 +80,13 @@ String normalizeApiBase(String value) {
 BleProvisioningService bleProvisioning;
 
 void BleProvisioningService::begin(
-    const String& deviceId, const String& firmwareVersion, const String& setupToken) {
+    const String& deviceId, const String& firmwareVersion, const String& setupToken,
+    bool preserveDeviceToken) {
   if (active_) return;
   deviceId_ = deviceId;
   firmwareVersion_ = firmwareVersion;
   setupToken_ = setupToken;
+  preserveDeviceToken_ = preserveDeviceToken;
   status_ = "idle";
   activeService = this;
   pinMode(kProofButton, INPUT_PULLUP);
@@ -407,7 +409,8 @@ void BleProvisioningService::processWifiConnection() {
     preferences.putString("pass", pendingPassword_);
     preferences.putString("api", pendingApiBase_);
     preferences.putString("setup", setupToken_);
-    preferences.remove("token");
+    preferences.remove("force_setup");
+    if (!preserveDeviceToken_) preferences.remove("token");
     preferences.remove("revision");
     preferences.end();
     pendingPassword_ = "";

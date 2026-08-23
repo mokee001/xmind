@@ -26,6 +26,8 @@ import {
   publishGeneratedWall,
   publishJulyCalendar,
   readDisplayStatus,
+  removeDisplay,
+  reprovisionDisplay,
   sendLocalControl,
   syncPhotoAlbum,
   syncJuly2026Photos,
@@ -40,9 +42,14 @@ import {
   subscribeProvisionStatus as subscribeBleProvisionStatus,
 } from './src/bleProvisioning';
 import {
+  clearDeviceSession,
+  clearPendingDeviceSetup,
+  clearPhotoSyncPreference,
   loadDeviceSession,
+  loadPendingDeviceSetup,
   loadPhotoSyncPreference,
   saveDeviceSession,
+  savePendingDeviceSetup,
   savePhotoSyncPreference,
 } from './src/sessionStore';
 import DeviceSetupFlow from './src/DeviceSetupFlow';
@@ -198,11 +205,23 @@ const REAL_DEVICE_SETUP_ADAPTER = {
   scanWifiNetworks: scanBleWifiNetworks,
   subscribeProvisionStatus: subscribeBleProvisionStatus,
   cancelProvisioning: cancelBleProvisioning,
-  provisionWifi: async ({ ssid, password, device }) => {
+  provisionWifi: async ({ ssid, password, device, existingSession }) => {
     const waiter = createProvisionStatusWaiter();
     try {
       await provisionBleWifi({ ssid, password, apiBase: DEFAULT_API_BASE });
       const status = await waiter.promise;
+      if (existingSession?.device?.device_id) {
+        const deviceId = status?.deviceId || device?.deviceId;
+        if (deviceId !== existingSession.device.device_id) {
+          throw new Error('连接到的不是原照片墙，请返回后选择正确设备');
+        }
+        return {
+          ...existingSession,
+          apiBase: DEFAULT_API_BASE,
+          localUrl: status?.localUrl || localUrlForDevice(deviceId),
+          device: { ...existingSession.device, state: 'online', error: '' },
+        };
+      }
       return claimProvisionedDevice({ device, status });
     } catch (error) {
       waiter.cancel();
@@ -515,6 +534,7 @@ function AlbumModal({ visible, albums, onClose, onSelect }) {
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [session, setSession] = useState(null);
+  const [reconfigurationSession, setReconfigurationSession] = useState(null);
   const screenMotion = useRef(new Animated.Value(1)).current;
   const [webConnected, setWebConnected] = useState(false);
   const [webPhotoAuthorized, setWebPhotoAuthorized] = useState(false);
@@ -605,14 +625,22 @@ export default function App() {
 
   useEffect(() => {
     if (IS_WEB_PREVIEW) return;
-    loadDeviceSession().then(saved => {
-      if (saved?.device?.device_id) {
-        setSession({
-          ...saved,
+    Promise.all([loadDeviceSession(), loadPendingDeviceSetup()]).then(([saved, pending]) => {
+      if (pending?.kind === 'reconfigure' && pending.session?.device?.device_id) {
+        setReconfigurationSession({
+          ...pending.session,
           apiBase: DEFAULT_API_BASE,
-          localUrl: saved.localUrl || localUrlForDevice(saved.device.device_id),
+          localUrl: pending.session.localUrl || localUrlForDevice(pending.session.device.device_id),
         });
+        setSession(null);
+        return;
       }
+      if (!saved?.device?.device_id) return;
+      setSession({
+        ...saved,
+        apiBase: DEFAULT_API_BASE,
+        localUrl: saved.localUrl || localUrlForDevice(saved.device.device_id),
+      });
     });
     loadPhotoSyncPreference().then(setPhotoSync);
     refreshPermission().catch(e => setError(`检查照片权限失败：${e.message}`));
@@ -854,6 +882,8 @@ export default function App() {
     };
     setSession(normalized);
     await saveDeviceSession(normalized);
+    await clearPendingDeviceSetup();
+    setReconfigurationSession(null);
     setDeviceModal(false);
     setActiveTab('home');
   };
@@ -863,13 +893,58 @@ export default function App() {
     setActiveTab('home');
   };
 
-  const manageDevice = () => {
-    if (IS_WEB_PREVIEW && connected) {
+  const reconfigureConnectedDevice = async () => {
+    if (IS_WEB_PREVIEW) {
+      setWebConnected(false);
+      setDeviceModal(false);
+      setActiveTab('home');
+      setNotice('网页预览已进入重新配网流程。');
+      return;
+    }
+    if (!session?.device?.device_id || !session.accountToken) return;
+    const preserved = session;
+    await reprovisionDisplay({
+      apiBase: DEFAULT_API_BASE,
+      deviceId: preserved.device.device_id,
+      accountToken: preserved.accountToken,
+    });
+    await savePendingDeviceSetup({ kind: 'reconfigure', session: preserved });
+    await clearDeviceSession();
+    setReconfigurationSession(preserved);
+    setSession(null);
+    setDeviceModal(false);
+    setActiveTab('home');
+    setNotice('照片墙会在约 30 秒内重新出现，请保持通电并选择新的 Wi-Fi。');
+  };
+
+  const removeConnectedDevice = async () => {
+    if (IS_WEB_PREVIEW) {
       setWebConnected(false);
       setWebPhotoAuthorized(false);
-      setGeneratedWall(null);
+    } else if (session?.device?.device_id && session.accountToken) {
+      await removeDisplay({
+        apiBase: DEFAULT_API_BASE,
+        deviceId: session.device.device_id,
+        accountToken: session.accountToken,
+      });
+      await Promise.all([
+        clearDeviceSession(),
+        clearPendingDeviceSetup(),
+        clearPhotoSyncPreference(),
+      ]);
     }
-    else if (!connected) {
+    setSession(null);
+    setReconfigurationSession(null);
+    setPhotoSync(null);
+    setGeneratedWall(null);
+    setOperation({ state: 'idle', progress: 0, message: '尚未开始发布' });
+    setDeviceModal(false);
+    setActiveTab('home');
+    setNotice('设备已删除。屏幕会清除原网络并重新进入连接模式。');
+  };
+
+  const manageDevice = () => {
+    if (!connected) {
       setDeviceModal(false);
       setActiveTab('home');
     }
@@ -1176,7 +1251,7 @@ export default function App() {
               <Text style={styles.settingValue}>{connected ? effectiveSession.device.name || '客厅照片墙' : '尚未绑定'}</Text>
               <Text style={styles.settingHint}>{connected ? effectiveSession.device.device_id : '通过蓝牙发现并完成首次配对。'}</Text>
               <ActionButton secondary onPress={connected ? manageDevice : connectDevice}>
-                {IS_WEB_PREVIEW ? (connected ? '切换为未连接' : '进入连接流程') : (connected ? '查看设备' : '连接设备')}
+                {IS_WEB_PREVIEW ? (connected ? '管理设备' : '进入连接流程') : (connected ? '查看设备' : '连接设备')}
               </ActionButton>
               {connected && !IS_WEB_PREVIEW ? (
                 <ActionButton secondary disabled={publishing} onPress={testLocalControl}>
@@ -1195,6 +1270,7 @@ export default function App() {
               embedded
               visible
               session={null}
+              existingSession={reconfigurationSession}
               previewMode={IS_WEB_PREVIEW}
               adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
               onClose={() => {}}
@@ -1216,6 +1292,8 @@ export default function App() {
           session={effectiveSession}
           previewMode={IS_WEB_PREVIEW}
           adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
+          onReconfigure={reconfigureConnectedDevice}
+          onRemoveDevice={removeConnectedDevice}
           onClose={() => setDeviceModal(false)}
           onConnected={onConnected}
         />

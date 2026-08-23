@@ -2,8 +2,8 @@
 
 自定义固件将官方被动 Wi-Fi Loader 改成支持局域网直传、云端轮询兜底的独立设备：
 
-1. 没有配置时创建 `PhotoWall-XXXX` 临时热点。
-2. App 向 `http://192.168.4.1/provision` 发送家庭 Wi-Fi 和云端 API 地址。
+1. 没有配置时广播 `PhotoWall-XXXX` BLE 配网服务，同时创建同名临时热点作为恢复入口。
+2. App 通过 BLE 让设备扫描 Wi-Fi，并发送家庭 Wi-Fi 和固定云端 API 地址。
 3. 凭据保存至 ESP32 Preferences/NVS，后续开机自动联网。
 4. 联网后持续提供 `http://photowall-xxxx.local` 本地服务，并通过 `_photowall._tcp` 广播。
 5. App 优先在局域网直传 PWE6；设备不可达时仍可每 15 秒查询云端待显示 revision。
@@ -12,13 +12,20 @@
 
 ## 配网
 
-串口会打印热点、临时热点密码和六位配对码：
+App 主流程无需进入系统 Wi-Fi：靠近设备、按住 BOOT 键完成物理确认、选择家庭 Wi-Fi
+并输入密码即可。串口仍会打印兼容恢复热点、临时热点密码和六位配对码：
 
 - 热点：`PhotoWall-XXXX`
 - 密码：`PhotoWall` + 配对码后四位
 - 配置地址：`http://192.168.4.1`
 
-恢复出厂：上电时按住 BOOT（GPIO 0）至少 8 秒。清除 Wi-Fi、设备 token 和当前 revision 后重新进入配网。
+在 App 的设备管理中：
+
+- “更换 Wi-Fi”保留绑定和设备 token，清除网络后重新进入 BLE 配网。
+- “删除设备”撤销绑定，清除 Wi-Fi、设备 token 和当前 revision，再次添加时完整重新绑定。
+
+硬件恢复出厂：上电时按住 BOOT（GPIO 0）至少 8 秒。即使固件带演示固定 Wi-Fi，
+也会通过持久化 `force_setup` 标记强制进入配网，不会自动连回演示网络。
 
 ## 局域网发布
 
@@ -28,7 +35,7 @@
 - `POST /control`：发送开发阶段的测试刷新命令。
 - `POST /v1/frame`：以 `multipart/form-data` 上传字段 `frame`，内容必须是完整的 960045 字节 PWE6 文件。
 
-`POST /v1/frame` 分块写入 PSRAM，收完后验证 PWE6 版本、`1200×1600` 尺寸、payload 长度和 SHA-256。只有全部通过才刷新屏幕；HTTP 响应会在全刷完成后返回。
+`POST /v1/frame` 分块写入 PSRAM，收完后验证 PWE6 版本、`1200×1600` 尺寸、payload 长度和 SHA-256。只有全部通过才进入刷新队列；接口返回 `202`，App 通过 `GET /status` 等待 `frame_state=displayed`。
 
 ## 构建和烧录
 

@@ -101,8 +101,11 @@ function ProgressHeader({ stage }) {
 export default function DeviceSetupFlow({
   visible,
   session,
+  existingSession = null,
   onClose,
   onConnected,
+  onReconfigure,
+  onRemoveDevice,
   previewMode = false,
   adapter = null,
   embedded = false,
@@ -119,6 +122,7 @@ export default function DeviceSetupFlow({
   const [statusText, setStatusText] = useState('');
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const stageMotion = useRef(new Animated.Value(1)).current;
   const pulseMotion = useRef(new Animated.Value(0)).current;
   const discoveryStopRef = useRef(null);
@@ -172,6 +176,10 @@ export default function DeviceSetupFlow({
       if (status?.status === 'connected') setProgress(100);
     });
   }, [visible, previewMode, adapter]);
+
+  useEffect(() => {
+    if (visible) setConfirmingRemoval(false);
+  }, [visible, session]);
 
   useEffect(() => () => {
     flowGenerationRef.current += 1;
@@ -229,6 +237,7 @@ export default function DeviceSetupFlow({
     setStatusText('');
     setError('');
     setResult(null);
+    setConfirmingRemoval(false);
     discoverDevices();
   }, [visible, session]);
 
@@ -273,6 +282,11 @@ export default function DeviceSetupFlow({
         return;
       }
       const connected = await adapter.connectProvisioningDevice(device.deviceId);
+      const expectedDeviceId = existingSession?.device?.device_id;
+      if (expectedDeviceId && connected.deviceId !== expectedDeviceId) {
+        await adapter?.cancelProvisioning?.();
+        throw new Error('这不是正在更换 Wi-Fi 的原照片墙，请返回后选择正确设备');
+      }
       setSelectedDevice(current => ({ ...current, ...connected }));
       await scanConnectedNetworks();
     } catch (caught) {
@@ -347,6 +361,7 @@ export default function DeviceSetupFlow({
         ssid: selectedNetwork.ssid,
         password,
         device: selectedDevice,
+        existingSession,
       });
       setProgress(100);
       setStatusText('连接完成');
@@ -383,15 +398,47 @@ export default function DeviceSetupFlow({
     onClose();
   };
 
+  const runDeviceAction = async action => {
+    if (!action || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+    } catch (caught) {
+      setError(caught.message || '设备操作失败，请稍后重试');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const renderBody = () => {
     if (session) {
+      if (confirmingRemoval) {
+        return (
+          <View style={styles.centeredState}>
+            <View style={[styles.stateIcon, styles.failureIcon]}><Text style={styles.failureMark}>!</Text></View>
+            <Text style={styles.stateTitle}>删除这台照片墙？</Text>
+            <Text style={styles.stateDescription}>App 会解除绑定，屏幕会清除当前 Wi-Fi，并重新进入首次连接模式。</Text>
+            {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
+            <PrimaryButton disabled={busy} onPress={() => runDeviceAction(onRemoveDevice)}>
+              {busy ? '正在删除…' : '确认删除并重置'}
+            </PrimaryButton>
+            <PrimaryButton secondary disabled={busy} onPress={() => setConfirmingRemoval(false)}>取消</PrimaryButton>
+          </View>
+        );
+      }
       return (
         <View style={styles.centeredState}>
           <View style={[styles.stateIcon, styles.successIcon]}><Text style={styles.successMark}>✓</Text></View>
           <Text style={styles.stateTitle}>照片墙已连接</Text>
           <Text style={styles.stateDescription}>{session.device?.name || '客厅照片墙'}</Text>
           <View style={styles.deviceIdentifier}><Text style={styles.deviceIdentifierText}>{session.device?.device_id}</Text></View>
+          {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
           <PrimaryButton onPress={onClose}>完成</PrimaryButton>
+          <PrimaryButton secondary disabled={busy} onPress={() => runDeviceAction(onReconfigure)}>
+            {busy ? '正在准备…' : '更换 Wi-Fi'}
+          </PrimaryButton>
+          <PrimaryButton secondary disabled={busy} onPress={() => setConfirmingRemoval(true)}>删除设备</PrimaryButton>
         </View>
       );
     }
@@ -400,7 +447,9 @@ export default function DeviceSetupFlow({
       return (
         <>
           <Text style={styles.title}>选择照片墙</Text>
-          <Text style={styles.description}>保持照片墙通电并靠近手机，无需进入系统 Wi-Fi 设置。</Text>
+          <Text style={styles.description}>{existingSession
+            ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。`
+            : '保持照片墙通电并靠近手机，无需进入系统 Wi-Fi 设置。'}</Text>
           <View style={styles.discoveryArt}>
             <View style={styles.discoveryRingLarge} />
             <View style={styles.discoveryRingSmall} />

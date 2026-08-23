@@ -132,6 +132,113 @@ def assert_account_library_isolation(legacy_photo: Path) -> None:
         assert payload.get("error") == "相册为空，请先授权/上传照片", payload
 
 
+def assert_reprovision_and_delete_lifecycle(device_token: str, account_token: str) -> None:
+    """Exercise Wi-Fi replacement, removal, and a clean second pairing."""
+    account_headers = {"X-Account-Token": account_token}
+    _, _, raw = request(
+        f"/api/devices/{DEVICE_ID}/reprovision",
+        "POST",
+        headers=account_headers,
+    )
+    assert json.loads(raw)["reprovision_required"] is True
+
+    device_query = urllib.parse.urlencode({"revision": "", "token": device_token})
+    _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{device_query}")
+    command = json.loads(raw)
+    assert command == {"command": "reprovision", "preserve_binding": True}, command
+
+    token_query = urllib.parse.urlencode({"token": device_token})
+    request(f"/api/devices/{DEVICE_ID}/status?{token_query}", "POST", {
+        "state": "reprovisioning",
+        "progress": 0,
+        "ip": "192.168.1.55",
+    })
+    replacement_setup_token = "b" * 32
+    _, _, raw = request("/api/devices/bootstrap", "POST", {
+        "device_id": DEVICE_ID,
+        "pairing_code": PAIRING_CODE,
+        "setup_token": replacement_setup_token,
+        "ip": "192.168.2.55",
+        "firmware_version": "integration-test-reconfigured",
+        "device_token": device_token,
+    })
+    reconfigured = json.loads(raw)
+    assert reconfigured["device_token"] == device_token
+    assert reconfigured["claimed"] is True
+    _, _, raw = request("/api/devices", headers=account_headers)
+    assert any(item["device_id"] == DEVICE_ID for item in json.loads(raw)["devices"])
+
+    # Reconfiguration normally drops the old network immediately. If the
+    # "reprovisioning" status acknowledgement never reaches the cloud, a
+    # bootstrap carrying the retained device token and a fresh setup token
+    # must still complete the Wi-Fi replacement and clear the stale command.
+    request(
+        f"/api/devices/{DEVICE_ID}/reprovision",
+        "POST",
+        headers=account_headers,
+    )
+    _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{device_query}")
+    assert json.loads(raw) == {"command": "reprovision", "preserve_binding": True}
+    recovery_setup_token = "d" * 32
+    _, _, raw = request("/api/devices/bootstrap", "POST", {
+        "device_id": DEVICE_ID,
+        "pairing_code": PAIRING_CODE,
+        "setup_token": recovery_setup_token,
+        "ip": "192.168.4.55",
+        "firmware_version": "integration-test-recovered-reconfigure",
+        "device_token": device_token,
+    })
+    recovered = json.loads(raw)
+    assert recovered["device_token"] == device_token
+    assert recovered["claimed"] is True
+    _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{device_query}")
+    assert "command" not in json.loads(raw)
+
+    _, _, raw = request(
+        f"/api/devices/{DEVICE_ID}",
+        "DELETE",
+        headers=account_headers,
+    )
+    removed = json.loads(raw)
+    assert removed["removed"] is True and removed["reprovision_required"] is True
+    _, _, raw = request("/api/devices", headers=account_headers)
+    assert not json.loads(raw)["devices"]
+
+    _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{device_query}")
+    command = json.loads(raw)
+    assert command == {"command": "reprovision", "preserve_binding": False}, command
+    request(f"/api/devices/{DEVICE_ID}/status?{token_query}", "POST", {
+        "state": "unbound",
+        "progress": 0,
+        "ip": "192.168.2.55",
+    })
+
+    second_setup_token = "c" * 32
+    _, _, raw = request("/api/devices/bootstrap", "POST", {
+        "device_id": DEVICE_ID,
+        "pairing_code": PAIRING_CODE,
+        "setup_token": second_setup_token,
+        "ip": "192.168.3.55",
+        "firmware_version": "integration-test-second-pairing",
+        "device_token": "",
+    })
+    second_bootstrap = json.loads(raw)
+    assert second_bootstrap["device_token"] != device_token
+    assert second_bootstrap["claimed"] is False
+    _, _, raw = request("/api/devices/auto-claim", "POST", {
+        "device_id": DEVICE_ID,
+        "setup_token": second_setup_token,
+        "name": "重新添加的测试屏",
+    })
+    second_claim = json.loads(raw)
+    assert second_claim["account_token"] != account_token
+    _, _, raw = request(
+        "/api/devices",
+        headers={"X-Account-Token": second_claim["account_token"]},
+    )
+    assert any(item["device_id"] == DEVICE_ID for item in json.loads(raw)["devices"])
+
+
 def main() -> None:
     _, _, raw = request("/api/devices/bootstrap", "POST", {
         "device_id": DEVICE_ID,
@@ -211,6 +318,7 @@ def main() -> None:
     assert template_pending["revision"] == template_revision
     _, _, template_frame = request(template_pending["frame_url"])
     assert len(template_frame) == 960045
+    assert_reprovision_and_delete_lifecycle(device_token, account_token)
     if disposable_photo:
         photo.unlink(missing_ok=True)
     for library_photo in library_photos:

@@ -8,7 +8,8 @@ namespace photowall {
 
 class BleProvisioningService {
  public:
-  void begin(const String& deviceId, const String& firmwareVersion, const String& setupToken);
+  void begin(const String& deviceId, const String& firmwareVersion, const String& setupToken,
+             bool preserveDeviceToken = false);
   void loop();
   void stop();
   bool active() const;
@@ -54,6 +55,7 @@ class BleProvisioningService {
   bool scanRequested_ = false;
   bool wifiConnecting_ = false;
   bool cloudBootstrapPending_ = false;
+  bool preserveDeviceToken_ = false;
   uint32_t wifiConnectStartedAt_ = 0;
   uint32_t restartAt_ = 0;
   portMUX_TYPE commandMux_ = portMUX_INITIALIZER_UNLOCKED;

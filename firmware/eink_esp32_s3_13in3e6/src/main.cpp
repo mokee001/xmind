@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.2.0";
+constexpr char kFirmwareVersion[] = "0.3.0";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -48,6 +48,7 @@ uint32_t pollIntervalMs = kDefaultPollIntervalMs;
 bool panelInitialized = false;
 bool restartRequested = false;
 bool provisioningMode = false;
+bool forceProvisioning = false;
 uint8_t* localFrame = nullptr;
 size_t localFrameBytes = 0;
 String localFrameState = "idle";
@@ -179,6 +180,7 @@ void clearConfigurationIfRequested() {
   if (digitalRead(kBootButton) == LOW) {
     prefs.begin("photowall", false);
     prefs.clear();
+    prefs.putBool("force_setup", true);
     prefs.end();
     Serial.println("Factory reset: Wi-Fi and device credentials cleared");
   }
@@ -192,12 +194,13 @@ void loadConfiguration() {
   deviceToken = prefs.getString("token", "");
   displayedRevision = prefs.getString("revision", "");
   setupToken = prefs.getString("setup", "");
+  forceProvisioning = prefs.getBool("force_setup", false);
   prefs.end();
 }
 
 void applyDemoWifiConfiguration() {
 #if PHOTOWALL_HAS_DEMO_WIFI
-  if (wifiSsid.isEmpty() && kDemoWifiSsid[0] != '\0') {
+  if (!forceProvisioning && wifiSsid.isEmpty() && kDemoWifiSsid[0] != '\0') {
     wifiSsid = kDemoWifiSsid;
     wifiPassword = kDemoWifiPassword;
     const String configuredApi = normalizeApiBase(kDemoApiBase);
@@ -223,7 +226,7 @@ void saveRevision(const String& revision) {
 }
 
 bool hasWifiConfiguration() {
-  return !wifiSsid.isEmpty() && !apiBase.isEmpty();
+  return !forceProvisioning && !wifiSsid.isEmpty() && !apiBase.isEmpty();
 }
 
 bool connectWifi() {
@@ -269,7 +272,8 @@ void startDeviceServer(bool provisioning) {
     }
     Serial.printf("Provisioning AP ready: %s\n", WiFi.softAPIP().toString().c_str());
     dnsServer.start(53, "*", WiFi.softAPIP());
-    photowall::bleProvisioning.begin(deviceId, kFirmwareVersion, setupToken);
+    photowall::bleProvisioning.begin(
+        deviceId, kFirmwareVersion, setupToken, !deviceToken.isEmpty());
   } else {
     String mdnsHost = "photowall-" + deviceId.substring(deviceId.length() - 4);
     mdnsHost.toLowerCase();
@@ -416,7 +420,8 @@ void startDeviceServer(bool provisioning) {
     prefs.putString("pass", password);
     prefs.putString("api", requestedApi);
     prefs.putString("setup", setupToken);
-    prefs.remove("token");
+    prefs.remove("force_setup");
+    if (deviceToken.isEmpty()) prefs.remove("token");
     prefs.remove("revision");
     prefs.end();
     sendProvisionCors();
@@ -604,6 +609,24 @@ void reportStatus(const String& state, const String& revision, float progress, c
   postJson("/api/devices/" + deviceId + "/status?token=" + deviceToken, body);
 }
 
+void restartInProvisioningMode(bool preserveBinding) {
+  const String state = preserveBinding ? "reprovisioning" : "unbound";
+  reportStatus(state, displayedRevision, 0);
+  prefs.begin("photowall", false);
+  prefs.remove("ssid");
+  prefs.remove("pass");
+  prefs.remove("api");
+  prefs.remove("setup");
+  prefs.remove("revision");
+  prefs.putBool("force_setup", true);
+  if (!preserveBinding) prefs.remove("token");
+  prefs.end();
+  Serial.printf("Cloud requested BLE reprovisioning: preserve_binding=%s\n",
+                preserveBinding ? "yes" : "no");
+  delay(500);
+  ESP.restart();
+}
+
 void pollForFrame() {
   HTTPClient http;
   WiFiClient plain;
@@ -627,6 +650,11 @@ void pollForFrame() {
 
   JsonDocument document;
   if (deserializeJson(document, response)) return;
+  const String command = document["command"] | "";
+  if (command == "reprovision") {
+    restartInProvisioningMode(document["preserve_binding"] | false);
+    return;
+  }
   const String revision = document["revision"] | "";
   const String frameUrl = document["frame_url"] | "";
   if (revision.isEmpty() || frameUrl.isEmpty()) return;
