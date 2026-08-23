@@ -26,7 +26,8 @@
 | `/api/cluster_people` `/api/people` `/api/retag` `/api/smart_albums` | A | `backend/server.py` |
 | `/api/label` `/api/train` `/api/model` | A | `backend/server.py` |
 | `/api/devices/bootstrap` `/api/devices/auto-claim` | A | `backend/server.py` |
-| `/ws/display` `/output/{name}` `/api/frame.jpg` `/api/thumb/{name}` `/photos/{name}` | A | `backend/server.py` |
+| `/ws/display` `/output/{name}` `/api/thumb/{name}` `/photos/{name}` | A | `backend/server.py` |
+| `/api/frame_id` `/api/frame.jpg` | Legacy LCD only | `backend/server.py` |
 | `/api/stickers` `/api/upload_sticker` `/api/sticker.png/{name}` | B | `backend/routers/content.py` |
 | `/api/templates` `/api/upload_template` `/api/delete_template` `/api/template_preview/{tid}.png` | B | `backend/routers/content.py` |
 | `/api/studio/preview` | B | `backend/routers/content.py` |
@@ -106,12 +107,16 @@ Body：`files`（可多张）。
 - **GET `/api/people`** → `{ "people": [...], "available": bool }`
 - **POST `/api/retag`** → 用最新规则重打库里已有照片。
 
-### 4. 双端互联（A）
+### 4. 网页展示端（A）
 
 - **WS `/ws/display`** — 展示屏订阅。生成新画面时后端 broadcast：`{ "type": "wall", ...Wall }`。
 - **GET `/output/{name}`** — 取生成的 PNG。
-- **GET `/api/frame.jpg`** — 当前画面（给 ESP32 屏拉取）。
 - **GET `/api/thumb/{name}`** / **GET `/photos/{name}`** — 缩略图 / 原图。
+
+历史兼容接口（仅供 `firmware/legacy/display_esp32`，不属于当前设备流或墨水屏测试）：
+
+- **GET `/api/frame_id`** — 早期液晶固件轮询画面版本。
+- **GET `/api/frame.jpg`** — 早期液晶固件拉取 800×480 JPEG。
 
 ### 5. 模型训练（A）
 
