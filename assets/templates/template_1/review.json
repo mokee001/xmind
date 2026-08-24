@@ -1,0 +1,39 @@
+{
+  "template_id": "template_1",
+  "version": "1.0.0",
+  "pass_score": 85,
+  "max_revision_rounds": 2,
+  "checks": {
+    "slot_accuracy": true,
+    "image_count": true,
+    "crop_quality": true,
+    "cutout_quality": false,
+    "visual_balance": true,
+    "content_relevance": true,
+    "background_visibility": true,
+    "text_legibility": true,
+    "signature_font": true
+  },
+  "intentional_design": {
+    "allow_asymmetry": false,
+    "allow_subject_overflow": false,
+    "allow_color_variation": true,
+    "allow_soft_mobile_snapshot_quality": true
+  },
+  "failure_conditions": [
+    "fewer_than_8_images_rendered",
+    "same_image_used_in_multiple_slots_without_reason",
+    "faces_are_severely_cropped",
+    "main_subject_is_cut_off_in_multiple_slots",
+    "generated_sentence_lines_are_unreadable",
+    "signature_font_not_loaded",
+    "background_missing_or_misaligned",
+    "selected_images_are_mostly_screenshots_or_documents"
+  ],
+  "review_notes": [
+    "Every photo should feel like a soft daily-life Plog memory.",
+    "All album photos should be content-aware square crops before placement.",
+    "The nickname signature must use the bundled handwriting font when available.",
+    "Do not penalize natural mobile snapshot texture unless it makes the subject unreadable."
+  ]
+}

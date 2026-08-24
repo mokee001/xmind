@@ -1,0 +1,93 @@
+template_id: template_2
+template_name: christmas_monthly_collage_02
+version: "1.0.0"
+
+description: >
+  A Christmas-themed monthly calendar collage template with a warm church
+  background, decorative holiday stickers, one central hero portrait slot,
+  and seven supporting polaroid-style photo slots.
+
+image_requirement:
+  total_images: 8
+  minimum_available_images: 12
+
+best_for:
+  - daily_life
+  - holiday
+  - christmas
+  - friends
+  - food
+  - portrait
+  - travel
+  - pet
+
+acceptable_content:
+  - indoor
+  - outdoor
+  - group_photo
+  - landscape
+  - object
+  - lifestyle
+  - casual_snapshot
+
+not_recommended_for:
+  - screenshot_heavy_content
+  - highly_repetitive_portraits
+  - low_light_blurry_photos
+  - single_scene_only
+  - text_only_images
+  - very_flat_color_sets
+
+preferred_image_characteristics:
+  - clear_subject
+  - visual_variety
+  - warm_or_festive_mood
+  - good_storytelling
+  - mixed_scene_distribution
+  - at_least_one_strong_portrait
+
+template_characteristics:
+  layout_type: collage
+  visual_style:
+    - christmas
+    - calendar
+    - polaroid
+    - memory
+    - festive
+  hero_image_required: true
+  photo_overlap: true
+  rotated_photo_cards: true
+
+capabilities_required:
+  vision_understanding: true
+  image_scoring: true
+  slot_selection: true
+  crop: true
+  segmentation: false
+  cutout: false
+  background_removal: false
+  generative_image_model: false
+  image_edit_model: false
+  text_generation: false
+  ocr: false
+  upscale: false
+
+capability_preferences:
+  vision_understanding:
+    subject_position_detection: true
+    composition_analysis: true
+    scene_diversity_analysis: true
+  crop:
+    preserve_face: true
+    preserve_main_subject: true
+
+routing_notes:
+  - Prefer this template when the image pool contains multiple scenes and a festive, warm, or memory-oriented mood.
+  - At least one strong portrait or selfie should be available for the central hero slot.
+  - Include a mix of portraits, group photos, food, pets, travel, and small life details when available.
+  - Avoid this template when most candidate images are screenshots, text-only images, or near-duplicates.
+
+execution_instruction: >
+  Read this summary during template routing. If this template is selected,
+  load template.json, processing.json, and review.json before final image
+  selection, image processing, rendering, or final review.

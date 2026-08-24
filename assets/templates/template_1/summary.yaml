@@ -1,0 +1,90 @@
+template_id: template_1
+template_name: plog_collage_calendar_01
+version: "1.0.0"
+
+description: >
+  A Plog-style calendar collage template with eight square lifestyle photo
+  slots, three short mood sentence lines, one concise theme tag, and a
+  handwriting nickname signature.
+
+image_requirement:
+  total_images: 8
+  minimum_available_images: 12
+
+best_for:
+  - daily_life
+  - travel
+  - lifestyle
+  - portrait
+  - food
+  - friends
+  - pet
+  - mixed_content
+
+acceptable_content:
+  - indoor
+  - outdoor
+  - landscape
+  - casual_snapshot
+  - object
+  - architecture
+
+not_recommended_for:
+  - screenshot_heavy_content
+  - highly_repetitive_portraits
+  - text_only_images
+  - low_subject_variety
+  - severe_blur
+
+preferred_image_characteristics:
+  - clear_subject
+  - good_exposure
+  - low_blur
+  - pleasant_color_mood
+  - balanced_set_variety
+  - low_duplicate_similarity
+
+template_characteristics:
+  layout_type: collage
+  visual_style:
+    - plog
+    - calendar
+    - memory
+    - editorial
+  hero_image_required: false
+  square_photo_slots: true
+  generated_copy_required: true
+  handwriting_signature: true
+
+capabilities_required:
+  vision_understanding: true
+  image_scoring: true
+  slot_selection: true
+  crop: true
+  segmentation: false
+  cutout: false
+  background_removal: false
+  generative_image_model: false
+  image_edit_model: false
+  text_generation: true
+  ocr: false
+  upscale: false
+
+capability_preferences:
+  vision_understanding:
+    subject_position_detection: true
+    composition_analysis: true
+    scene_diversity_analysis: true
+  crop:
+    preserve_face: true
+    preserve_main_subject: true
+
+routing_notes:
+  - Prefer this template when the image pool contains soft daily-life memories and mixed scenes.
+  - Select eight visually balanced photos rather than several near-duplicates from the same scene.
+  - Avoid when most candidate images are screenshots, documents, or highly repetitive portraits.
+
+execution_instruction: >
+  Read this summary during template routing. If this template is selected,
+  load template.json, processing.json, and review.json before final image
+  selection, copy generation, image processing, rendering, or final review.

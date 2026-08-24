@@ -1,0 +1,130 @@
+{
+  "template_id": "template_1",
+  "version": "1.0.0",
+  "default_processing": {
+    "resize": true,
+    "crop": true,
+    "color_adjustment": false,
+    "cutout": false,
+    "segmentation": false,
+    "background_removal": false,
+    "upscale": false,
+    "text_generation": true
+  },
+  "global_image_rules": {
+    "minimum_resolution": {
+      "short_side": 900
+    },
+    "allow_mobile_snapshots": true,
+    "avoid": [
+      "screenshot",
+      "text_only_image",
+      "severe_blur",
+      "overexposed_face",
+      "underexposed_photo",
+      "duplicate_scene"
+    ],
+    "prefer": [
+      "clear_subject",
+      "natural_life_moment",
+      "pleasant_color_mood",
+      "scene_diversity",
+      "low_duplicate_similarity"
+    ]
+  },
+  "slots": {
+    "image_1": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_2": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_3": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_4": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_5": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": false,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_6": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_7": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": false,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    },
+    "image_8": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_square",
+        "target_aspect_ratio": "1:1",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": { "enabled": false }
+    }
+  },
+  "text_generation": {
+    "enabled": true,
+    "lines": ["text_1", "text_2", "text_3"],
+    "theme_tag": "text_4",
+    "tone": ["soft", "daily", "lightweight", "visual", "calendar_friendly"],
+    "avoid": ["long_dense_text", "repeated_wording", "hard_sales_language"]
+  },
+  "render_effects": {
+    "preserve_background": true,
+    "preserve_layer_geometry": true,
+    "preserve_layer_effects": true,
+    "load_signature_font_before_rendering": true
+  }
+}

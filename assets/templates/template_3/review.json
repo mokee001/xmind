@@ -1,0 +1,80 @@
+{
+  "template_id": "template_3",
+  "version": "1.0.0",
+  "pass_score": 90,
+  "max_revision_rounds": 2,
+  "checks": {
+    "image_count": {
+      "enabled": true,
+      "expected_total": 15,
+      "expected_cutout_layers": 12,
+      "expected_full_image_layers": 3
+    },
+    "slot_accuracy": {
+      "enabled": true,
+      "dynamic_layers_replaceable": true,
+      "fixed_mock_layers_unchanged": true,
+      "layer_order_matches_template_json": true
+    },
+    "cutout_quality": {
+      "enabled": true,
+      "all_cutout_slots_require_transparency": true,
+      "reject_rectangular_backgrounds": true,
+      "edge_quality": "high",
+      "allow_minor_soft_edge": true,
+      "reject_large_background_fragments": true,
+      "reject_missing_primary_subject_parts": true
+    },
+    "crop_quality": {
+      "enabled": true,
+      "preserve_main_subject": true,
+      "preserve_faces_when_present": true,
+      "allow_intentional_edge_crop": true
+    },
+    "full_image_quality": {
+      "enabled": true,
+      "full_image_slots_keep_complete_rectangular_photo": true,
+      "polaroid_frames_visible": true
+    },
+    "visual_balance": {
+      "enabled": true,
+      "avoid_all_subjects_clustered_in_one_area": true,
+      "avoid_repeated_near_duplicate_photos": true,
+      "maintain_reference_density": true
+    },
+    "content_relevance": {
+      "enabled": true,
+      "prefer_lifestyle_memory_story": true,
+      "avoid_screenshots_or_document_images": true
+    },
+    "output_integrity": {
+      "enabled": true,
+      "format": "png",
+      "width": 2000,
+      "height": 2668,
+      "no_blank_canvas": true,
+      "no_unintended_text": true
+    }
+  },
+  "intentional_design": {
+    "allow_asymmetry": true,
+    "allow_subject_overflow": true,
+    "allow_dense_overlap": true,
+    "allow_color_variation": true,
+    "allow_partial_canvas_edge_crop": true,
+    "allow_rotated_polaroids": true,
+    "allow_flipped_cutout_layers": true
+  },
+  "failure_conditions": [
+    "Any image_cutout slot renders as an opaque rectangular photo in production output.",
+    "A fixed mock paper layer is replaced by a user image.",
+    "The three full-image polaroid slots are missing their paper frame relationship.",
+    "The final output does not match the 2000x2668 canvas size.",
+    "More than two cutout slots contain obvious background remnants."
+  ],
+  "review_notes": [
+    "Compare the result with preview.png for overall density, overlap, and foreground cutout behavior.",
+    "Use structured template.json and processing.json as the source of truth when preview.png conflicts with rules.",
+    "The local full-image fallback is acceptable only while debugging the template lab."
+  ]
+}

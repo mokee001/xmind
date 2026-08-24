@@ -1,0 +1,59 @@
+{
+  "template_id": "template_2",
+  "version": "1.0.0",
+  "pass_score": 85,
+  "max_revision_rounds": 2,
+  "checks": {
+    "slot_accuracy": true,
+    "image_count": true,
+    "crop_quality": true,
+    "cutout_quality": false,
+    "visual_balance": true,
+    "content_relevance": true,
+    "calendar_background_visibility": true,
+    "fixed_asset_alignment": true,
+    "text_legibility": true
+  },
+  "intentional_design": {
+    "allow_asymmetry": true,
+    "allow_photo_overlap": true,
+    "allow_rotated_slots": true,
+    "allow_subject_overflow": false,
+    "allow_color_variation": true,
+    "allow_partial_calendar_occlusion": true
+  },
+  "slot_review_rules": {
+    "image_03": {
+      "must_have_clear_subject": true,
+      "avoid_face_cutoff": true,
+      "preferred_content": [
+        "portrait",
+        "person",
+        "daily_life"
+      ]
+    },
+    "image_05": {
+      "avoid_face_cutoff": true
+    },
+    "image_06": {
+      "prefer_landscape_or_group_scene": true
+    },
+    "image_07": {
+      "prefer_group_or_wide_scene": true
+    }
+  },
+  "failure_conditions": [
+    "fewer_than_8_images_rendered",
+    "hero_slot_has_no_clear_subject",
+    "faces_are_severely_cropped_in_portrait_slots",
+    "fixed_sticker_overlay_missing",
+    "background_missing_or_misaligned",
+    "signature_text_unreadable",
+    "duplicate_image_used_in_multiple_slots_without_reason"
+  ],
+  "review_notes": [
+    "The festive sticker layer is intentional and should sit above all photo slots.",
+    "The collage uses rotated overlapping photo cards; do not penalize intentional asymmetry.",
+    "The output should preserve the warm Christmas calendar mood from preview.png."
+  ]
+}

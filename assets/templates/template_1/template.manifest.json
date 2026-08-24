@@ -1,0 +1,348 @@
+{
+  "schema_version": "calendar_template.v1",
+  "template_id": "template_1_plog_collage",
+  "template_name": "Plog Collage Calendar Template 1",
+  "status": "ready_for_runtime_use",
+  "source": {
+    "archive": "模版1.zip",
+    "scene_file": "scene.json",
+    "images_file": "images.json",
+    "figma_export_type": "scene_json_plus_image_map",
+    "figma": {
+      "url": "https://www.figma.com/design/J7QDx4EVReW4zfGsPvpoZv/%E6%97%A5%E5%8E%86?node-id=131-748&t=mBvyr3BuefI86pUa-4",
+      "file_key": "J7QDx4EVReW4zfGsPvpoZv",
+      "node_id": "131:748",
+      "node_name": "json",
+      "synced_at": "2026-08-21"
+    }
+  },
+  "canvas": {
+    "width": 2000,
+    "height": 2668,
+    "unit": "px"
+  },
+  "assets": {
+    "fonts": [
+      {
+        "id": "nickname_handwriting_font",
+        "file": "(默陌专辑手写体-平面设计使用（含商用）)默陌专辑手写体4.0 (2).ttf",
+        "format": "ttf",
+        "usage": [
+          "nickname"
+        ],
+        "figma_family": "momozhuanji",
+        "license_note": "File name indicates commercial-use design font package. Keep the font file together with this template folder.",
+        "sha256": "7c3d7296f91829fba1ad8e29b92ddbd1bf3295d973bedcd01dc0707f60628aba"
+      }
+    ]
+  },
+  "layer_roles": {
+    "background": {
+      "id": "bg",
+      "editable": false,
+      "description": "Fixed background layer from the template."
+    },
+    "photo_slots": [
+      {
+        "id": "image_1",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_2",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_3",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_4",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_5",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_6",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_7",
+        "role": "album_photo",
+        "required": true
+      },
+      {
+        "id": "image_8",
+        "role": "album_photo",
+        "required": true
+      }
+    ],
+    "dynamic_text": [
+      {
+        "id": "text_1",
+        "role": "photo_based_sentence_line_1",
+        "source": "selected_photos",
+        "required": true,
+        "max_lines": 1
+      },
+      {
+        "id": "text_2",
+        "role": "photo_based_sentence_line_2",
+        "source": "selected_photos",
+        "required": true,
+        "max_lines": 1
+      },
+      {
+        "id": "text_3",
+        "role": "photo_based_sentence_line_3",
+        "source": "selected_photos",
+        "required": true,
+        "max_lines": 1
+      },
+      {
+        "id": "text_4",
+        "role": "theme_or_mood_tag",
+        "source": "selected_photos",
+        "required": true,
+        "max_lines": 1,
+        "examples": [
+          "Traveling",
+          "Weekend",
+          "Sunset",
+          "Daily Life"
+        ]
+      }
+    ],
+    "user_data": [
+      {
+        "id": "nickname",
+        "role": "user_nickname",
+        "source": "app.user.nickname",
+        "font_asset_id": "nickname_handwriting_font",
+        "required": true,
+        "fallback": "Me"
+      }
+    ],
+    "fixed_text": [
+      {
+        "id": "’Plog",
+        "role": "fixed_suffix",
+        "editable": false,
+        "text": "’Plog"
+      }
+    ]
+  },
+  "photo_rules": {
+    "required_photo_count": 8,
+    "photo_source": "user_album",
+    "selection": {
+      "goal": "Select visually strong photos that fit a soft Plog collage style.",
+      "prefer": [
+        "clear_subject",
+        "good_exposure",
+        "low_blur",
+        "pleasant_color_mood",
+        "low_duplicate_similarity",
+        "balanced_set_variety"
+      ],
+      "avoid": [
+        "blurred_photo",
+        "overexposed_photo",
+        "underexposed_photo",
+        "closed_eyes_when_face_is_primary_subject",
+        "important_subject_near_crop_edge",
+        "duplicate_or_near_duplicate_photo"
+      ]
+    },
+    "preprocess_before_placement": {
+      "required": true,
+      "operation": "content_aware_square_crop",
+      "target_aspect_ratio": "1:1",
+      "description": "Each selected photo must be cropped to a square image according to its visual focus before it is placed into a photo slot.",
+      "crop_priority": [
+        "main_subject",
+        "face",
+        "salient_object",
+        "composition_center",
+        "visual_balance"
+      ],
+      "crop_avoid": [
+        "cutting_face",
+        "cutting_main_subject",
+        "empty_center_crop",
+        "placing_key_subject_too_close_to_edge"
+      ]
+    },
+    "placement": {
+      "target_layers": [
+        "image_1",
+        "image_2",
+        "image_3",
+        "image_4",
+        "image_5",
+        "image_6",
+        "image_7",
+        "image_8"
+      ],
+      "figma_image_fill_count_per_layer": 1,
+      "figma_scale_mode": "FILL",
+      "replace_image_fill": true,
+      "preserve_layer_geometry": true,
+      "preserve_layer_effects": true
+    }
+  },
+  "copy_rules": {
+    "text_1_to_text_3": {
+      "task": "Generate three short sentence lines based on the selected photos.",
+      "tone": [
+        "soft",
+        "daily",
+        "lightweight",
+        "visual",
+        "calendar_friendly"
+      ],
+      "constraints": [
+        "one_line_each",
+        "match_the_photo_mood",
+        "avoid_long_or_dense_text",
+        "avoid_repeating_the_same_wording"
+      ]
+    },
+    "text_4": {
+      "task": "Generate one concise theme word or mood tag based on the selected photos.",
+      "format": "short_title_case_or_single_phrase",
+      "examples": [
+        "Traveling",
+        "Weekend",
+        "Sunset",
+        "Daily Life"
+      ]
+    },
+    "nickname": {
+      "task": "Use the current app user's nickname.",
+      "source": "app.user.nickname",
+      "fallback": "Me",
+      "font": {
+        "asset_id": "nickname_handwriting_font",
+        "required": true,
+        "rendering_requirement": "Load the bundled TTF font before rendering the nickname text. Do not substitute this layer with a system default font unless the asset is unavailable."
+      },
+      "length_handling": {
+        "preferred_max_characters": 12,
+        "if_too_long": "truncate_or_reduce_font_size_at_render_time"
+      }
+    },
+    "’Plog": {
+      "task": "Keep the fixed suffix unchanged.",
+      "text": "’Plog"
+    }
+  },
+  "model_io_contract": {
+    "inputs": {
+      "album_photos": "Array of user album photos with local URI, metadata, and optional visual embeddings.",
+      "app_user": {
+        "nickname": "Current app user nickname."
+      }
+    },
+    "expected_output": {
+      "photo_assignments": [
+        {
+          "slot_id": "image_1",
+          "source_photo_id": "photo_id",
+          "crop": {
+            "aspect_ratio": "1:1",
+            "method": "content_aware_square_crop",
+            "focus_reason": "Reason for keeping this crop."
+          }
+        }
+      ],
+      "text": {
+        "text_1": "Generated sentence line 1.",
+        "text_2": "Generated sentence line 2.",
+        "text_3": "Generated sentence line 3.",
+        "text_4": "Generated mood tag."
+      },
+      "user_data": {
+        "nickname": "Resolved user nickname."
+      }
+    }
+  },
+  "validation": {
+    "must_have_layers": [
+      "bg",
+      "image_1",
+      "image_2",
+      "image_3",
+      "image_4",
+      "image_5",
+      "image_6",
+      "image_7",
+      "image_8",
+      "text_1",
+      "text_2",
+      "text_3",
+      "text_4",
+      "nickname",
+      "’Plog"
+    ],
+    "must_replace": [
+      "image_1",
+      "image_2",
+      "image_3",
+      "image_4",
+      "image_5",
+      "image_6",
+      "image_7",
+      "image_8",
+      "text_1",
+      "text_2",
+      "text_3",
+      "text_4",
+      "nickname"
+    ],
+    "must_preserve": [
+      "bg",
+      "’Plog",
+      "photo_slot_geometry",
+      "photo_slot_effects",
+      "text_styles"
+    ],
+    "required_assets": [
+      "nickname_handwriting_font"
+    ],
+    "export": {
+      "width": 2000,
+      "height": 2668,
+      "format": [
+        "png",
+        "jpg"
+      ]
+    }
+  },
+  "figma_node_ids": {
+    "root": "131:748",
+    "bg": "131:747",
+    "image_1": "131:749",
+    "image_2": "131:750",
+    "image_3": "131:751",
+    "image_4": "131:752",
+    "image_5": "131:753",
+    "image_6": "131:756",
+    "image_7": "131:754",
+    "image_8": "131:755",
+    "text_5": "131:768",
+    "nickname": "131:766",
+    "’Plog": "131:757",
+    "text_1": "131:760",
+    "text_2": "131:762",
+    "text_3": "131:764",
+    "text_4": "131:759"
+  }
+}

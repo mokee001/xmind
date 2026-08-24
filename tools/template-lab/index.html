@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>EchooO 模板测试台</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="control-panel">
+        <div class="brand-row">
+          <div>
+            <p class="eyebrow">EchooO Template Lab</p>
+            <h1>模板测试台</h1>
+          </div>
+          <span class="status-pill" id="statusText">待上传</span>
+        </div>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>模板</h2>
+            <span id="activeTemplateName">模板 1</span>
+          </div>
+          <div class="template-list" role="listbox" aria-label="模板选择">
+            <button
+              class="template-option is-active"
+              type="button"
+              data-template-id="template_1"
+              role="option"
+              aria-selected="true"
+            >
+              <span class="template-index">01</span>
+              <span class="template-copy">
+                <strong data-template-name>Plog Collage Calendar</strong>
+                <small>8 张照片 · 2000 x 2668 · Ready</small>
+              </span>
+            </button>
+            <button
+              class="template-option"
+              type="button"
+              data-template-id="template_2"
+              role="option"
+              aria-selected="false"
+            >
+              <span class="template-index">02</span>
+              <span class="template-copy">
+                <strong data-template-name>模板 2</strong>
+                <small>8 张照片 · 2000 x 2668 · Ready</small>
+              </span>
+            </button>
+            <button
+              class="template-option"
+              type="button"
+              data-template-id="template_3"
+              role="option"
+              aria-selected="false"
+            >
+              <span class="template-index">03</span>
+              <span class="template-copy">
+                <strong data-template-name>模板 3</strong>
+                <small>15 张照片 · 2000 x 2668 · Ready</small>
+              </span>
+            </button>
+          </div>
+          <label class="template-name-field">
+            模板名称
+            <input id="templateNameInput" maxlength="36" spellcheck="false" />
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>视觉模型</h2>
+            <span id="modelStateText">本地优先</span>
+          </div>
+          <label>
+            筛选接口
+            <input
+              id="modelEndpointInput"
+              value="http://127.0.0.1:8766/api/screen"
+              spellcheck="false"
+            />
+          </label>
+        </section>
+
+        <section class="drop-zone" id="dropZone" aria-label="上传相册图片">
+          <input
+            id="fileInput"
+            type="file"
+            accept="image/*,.zip,application/zip,application/x-zip-compressed"
+            multiple
+          />
+          <span class="drop-icon">+</span>
+          <span class="drop-copy">
+            <strong>上传相册图片</strong>
+            <small>可多选或拖拽，单次最多导入 300 张</small>
+          </span>
+          <div
+            class="upload-progress"
+            id="uploadProgress"
+            role="progressbar"
+            aria-label="上传进度"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            hidden
+          >
+            <div class="upload-progress-meta">
+              <span id="uploadProgressText">上传进度 0/0</span>
+              <span id="uploadProgressPercent">0%</span>
+            </div>
+            <div class="upload-progress-track">
+              <span id="uploadProgressBar"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>文案</h2>
+            <button class="ghost-button" id="resetCopyButton" type="button">
+              重置
+            </button>
+          </div>
+          <label>
+            昵称
+            <input id="nicknameInput" value="Me" maxlength="18" />
+          </label>
+          <label>
+            句子 1
+            <input id="line1Input" value="Collected softly," />
+          </label>
+          <label>
+            句子 2
+            <input id="line2Input" value="little scenes stay bright," />
+          </label>
+          <label>
+            句子 3
+            <input id="line3Input" value="inside an ordinary day." />
+          </label>
+          <label>
+            Mood Tag
+            <input id="tagInput" value="Daily Life" />
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-heading">
+            <h2>筛选结果</h2>
+            <span id="selectedCount">0/8</span>
+          </div>
+          <div class="selected-list" id="selectedList"></div>
+        </section>
+
+        <div class="action-row">
+          <button class="primary-button" id="generateButton" type="button">
+            筛选并生成
+          </button>
+          <button class="secondary-button" id="downloadButton" type="button" disabled>
+            下载 PNG
+          </button>
+        </div>
+      </aside>
+
+      <section class="preview-panel">
+        <div class="preview-topbar">
+          <div>
+            <p class="eyebrow" id="canvasMeta">Template 01 · Canvas 2000 x 2668</p>
+            <h2 id="previewTitle">Plog Collage Calendar</h2>
+          </div>
+          <button class="ghost-button" id="clearButton" type="button">
+            清空图片
+          </button>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="templateCanvas" width="2000" height="2668"></canvas>
+        </div>
+        <div class="thumb-grid" id="thumbGrid"></div>
+      </section>
+    </main>
+
+    <script src="./app.js?v=template3-cutout-first"></script>
+  </body>
+</html>

@@ -1,0 +1,128 @@
+{
+  "template_id": "template_2",
+  "version": "1.0.0",
+  "default_processing": {
+    "resize": true,
+    "crop": true,
+    "color_adjustment": false,
+    "cutout": false,
+    "segmentation": false,
+    "background_removal": false,
+    "upscale": false
+  },
+  "global_image_rules": {
+    "minimum_resolution": {
+      "short_side": 900
+    },
+    "allow_mobile_snapshots": true,
+    "avoid": [
+      "screenshot",
+      "text_only_image",
+      "severe_blur",
+      "overexposed_face",
+      "duplicate_scene"
+    ],
+    "prefer": [
+      "clear_subject",
+      "natural_life_moment",
+      "warm_or_festive_color",
+      "scene_diversity"
+    ]
+  },
+  "slots": {
+    "image_01": {
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "preserve_face": false,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_02": {
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "preserve_face": false,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_03": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_04": {
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "preserve_face": false,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_05": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_06": {
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "preserve_face": false,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_07": {
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_08": {
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    }
+  },
+  "render_effects": {
+    "apply_template_inner_shadows": true,
+    "apply_template_corner_radius": true,
+    "apply_template_rotation": true,
+    "fixed_assets_are_final": true
+  }
+}

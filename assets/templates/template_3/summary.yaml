@@ -1,0 +1,110 @@
+template_id: template_3
+template_name: layered_cutout_memory_collage
+version: "1.0.0"
+
+description: >
+  A dense scrapbook-style collage on a 2000x2668 canvas. It combines
+  12 transparent foreground cutout images, 3 full-photo polaroid frames,
+  and fixed mock paper layers. The cutout layers must remove the original
+  photo background and keep only the primary subject.
+
+image_requirement:
+  total_images: 15
+  minimum_available_images: 18
+  required_cutout_images: 12
+  required_full_image_slots: 3
+
+best_for:
+  - travel
+  - daily_life
+  - lifestyle
+  - food
+  - portrait
+  - pet
+  - mixed_memory_collage
+
+acceptable_content:
+  - architecture
+  - indoor
+  - outdoor
+  - object
+  - landscape_with_clear_foreground
+  - group_photo
+
+not_recommended_for:
+  - screenshot_heavy_content
+  - text_heavy_images
+  - low_resolution_images
+  - blurry_subjects
+  - very_dark_subjects_on_dark_background
+  - photos_without_clear_foreground_subject
+  - highly_repetitive_portraits_only
+
+preferred_image_characteristics:
+  - clear_primary_subject
+  - strong_foreground_background_separation
+  - visual_variety
+  - mixed_scene_distribution
+  - enough_margin_around_subject
+  - good_edge_detail
+  - medium_to_high_resolution
+
+template_characteristics:
+  layout_type: layered_collage
+  visual_style:
+    - scrapbook
+    - memory_wall
+    - editorial_plog
+  canvas_size:
+    width: 2000
+    height: 2668
+  background_color: "#140A12"
+  dynamic_layers: 15
+  cutout_layers: 12
+  full_image_layers: 3
+  fixed_mock_layers: 6
+  hero_image_required: false
+
+capabilities_required:
+  vision_understanding: true
+  image_scoring: true
+  slot_selection: true
+  crop: true
+  segmentation: true
+  cutout: true
+  background_removal: true
+  generative_image_model: false
+  image_edit_model: false
+  text_generation: false
+  ocr: false
+  upscale: false
+
+capability_preferences:
+  segmentation:
+    target: primary_subject
+    subject_types:
+      - person
+      - pet
+      - food
+      - object
+      - architecture
+      - foreground_scene
+    edge_quality: high
+    alpha_mask_required: true
+    transparent_background: true
+  vision_understanding:
+    subject_position_detection: true
+    composition_analysis: true
+    duplicate_avoidance: true
+
+routing_notes:
+  - Select this template only when production cutout or background removal is available.
+  - Prefer image pools with many different subjects because 12 slots become foreground cutouts.
+  - Full-image slots should receive complete scenes, group photos, landscapes, or story-heavy photos.
+  - Cutout slots should receive photos with a clear main subject and separable background.
+  - If cutout is unavailable, this template may be used for preview only and should not pass final review.
+
+execution_instruction: >
+  Read this summary during template routing. If this template is selected,
+  load template.json, processing.json, and review.json before final image
+  selection, cutout processing, rendering, or review.
