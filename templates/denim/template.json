@@ -1,0 +1,278 @@
+{
+  "canvas": {
+    "width": 1800.0,
+    "height": 2400.0
+  },
+  "background": {
+    "name": "background",
+    "x": 0.0,
+    "y": 0.0,
+    "width": 1800.0,
+    "height": 2400.0,
+    "rotation": 0.0,
+    "depth": 1,
+    "z_index": 0
+  },
+  "photo_slots": [
+    {
+      "name": "photo_1",
+      "x": -112.0,
+      "y": -40.0,
+      "width": 947.0,
+      "height": 947.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 7,
+      "priority": "high",
+      "asset_file": null
+    },
+    {
+      "name": "photo_2",
+      "x": 879.0,
+      "y": -40.0,
+      "width": 1005.0,
+      "height": 1005.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 10,
+      "priority": "high",
+      "asset_file": null
+    },
+    {
+      "name": "photo_hero",
+      "x": 232.0,
+      "y": 624.0,
+      "width": 1137.0,
+      "height": 1137.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 11,
+      "priority": "hero",
+      "asset_file": null
+    },
+    {
+      "name": "photo_3",
+      "x": -50.0,
+      "y": 1612.0,
+      "width": 971.0,
+      "height": 971.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 20,
+      "priority": "high",
+      "asset_file": null
+    },
+    {
+      "name": "photo_4",
+      "x": 928.0,
+      "y": 1572.0,
+      "width": 920.0,
+      "height": 920.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 22,
+      "priority": "high",
+      "asset_file": null
+    }
+  ],
+  "stickers": [
+    {
+      "name": "sticker_stars",
+      "x": 83.0,
+      "y": 126.0,
+      "width": 1526.68,
+      "height": 1012.13,
+      "rotation": 81.0,
+      "depth": 1,
+      "z_index": 1,
+      "asset_file": "sticker_stars.png"
+    },
+    {
+      "name": "sticker_dots",
+      "x": 1079.0,
+      "y": 582.0,
+      "width": 1265.24,
+      "height": 964.73,
+      "rotation": 101.0,
+      "depth": 1,
+      "z_index": 2,
+      "asset_file": "sticker_dots.png"
+    },
+    {
+      "name": "sticker_square",
+      "x": 921.0,
+      "y": 175.0,
+      "width": 980.01,
+      "height": 980.01,
+      "rotation": -19.0,
+      "depth": 1,
+      "z_index": 3,
+      "asset_file": "sticker_square.png"
+    },
+    {
+      "name": "sticker_zipper",
+      "x": 218.0,
+      "y": -264.0,
+      "width": 1378.58,
+      "height": 1447.01,
+      "rotation": -38.0,
+      "depth": 1,
+      "z_index": 4,
+      "asset_file": "sticker_zipper.png"
+    },
+    {
+      "name": "sticker_red",
+      "x": 512.0,
+      "y": 442.0,
+      "width": 733.37,
+      "height": 641.71,
+      "rotation": -10.0,
+      "depth": 1,
+      "z_index": 5,
+      "asset_file": "sticker_red.png"
+    },
+    {
+      "name": "sticker_hearts",
+      "x": -217.0,
+      "y": -339.0,
+      "width": 879.68,
+      "height": 1289.33,
+      "rotation": 11.0,
+      "depth": 1,
+      "z_index": 6,
+      "asset_file": "sticker_hearts.png"
+    },
+    {
+      "name": "sticker_lace",
+      "x": -112.0,
+      "y": 461.0,
+      "width": 930.88,
+      "height": 933.82,
+      "rotation": -123.0,
+      "depth": 1,
+      "z_index": 8,
+      "asset_file": "sticker_lace.png"
+    },
+    {
+      "name": "sticker_jean1",
+      "x": -741.0,
+      "y": 532.0,
+      "width": 1791.5,
+      "height": 1338.95,
+      "rotation": -105.0,
+      "depth": 1,
+      "z_index": 9,
+      "asset_file": "sticker_jean1.png"
+    },
+    {
+      "name": "sticker_stars",
+      "x": 484.0,
+      "y": 1246.0,
+      "width": 1562.59,
+      "height": 1098.7,
+      "rotation": 103.0,
+      "depth": 1,
+      "z_index": 12,
+      "asset_file": "sticker_stars.png"
+    },
+    {
+      "name": "sticker_grey",
+      "x": -342.53,
+      "y": 1423.14,
+      "width": 1215.88,
+      "height": 735.24,
+      "rotation": -87.0,
+      "depth": 1,
+      "z_index": 13,
+      "asset_file": "sticker_grey.png"
+    },
+    {
+      "name": "sticker_pocket",
+      "x": 118.0,
+      "y": 1313.0,
+      "width": 1100.11,
+      "height": 1110.31,
+      "rotation": -4.0,
+      "depth": 1,
+      "z_index": 14,
+      "asset_file": "sticker_pocket.png"
+    },
+    {
+      "name": "sticker_button",
+      "x": 677.0,
+      "y": -167.0,
+      "width": 300.0,
+      "height": 299.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 15,
+      "asset_file": "sticker_button.png"
+    },
+    {
+      "name": "sticker_hole",
+      "x": -134.0,
+      "y": 927.0,
+      "width": 651.0,
+      "height": 967.0,
+      "rotation": -0.0,
+      "depth": 1,
+      "z_index": 16,
+      "asset_file": "sticker_hole.png"
+    },
+    {
+      "name": "sticker_jean2",
+      "x": 1199.0,
+      "y": 781.0,
+      "width": 1538.28,
+      "height": 709.31,
+      "rotation": -172.0,
+      "depth": 1,
+      "z_index": 17,
+      "asset_file": "sticker_jean2.png"
+    },
+    {
+      "name": "sticker_leather",
+      "x": 1347.0,
+      "y": 1242.0,
+      "width": 605.22,
+      "height": 496.69,
+      "rotation": 76.0,
+      "depth": 1,
+      "z_index": 18,
+      "asset_file": "sticker_leather.png"
+    },
+    {
+      "name": "sticker_2026",
+      "x": 13.0,
+      "y": 1107.0,
+      "width": 1524.5,
+      "height": 766.5,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 19,
+      "asset_file": "sticker_2026.png"
+    },
+    {
+      "name": "sticker_heart",
+      "x": 1261.0,
+      "y": 749.0,
+      "width": 496.74,
+      "height": 467.8,
+      "rotation": 8.0,
+      "depth": 1,
+      "z_index": 21,
+      "asset_file": "sticker_heart.png"
+    },
+    {
+      "name": "sticker_flower",
+      "x": 559.0,
+      "y": 2162.0,
+      "width": 484.0,
+      "height": 421.0,
+      "rotation": 0.0,
+      "depth": 1,
+      "z_index": 23,
+      "asset_file": "sticker_flower.png"
+    }
+  ]
+}

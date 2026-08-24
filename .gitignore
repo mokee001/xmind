@@ -1,0 +1,37 @@
+# === 敏感数据 (绝对不能推!) ===
+.env
+.env.*
+!.env.example
+
+# === 用户私有照片数据 ===
+raw/
+pet-only/
+output/
+assets/
+
+# === 打分/选片缓存 (含照片路径 + 100+ MB, 每人自己跑) ===
+cache/
+
+# === Python 环境 (macOS 专属, 别人机器上也用不了) ===
+venv/
+venv-collage/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# === 归档目录 (含旧 v1.5 代码 + 照片, 保留在本地) ===
+archives/
+
+# === 调试/临时产物 ===
+tmp_*.py
+test_cutout.png
+*.log
+
+# === 系统/编辑器 ===
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
