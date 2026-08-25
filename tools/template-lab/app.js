@@ -6,12 +6,163 @@ const SIGNATURE_FONT_URL = `${ASSET_ROOT}/template_1/fonts/momo-zhuanji-handwrit
 const MODEL_CANDIDATE_LIMIT = 16;
 const MODEL_IMAGE_MAX_SIDE = 768;
 const MODEL_REQUEST_TIMEOUT_MS = 90000;
-const CUTOUT_IMAGE_MAX_SIDE = 1400;
+const CUTOUT_IMAGE_MAX_SIDE = 1800;
 const CUTOUT_REQUEST_TIMEOUT_MS = 120000;
 const MAX_IMPORT_IMAGES = 300;
 const TEMPLATE_NAME_STORAGE_KEY = "echooo-template-lab-template-names";
-const IMAGE_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i;
+const IMAGE_EXTENSION_PATTERN = /\.(avif|bmp|heic|heif|jpe?g|png|webp)$/i;
 const ZIP_EXTENSION_PATTERN = /\.zip$/i;
+const DYNAMIC_MEDIA_EXTENSION_PATTERN = /\.(gif|mov|mp4|m4v|avi|webm)$/i;
+const SCREEN_CAPTURE_NAME_PATTERN = /(screenshot|screen[ _-]?shot|screen[ _-]?capture|screen[ _-]?record|screenrecording|rp[ _-]?replay|截屏|截图|屏幕截图|屏幕录制|屏幕录像|录屏|螢幕快照|螢幕截圖|螢幕錄影)/i;
+const PRIVACY_NAME_PATTERN = /(身份证|证件|护照|银行卡|信用卡|验证码|密码|支付码|收款码|二维码|账单|订单|快递|运单|地址|病历|处方|医保|社保|合同|发票|票据|id[ _-]?card|passport|bank[ _-]?card|credit[ _-]?card|password|verification[ _-]?code|payment|invoice|receipt|bill|order|tracking|address|medical|license[ _-]?plate|qr[ _-]?code)/i;
+const DUPLICATE_HASH_DISTANCE = 6;
+const NEAR_DUPLICATE_HASH_DISTANCE = 10;
+const NEAR_DUPLICATE_COLOR_SIMILARITY = 0.9;
+
+const TEMPLATE_3_REQUIREMENTS = {
+  imageBg: {
+    visualLayer: 10,
+    referenceRole: "10 background, no cutout",
+    intent: "Full background image, not a cutout. It should read like the final reference background: travel, architecture, city street, mountain, or wide landscape scene.",
+    requiredSubjects: ["building", "architecture", "landscape"],
+    preferredContent: ["travel", "outdoor", "city", "mountain", "wide_scene"],
+    template3Roles: ["background_photo"],
+    avoidContent: ["closeup_portrait", "screenshot", "text_document"],
+    useCompletePhoto: true,
+  },
+  building: {
+    visualLayer: 10,
+    referenceRole: "background architecture support",
+    intent: "Transparent cutout of a building, tower, landmark, street facade, or architectural foreground that supports the background.",
+    requiredSubjects: ["building", "architecture", "landmark"],
+    preferredContent: ["travel", "city", "tower", "street", "outdoor"],
+    template3Roles: ["building_cutout"],
+    avoidContent: ["closeup_portrait", "food_closeup", "screenshot"],
+    completeSubject: true,
+    minSubjectBboxRatio: 0.28,
+    cutoutDisplay: { minFrameCoverage: 0.82, maxAutoScale: 1.22, transparentTrimPadding: 0.015 },
+  },
+  animalPetBack: {
+    visualLayer: 9,
+    referenceRole: "9 complete animal cutout",
+    intent: "Complete animal or pet cutout for the upper-left reference position, such as sheep, goat, cat, dog, or another clear animal.",
+    requiredSubjects: ["animal", "pet"],
+    preferredContent: ["cat", "dog", "goat", "sheep", "cute_subject"],
+    template3Roles: ["animal_pet_cutout"],
+    avoidContent: ["building_only", "food_only", "screenshot"],
+    completeSubject: true,
+    minSubjectBboxRatio: 0.24,
+    cutoutDisplay: { minFrameCoverage: 0.72, maxAutoScale: 1.45, transparentTrimPadding: 0.02 },
+  },
+  animalPetFront: {
+    visualLayer: 2,
+    referenceRole: "2 complete animal cutout",
+    intent: "Complete animal or pet cutout for the lower-left foreground position. The whole animal should be visible and not clipped by the source photo.",
+    requiredSubjects: ["animal", "pet"],
+    preferredContent: ["cat", "dog", "goat", "sheep", "cute_subject"],
+    template3Roles: ["animal_pet_cutout"],
+    avoidContent: ["building_only", "food_only", "screenshot"],
+    completeSubject: true,
+    minSubjectBboxRatio: 0.24,
+    cutoutDisplay: { minFrameCoverage: 0.72, maxAutoScale: 1.4, transparentTrimPadding: 0.02 },
+  },
+  foodBack: {
+    visualLayer: 8,
+    referenceRole: "8 complete food cutout",
+    intent: "Complete food cutout for back/mid food positions. Prefer a dish, plate, bowl, drink, or restaurant table item with clear full boundary.",
+    requiredSubjects: ["food"],
+    preferredContent: ["dish", "plate", "bowl", "restaurant", "meal", "dessert", "drink"],
+    template3Roles: ["food_cutout"],
+    avoidContent: ["portrait_only", "building_only", "screenshot"],
+    completeSubject: true,
+    minSubjectBboxRatio: 0.32,
+    cutoutDisplay: { minFrameCoverage: 0.78, maxAutoScale: 1.35, transparentTrimPadding: 0.012 },
+  },
+  foodFront: {
+    visualLayer: 1,
+    referenceRole: "1 complete food cutout, left edge should not be cropped",
+    intent: "Complete foreground food cutout. Prefer a wide food/table photo where the food continues naturally and the left side of the source image is not visibly clipped.",
+    requiredSubjects: ["food"],
+    preferredContent: ["dish", "plate", "bowl", "restaurant", "meal", "wide_food_table"],
+    template3Roles: ["food_cutout"],
+    avoidContent: ["portrait_only", "building_only", "screenshot"],
+    completeSubject: true,
+    avoidCroppedEdges: ["left"],
+    minSubjectBboxRatio: 0.34,
+    cutoutDisplay: { minFrameCoverage: 0.88, maxAutoScale: 1.35, transparentTrimPadding: 0.01, alignY: "bottom" },
+  },
+  personRight: {
+    visualLayer: 5,
+    referenceRole: "5 complete person cutout, left edge should not be cropped",
+    intent: "Complete person cutout for the right-side portrait position. The person should have a clear face/body and the left side of the source image should not cut through the subject.",
+    requiredSubjects: ["person", "portrait"],
+    preferredContent: ["selfie", "face", "upper_body", "daily_life"],
+    template3Roles: ["person_cutout"],
+    avoidContent: ["food_only", "building_only", "landscape_only", "screenshot"],
+    completeSubject: true,
+    preserveFace: true,
+    avoidCroppedEdges: ["left"],
+    minSubjectBboxRatio: 0.34,
+    cutoutDisplay: { minFrameCoverage: 0.82, maxAutoScale: 1.3, transparentTrimPadding: 0.018, alignX: "right" },
+  },
+  personLeft: {
+    visualLayer: 2,
+    referenceRole: "2 complete person cutout, right edge should not be cropped",
+    intent: "Complete person cutout for the large lower-left foreground position. Prefer a clear portrait/selfie where the right side of the source image does not cut through the subject.",
+    requiredSubjects: ["person", "portrait"],
+    preferredContent: ["selfie", "face", "upper_body", "daily_life"],
+    template3Roles: ["person_cutout"],
+    avoidContent: ["food_only", "building_only", "landscape_only", "screenshot"],
+    completeSubject: true,
+    preserveFace: true,
+    avoidCroppedEdges: ["right"],
+    minSubjectBboxRatio: 0.36,
+    cutoutDisplay: { minFrameCoverage: 0.86, maxAutoScale: 1.22, transparentTrimPadding: 0.018, alignX: "left" },
+  },
+  plant: {
+    visualLayer: 4,
+    referenceRole: "4 complete plant cutout, left edge should not be cropped",
+    intent: "Complete plant or flower cutout for the right foreground. Prefer bouquet, flowers, or leaves where the left side of the source image is not visibly clipped.",
+    requiredSubjects: ["plant", "flower"],
+    preferredContent: ["bouquet", "leaves", "floral", "decorative_object"],
+    template3Roles: ["plant_cutout"],
+    avoidContent: ["portrait_only", "building_only", "screenshot"],
+    completeSubject: true,
+    avoidCroppedEdges: ["left"],
+    minSubjectBboxRatio: 0.26,
+    cutoutDisplay: { minFrameCoverage: 0.8, maxAutoScale: 1.35, transparentTrimPadding: 0.018, alignX: "right", alignY: "bottom" },
+  },
+  peopleSceneMain: {
+    visualLayer: 6,
+    referenceRole: "6 polaroid",
+    intent: "Complete rectangular polaroid photo. Prefer a strong daily-life people scene, mirror selfie, friends, or indoor moment that looks good inside the tilted frame.",
+    requiredSubjects: ["person", "people"],
+    preferredContent: ["group_photo", "friends", "indoor", "party", "mirror_selfie", "daily_life"],
+    template3Roles: ["polaroid_people"],
+    avoidContent: ["isolated_object_only", "screenshot", "text_document"],
+    useCompletePhoto: true,
+  },
+  peopleSceneTop: {
+    visualLayer: 7,
+    referenceRole: "7 polaroid",
+    intent: "Complete rectangular polaroid photo for the upper frame. Prefer a lively group photo, party, or friends scene that remains readable when small.",
+    requiredSubjects: ["person", "people"],
+    preferredContent: ["group_photo", "friends", "indoor", "party", "daily_life"],
+    template3Roles: ["polaroid_people"],
+    avoidContent: ["isolated_object_only", "screenshot", "text_document"],
+    useCompletePhoto: true,
+  },
+  storyScene: {
+    visualLayer: 3,
+    referenceRole: "3 polaroid",
+    intent: "Complete rectangular polaroid photo for the lower frame. Prefer travel, landscape, food scene, or story-heavy daily moment that matches the final collage.",
+    requiredSubjects: ["scene"],
+    preferredContent: ["travel", "landscape", "food_scene", "daily_life", "outdoor"],
+    template3Roles: ["polaroid_story"],
+    avoidContent: ["screenshot", "text_document", "blank_scene"],
+    useCompletePhoto: true,
+  },
+};
 
 const TEMPLATES = {
   template_1: {
@@ -101,7 +252,7 @@ const TEMPLATES = {
     shortName: "模板 3",
     title: "模板 3",
     meta: "Template 03 · Canvas 2000 x 2668",
-    requiredCount: 15,
+    requiredCount: 14,
     backgroundColor: "#140a12",
     photoSlots: [],
     cutout: {
@@ -112,27 +263,26 @@ const TEMPLATES = {
       fallback: "fullImagePreview",
     },
     layers: [
-      { id: "image_cutout_01", figmaNodeId: "146:978", type: "image_cutout", index: 0, frame: { x: 0, y: 0, w: 2000, h: 2668 } },
-      { id: "image_cutout_02", figmaNodeId: "146:979", type: "image_cutout", index: 1, frame: { x: 0, y: 0, w: 954, h: 1349 }, alignY: "bottom" },
-      { id: "image_cutout_03", figmaNodeId: "146:980", type: "image_cutout", index: 2, frame: { x: 0, y: 0, w: 2000, h: 2116 }, alignY: "top" },
-      { id: "image_cutout_04", figmaNodeId: "146:981", type: "image_cutout", index: 3, frame: { x: 1406.5, y: 17.5, w: 610.917, h: 575.917 }, rotationDegrees: -90 },
-      { id: "image_cutout_05", figmaNodeId: "146:982", type: "image_cutout", index: 4, frame: { x: 0, y: 0, w: 476, h: 708 } },
-      { id: "image_cutout_06", figmaNodeId: "146:983", type: "image_cutout", index: 5, frame: { x: -4, y: 568, w: 636, h: 456 } },
-      { id: "mock_01_back", figmaNodeId: "146:986", type: "mock", frame: { x: 298.495, y: 831.514, w: 1131.269, h: 750.334 }, rotationDegrees: -13.05, radius: 7.12, color: "#f8f8f8" },
-      { id: "mock_01_front", figmaNodeId: "146:987", type: "mock", frame: { x: 288.349, y: 831.214, w: 1129.599, h: 645.91 }, rotationDegrees: -13.05, radius: 7.12, color: "#f2f3ee" },
-      { id: "image01", figmaNodeId: "146:988", type: "image", index: 6, frame: { x: 316.624, y: 865.532, w: 1065.05, h: 583.403 }, rotationDegrees: -13.05, radius: 3.56, shadow: true },
-      { id: "mock_02_back", figmaNodeId: "146:990", type: "mock", frame: { x: 904.786, y: 168.733, w: 800.909, h: 579.725 }, rotationDegrees: 9.09, radius: 5.501, color: "#f8f8f8" },
-      { id: "mock_02_front", figmaNodeId: "146:991", type: "mock", frame: { x: 912.758, y: 168.287, w: 799.727, h: 499.044 }, rotationDegrees: 9.09, radius: 5.501, color: "#f2f3ee" },
-      { id: "image02", figmaNodeId: "146:992", type: "image", index: 7, frame: { x: 932.109, y: 193.509, w: 754.028, h: 450.75 }, rotationDegrees: 9.09, radius: 2.751, shadow: true },
-      { id: "image_cutout_07", figmaNodeId: "146:993", type: "image_cutout", index: 8, frame: { x: 1134, y: 485, w: 866, h: 1303 } },
-      { id: "image_cutout_08", figmaNodeId: "146:994", type: "image_cutout", index: 9, frame: { x: 1424, y: 1273, w: 584, h: 843 }, alignY: "top" },
-      { id: "mock_03_back", figmaNodeId: "146:996", type: "mock", frame: { x: 870.232, y: 1754.815, w: 986.643, h: 714.166 }, rotationDegrees: 9.09, radius: 6.777, color: "#f8f8f8" },
-      { id: "mock_03_front", figmaNodeId: "146:997", type: "mock", frame: { x: 880.058, y: 1754.264, w: 985.186, h: 614.775 }, rotationDegrees: 9.09, radius: 6.777, color: "#f2f3ee" },
-      { id: "image03", figmaNodeId: "146:998", type: "image", index: 10, frame: { x: 903.93, y: 1785.35, w: 928.89, h: 555.281 }, rotationDegrees: 9.09, radius: 3.389, shadow: true },
-      { id: "image_cutout_09", figmaNodeId: "146:999", type: "image_cutout", index: 11, frame: { x: 716, y: 2116, w: 1292, h: 552 } },
-      { id: "image_cutout_10", figmaNodeId: "146:1000", type: "image_cutout", index: 12, frame: { x: 0, y: 1234, w: 1212, h: 1434 }, rotationDegrees: 180, scaleY: -1 },
-      { id: "image_cutout_11", figmaNodeId: "146:1001", type: "image_cutout", index: 13, frame: { x: 0, y: 1879, w: 239, h: 322 } },
-      { id: "image_cutout_12", figmaNodeId: "146:1002", type: "image_cutout", index: 14, frame: { x: -36.107, y: 1029.225, w: 550.866, h: 359.408 }, rotationDegrees: 172.15, scaleY: -1, alignY: "bottom" },
+      { id: "image_bg", name: "image_bg", figmaNodeId: "155:119", type: "image", index: 0, frame: { x: 0, y: 0, w: 2000, h: 2668 }, requirements: TEMPLATE_3_REQUIREMENTS.imageBg },
+      { id: "image_cutout_building_02", name: "image_cutout_building_02", figmaNodeId: "155:174", type: "image_cutout", index: 1, frame: { x: 0, y: 0, w: 954, h: 1349 }, alignY: "bottom", requirements: TEMPLATE_3_REQUIREMENTS.building },
+      { id: "image_cutout_building_01", name: "image_cutout_building_01", figmaNodeId: "155:172", type: "image_cutout", index: 2, frame: { x: 0, y: 0, w: 2000, h: 2116 }, alignY: "top", requirements: TEMPLATE_3_REQUIREMENTS.building },
+      { id: "image_cutout_animal_pet_02", name: "image_cutout_animal/pet_02", figmaNodeId: "155:120", type: "image_cutout", index: 3, frame: { x: 0, y: 0, w: 476, h: 708 }, requirements: TEMPLATE_3_REQUIREMENTS.animalPetBack },
+      { id: "image_cutout_food_03", name: "image_cutout_food_03", figmaNodeId: "155:121", type: "image_cutout", index: 4, frame: { x: 1406.5, y: 17.5, w: 610.917, h: 575.917 }, rotationDegrees: -90, requirements: TEMPLATE_3_REQUIREMENTS.foodBack },
+      { id: "mock_01_back", figmaNodeId: "155:122", type: "mock", frame: { x: 298.495, y: 831.514, w: 1131.269, h: 750.334 }, rotationDegrees: -13.05, radius: 7.12, color: "#f8f8f8" },
+      { id: "image_cutout_food_02", name: "image_cutout_food_02", figmaNodeId: "155:123", type: "image_cutout", index: 5, frame: { x: -4, y: 568, w: 636, h: 456 }, requirements: TEMPLATE_3_REQUIREMENTS.foodBack },
+      { id: "mock_01_front", figmaNodeId: "155:128", type: "mock", frame: { x: 288.349, y: 831.214, w: 1129.599, h: 645.91 }, rotationDegrees: -13.05, radius: 7.12, color: "#f2f3ee" },
+      { id: "image01", name: "image01", figmaNodeId: "155:129", type: "image", index: 6, frame: { x: 316.624, y: 865.532, w: 1065.05, h: 583.403 }, rotationDegrees: -13.05, radius: 3.56, shadow: true, requirements: TEMPLATE_3_REQUIREMENTS.peopleSceneMain },
+      { id: "mock_02_back", figmaNodeId: "155:130", type: "mock", frame: { x: 904.786, y: 168.733, w: 800.909, h: 579.725 }, rotationDegrees: 9.09, radius: 5.501, color: "#f8f8f8" },
+      { id: "mock_02_front", figmaNodeId: "155:131", type: "mock", frame: { x: 912.758, y: 168.287, w: 799.727, h: 499.044 }, rotationDegrees: 9.09, radius: 5.501, color: "#f2f3ee" },
+      { id: "image02", name: "image02", figmaNodeId: "155:132", type: "image", index: 7, frame: { x: 932.109, y: 193.509, w: 754.028, h: 450.75 }, rotationDegrees: 9.09, radius: 2.751, shadow: true, requirements: TEMPLATE_3_REQUIREMENTS.peopleSceneTop },
+      { id: "mock_03_back", figmaNodeId: "155:133", type: "mock", frame: { x: 870.232, y: 1754.815, w: 986.643, h: 714.166 }, rotationDegrees: 9.09, radius: 6.777, color: "#f8f8f8" },
+      { id: "image_cutout_person_02", name: "image_cutout_person_02", figmaNodeId: "155:134", type: "image_cutout", index: 8, frame: { x: 1134, y: 485, w: 866, h: 1303 }, requirements: TEMPLATE_3_REQUIREMENTS.personRight },
+      { id: "image_cutout_plant_01", name: "image_cutout_plant_01", figmaNodeId: "155:135", type: "image_cutout", index: 9, frame: { x: 1424, y: 1273, w: 584, h: 843 }, alignY: "top", requirements: TEMPLATE_3_REQUIREMENTS.plant },
+      { id: "mock_03_front", figmaNodeId: "155:136", type: "mock", frame: { x: 880.058, y: 1754.264, w: 985.186, h: 614.775 }, rotationDegrees: 9.09, radius: 6.777, color: "#f2f3ee" },
+      { id: "image03", name: "image03", figmaNodeId: "155:143", type: "image", index: 10, frame: { x: 903.93, y: 1785.35, w: 928.89, h: 555.281 }, rotationDegrees: 9.09, radius: 3.389, shadow: true, requirements: TEMPLATE_3_REQUIREMENTS.storyScene },
+      { id: "image_cutout_person_01", name: "image_cutout_person_01", figmaNodeId: "155:144", type: "image_cutout", index: 11, frame: { x: 0, y: 1234, w: 1212, h: 1434 }, rotationDegrees: 180, scaleY: -1, requirements: TEMPLATE_3_REQUIREMENTS.personLeft },
+      { id: "image_cutout_animal_pet_01", name: "image_cutout_animal/pet_01", figmaNodeId: "155:145", type: "image_cutout", index: 12, frame: { x: -36.107, y: 1029.225, w: 550.866, h: 359.408 }, rotationDegrees: 172.15, scaleY: -1, alignY: "bottom", requirements: TEMPLATE_3_REQUIREMENTS.animalPetFront },
+      { id: "image_cutout_food_01", name: "image_cutout_food_01", figmaNodeId: "155:146", type: "image_cutout", index: 13, frame: { x: 716, y: 2116, w: 1292, h: 552 }, requirements: TEMPLATE_3_REQUIREMENTS.foodFront },
     ],
     overlays: [],
     copyLines: [],
@@ -155,6 +305,7 @@ const state = {
   importing: false,
   selecting: false,
   templateNames: loadTemplateNames(),
+  nextPhotoIndex: 0,
 };
 
 const els = {
@@ -190,6 +341,7 @@ const els = {
 const ctx = els.canvas.getContext("2d", { alpha: false });
 const assetImages = new Map();
 const cutoutRequestCache = new Map();
+const cutoutBoundsCache = new WeakMap();
 
 preloadTemplateAssets();
 loadSignatureFont();
@@ -262,7 +414,20 @@ async function importFiles(files) {
 
   try {
     const sortedFiles = stableSortFiles(files);
-    const directImages = sortedFiles.filter(isImageFile);
+    const directMedia = sortedFiles.filter(isImportMediaFile);
+    const directImages = [];
+    let prefilterRejectCount = 0;
+    let unreadableCount = 0;
+
+    for (const file of directMedia) {
+      const reasons = prefilterFileReasons(file);
+      if (reasons.length || !isImageFile(file)) {
+        prefilterRejectCount += 1;
+      } else {
+        directImages.push(file);
+      }
+    }
+
     const zipFiles = sortedFiles.filter(isZipFile);
     const imageFiles = directImages.slice(0, MAX_IMPORT_IMAGES);
     let discoveredCount = directImages.length;
@@ -276,6 +441,7 @@ async function importFiles(files) {
         try {
           const zipResult = await extractZipImages(zipFile, MAX_IMPORT_IMAGES - imageFiles.length);
           discoveredCount += zipResult.totalImages;
+          prefilterRejectCount += zipResult.prefilterRejectCount;
           imageFiles.push(...zipResult.files);
         } catch (error) {
           zipErrorCount += 1;
@@ -285,8 +451,9 @@ async function importFiles(files) {
     }
 
     if (!imageFiles.length) {
-      setStatus(zipErrorCount ? "文件读取失败" : "没有图片");
-      setUploadProgress(0, 0, zipErrorCount ? "文件读取失败" : "没有图片");
+      const emptyLabel = prefilterRejectCount ? "已过滤，无可用图片" : (zipErrorCount ? "文件读取失败" : "没有图片");
+      setStatus(emptyLabel);
+      setUploadProgress(0, 0, emptyLabel);
       return;
     }
 
@@ -299,30 +466,44 @@ async function importFiles(files) {
         if (imageFiles.length >= 40 && index % 20 === 0) {
           setStatus(`分析中 ${index + 1}/${imageFiles.length}`);
         }
-        nextPhotos.push(await createPhotoRecord(file));
+        const photo = await createPhotoRecord(file);
+        const reasons = prefilterPhotoReasons(photo);
+        if (reasons.length) {
+          photo.prefilterReasons = reasons;
+          URL.revokeObjectURL(photo.url);
+          prefilterRejectCount += 1;
+        } else {
+          nextPhotos.push(photo);
+        }
       } catch (error) {
+        unreadableCount += 1;
         console.warn("Skip unreadable image", file.name, error);
       }
       setUploadProgress(index + 1, imageFiles.length, "上传进度");
     }
 
-    if (!nextPhotos.length) {
-      setStatus("图片读取失败");
-      setUploadProgress(0, imageFiles.length, "图片读取失败");
+    if (!nextPhotos.length && !state.photos.length) {
+      const emptyLabel = prefilterRejectCount ? "已过滤，无可用图片" : "图片读取失败";
+      setStatus(emptyLabel);
+      setUploadProgress(imageFiles.length, imageFiles.length, emptyLabel);
       return;
     }
 
     state.selected = [];
     state.generated = false;
-    state.photos.push(...nextPhotos);
-    setUploadProgress(imageFiles.length, imageFiles.length, "上传完成");
-    if (limited) {
-      setStatus(`已取前 ${MAX_IMPORT_IMAGES} 张`);
-    } else if (zipErrorCount) {
-      setStatus("部分文件已跳过");
-    } else {
-      setStatus("上传完成");
+    const deduped = dedupePhotoPool([...state.photos, ...nextPhotos]);
+    state.photos = deduped.photos;
+    for (const photo of deduped.removed) {
+      URL.revokeObjectURL(photo.url);
     }
+
+    setUploadProgress(imageFiles.length, imageFiles.length, "上传完成");
+    setStatus(formatImportStatus({
+      limited,
+      prefilterRejectCount,
+      duplicateCount: deduped.removed.length,
+      skippedCount: zipErrorCount + unreadableCount,
+    }));
     renderLists();
     drawTemplate();
   } finally {
@@ -368,8 +549,8 @@ async function runSelection() {
     }
     setModelState(`模型筛选中 ${Math.min(state.photos.length, MODEL_CANDIDATE_LIMIT)} 张`);
     setStatus("视觉模型筛选中");
-    const modelResult = await requestModelSelection(endpoint, state.photos, requiredCount);
-    state.selected = applyModelSelection(modelResult, requiredCount);
+    const modelResult = await requestModelSelection(endpoint, state.photos, currentTemplate());
+    state.selected = applyModelSelection(modelResult, currentTemplate());
     setStatus("模型已生成");
     setModelState(`${formatModelName(modelResult.model)} 已连接`);
   } catch (error) {
@@ -400,6 +581,7 @@ function clearPhotos() {
   state.generated = false;
   state.importing = false;
   state.selecting = false;
+  state.nextPhotoIndex = 0;
   renderLists();
   drawTemplate();
   setStatus("待上传");
@@ -561,7 +743,25 @@ function readDirectoryEntries(reader) {
 }
 
 function isImageFile(file) {
+  if (isUnsupportedDynamicMedia(file)) {
+    return false;
+  }
   return (file.type || "").startsWith("image/") || IMAGE_EXTENSION_PATTERN.test(file.name);
+}
+
+function isImportMediaFile(file) {
+  const type = file.type || "";
+  return type.startsWith("image/") ||
+    type.startsWith("video/") ||
+    IMAGE_EXTENSION_PATTERN.test(file.name) ||
+    DYNAMIC_MEDIA_EXTENSION_PATTERN.test(file.name);
+}
+
+function isUnsupportedDynamicMedia(file) {
+  const type = file.type || "";
+  return type === "image/gif" ||
+    type.startsWith("video/") ||
+    DYNAMIC_MEDIA_EXTENSION_PATTERN.test(file.name);
 }
 
 function isZipFile(file) {
@@ -582,9 +782,10 @@ async function extractZipImages(zipFile, maxFiles) {
   const arrayBuffer = await zipFile.arrayBuffer();
   const entries = readZipEntries(arrayBuffer)
     .filter((entry) => !entry.isDirectory && isImageName(entry.name));
+  const eligibleEntries = entries.filter((entry) => !prefilterNameReasons(entry.name).length);
   const files = [];
 
-  for (const entry of entries) {
+  for (const entry of eligibleEntries) {
     if (files.length >= maxFiles) break;
     try {
       files.push(await readZipImageFile(arrayBuffer, entry, zipFile));
@@ -596,6 +797,7 @@ async function extractZipImages(zipFile, maxFiles) {
   return {
     files: stableSortFiles(files),
     totalImages: entries.length,
+    prefilterRejectCount: entries.length - eligibleEntries.length,
   };
 }
 
@@ -727,6 +929,7 @@ async function createPhotoRecord(file) {
   const url = URL.createObjectURL(file);
   const image = await loadImage(url);
   const metrics = analyzeImage(image);
+  const exactHash = await hashFile(file);
   const hasTransparency = imageHasTransparency(image);
   const aspect = Math.max(image.naturalWidth, 1) / Math.max(image.naturalHeight, 1);
   const squareFit = clamp(1 - Math.abs(aspect - 1), 0, 1);
@@ -744,11 +947,13 @@ async function createPhotoRecord(file) {
     url,
     image,
     metrics,
+    exactHash,
     width: image.naturalWidth,
     height: image.naturalHeight,
     hasTransparency,
     baseScore,
     finalScore: baseScore,
+    importIndex: state.nextPhotoIndex++,
   };
 }
 
@@ -816,6 +1021,7 @@ function analyzeImage(image) {
   const contrast = clamp(Math.sqrt(variance / count) / 72, 0, 1);
   const sharpness = clamp(gradient / (count * 24), 0, 1);
   const exposure = clamp(1 - Math.abs(mean - 142) / 142, 0, 1);
+  const fingerprint = averageHashFromLumas(lumas, sample.width, sample.height);
 
   return {
     contrast,
@@ -823,6 +1029,8 @@ function analyzeImage(image) {
     exposure,
     saturation: clamp(saturationSum / count, 0, 1),
     signature: [rSum / count, gSum / count, bSum / count],
+    centerSignature: averageRgbRegion(data, sample.width, sample.height, 0.24, 0.24, 0.76, 0.76),
+    fingerprint,
   };
 }
 
@@ -835,6 +1043,9 @@ function selectBestPhotos(photos, targetCount) {
     let bestScore = -Infinity;
     for (let index = 0; index < candidates.length; index++) {
       const candidate = candidates[index];
+      if (selected.some((chosen) => isNearDuplicatePhoto(candidate, chosen))) {
+        continue;
+      }
       const duplicatePenalty = selected.reduce((penalty, chosen) => {
         const similarity = colorSimilarity(candidate.metrics.signature, chosen.metrics.signature);
         return Math.max(penalty, similarity * 0.16);
@@ -846,6 +1057,9 @@ function selectBestPhotos(photos, targetCount) {
         bestIndex = index;
       }
     }
+    if (bestScore === -Infinity) {
+      break;
+    }
     const [picked] = candidates.splice(bestIndex, 1);
     picked.finalScore = bestScore;
     selected.push(picked);
@@ -854,13 +1068,15 @@ function selectBestPhotos(photos, targetCount) {
   return selected;
 }
 
-async function requestModelSelection(endpoint, photos, targetCount) {
+async function requestModelSelection(endpoint, photos, template) {
+  const targetCount = template.requiredCount;
   const candidates = [...photos]
     .sort((a, b) => b.baseScore - a.baseScore)
     .slice(0, MODEL_CANDIDATE_LIMIT);
   const payload = {
     templateId: state.templateId,
     targetCount,
+    slots: buildModelSelectionSlots(template),
     photos: await Promise.all(candidates.map(photoToModelPayload)),
   };
   const controller = new AbortController();
@@ -889,6 +1105,33 @@ async function requestModelSelection(endpoint, photos, targetCount) {
     throw new Error("Model bridge is reachable but vision model is unavailable");
   }
   return result;
+}
+
+function buildModelSelectionSlots(template) {
+  if (template.layers) {
+    return template.layers
+      .filter((layer) => layer.type === "image" || layer.type === "image_cutout")
+      .map((layer) => ({
+        slotId: layer.id,
+        slotIndex: layer.index,
+        layerType: layer.type,
+        name: layer.name || layer.id,
+        intent: layer.requirements?.intent || "",
+        cutoutRequired: layer.type === "image_cutout",
+        requirements: layer.requirements || {},
+      }))
+      .sort((left, right) => left.slotIndex - right.slotIndex);
+  }
+
+  return template.photoSlots.map((slot, index) => ({
+    slotId: `photo_${String(index + 1).padStart(2, "0")}`,
+    slotIndex: index,
+    layerType: "image",
+    name: `image_${String(index + 1).padStart(2, "0")}`,
+    intent: "Complete rectangular photo slot.",
+    cutoutRequired: false,
+    requirements: slot.requirements || {},
+  }));
 }
 
 async function prepareSelectedCutouts(template) {
@@ -1077,6 +1320,7 @@ async function photoToModelPayload(photo) {
     height: photo.height,
     baseScore: photo.baseScore,
     metrics: photo.metrics,
+    exactHash: photo.exactHash,
     image: await imageToDataUrl(photo.image, MODEL_IMAGE_MAX_SIDE),
   };
 }
@@ -1091,7 +1335,8 @@ function imageToDataUrl(image, maxSide, mimeType = "image/jpeg", quality = 0.82)
   return canvas.toDataURL(mimeType, quality);
 }
 
-function applyModelSelection(modelResult, targetCount) {
+function applyModelSelection(modelResult, template) {
+  const targetCount = template.requiredCount;
   const byId = new Map(state.photos.map((photo) => [photo.id, photo]));
   const resultById = new Map();
   for (const item of modelResult.results || []) {
@@ -1106,33 +1351,260 @@ function applyModelSelection(modelResult, targetCount) {
     }
   }
 
-  const selected = [];
-  for (const item of modelResult.selected) {
-    const photo = byId.get(item.id);
-    if (!photo) continue;
+  const selected = new Array(targetCount);
+  const selectedIds = new Set();
+  const slots = buildModelSelectionSlots(template);
+  const slotIndexById = new Map(slots.map((slot) => [slot.slotId, slot.slotIndex]));
+  const assignPhoto = (item, preferredIndex) => {
+    const photo = byId.get(item.photoId || item.id);
+    if (!photo || selectedIds.has(photo.id)) {
+      return false;
+    }
+    if (selected.some((chosen) => chosen && isNearDuplicatePhoto(photo, chosen))) {
+      return false;
+    }
+
+    let slotIndex = Number.isInteger(preferredIndex) ? preferredIndex : Number(item.slotIndex);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= targetCount || selected[slotIndex]) {
+      slotIndex = selected.findIndex((entry) => !entry);
+    }
+    if (slotIndex < 0) {
+      return false;
+    }
+
     photo.modelResult = item;
-    photo.finalScore = clamp(Number(item.score || 0) / 100, 0, 1);
+    photo.finalScore = clamp(Number(item.score || item.matchScore || 0) / 100, 0, 1);
     photo.selectionReason = item.reason || item.caption || photo.selectionReason || "";
-    selected.push(photo);
+    selected[slotIndex] = photo;
+    selectedIds.add(photo.id);
+    return true;
+  };
+
+  for (const assignment of modelResult.slotAssignments || []) {
+    assignPhoto(assignment, slotIndexById.get(assignment.slotId));
   }
 
-  if (selected.length < targetCount) {
-    const selectedIds = new Set(selected.map((photo) => photo.id));
+  for (const item of modelResult.selected) {
+    assignPhoto(item, Number(item.slotIndex));
+  }
+
+  if (selected.some((photo) => !photo)) {
     const localFill = selectBestPhotos(
       state.photos.filter((photo) => !selectedIds.has(photo.id)),
-      targetCount - selected.length,
+      targetCount - selected.filter(Boolean).length,
     );
-    selected.push(...localFill);
+    let fillIndex = 0;
+    for (let index = 0; index < targetCount; index++) {
+      if (selected[index]) continue;
+      const photo = localFill[fillIndex];
+      if (!photo) break;
+      selected[index] = photo;
+      selectedIds.add(photo.id);
+      fillIndex += 1;
+    }
   }
 
-  return selected.slice(0, targetCount);
+  return selected.filter(Boolean).slice(0, targetCount);
 }
 
 function colorSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 3 || b.length < 3) {
+    return 0;
+  }
   const distance = Math.sqrt(
     (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2,
   );
   return clamp(1 - distance / 210, 0, 1);
+}
+
+function prefilterFileReasons(file) {
+  return prefilterNameReasons(file.webkitRelativePath || file.name)
+    .concat(isUnsupportedDynamicMedia(file) ? ["dynamic_media"] : [])
+    .filter((reason, index, reasons) => reasons.indexOf(reason) === index);
+}
+
+function prefilterNameReasons(name) {
+  const normalized = name || "";
+  const reasons = [];
+  if (DYNAMIC_MEDIA_EXTENSION_PATTERN.test(normalized)) {
+    reasons.push("dynamic_media");
+  }
+  if (SCREEN_CAPTURE_NAME_PATTERN.test(normalized)) {
+    reasons.push("screen_or_video_capture");
+  }
+  if (PRIVACY_NAME_PATTERN.test(normalized)) {
+    reasons.push("privacy_sensitive");
+  }
+  return reasons;
+}
+
+function prefilterPhotoReasons(photo) {
+  const reasons = prefilterFileReasons(photo.file);
+  if (isLikelyBlankPhoto(photo)) {
+    reasons.push("blank_scene");
+  }
+  if (isLikelyScreenCapturePhoto(photo)) {
+    reasons.push("screen_or_video_capture");
+  }
+  return reasons.filter((reason, index, values) => values.indexOf(reason) === index);
+}
+
+function isLikelyBlankPhoto(photo) {
+  return photo.metrics.contrast < 0.035 && photo.metrics.saturation < 0.06;
+}
+
+function isLikelyScreenCapturePhoto(photo) {
+  const name = photo.file.name || "";
+  const longAspect = Math.max(photo.width / Math.max(photo.height, 1), photo.height / Math.max(photo.width, 1));
+  return /\.png$/i.test(name) &&
+    longAspect >= 1.75 &&
+    longAspect <= 2.45 &&
+    photo.metrics.sharpness >= 0.46 &&
+    photo.metrics.contrast >= 0.18 &&
+    photo.metrics.saturation <= 0.42;
+}
+
+function dedupePhotoPool(photos) {
+  const accepted = [];
+  const removed = [];
+  const byQuality = [...photos].sort((left, right) => photoQualityScore(right) - photoQualityScore(left));
+
+  for (const photo of byQuality) {
+    if (accepted.some((chosen) => isNearDuplicatePhoto(photo, chosen))) {
+      removed.push(photo);
+    } else {
+      accepted.push(photo);
+    }
+  }
+
+  return {
+    photos: accepted.sort((left, right) => (left.importIndex ?? 0) - (right.importIndex ?? 0)),
+    removed,
+  };
+}
+
+function photoQualityScore(photo) {
+  const megapixelScore = clamp((photo.width * photo.height) / (3000 * 3000), 0, 1) * 0.12;
+  return photo.baseScore + megapixelScore;
+}
+
+function isNearDuplicatePhoto(left, right) {
+  if (!left || !right || left.id === right.id) {
+    return false;
+  }
+  if (left.exactHash && right.exactHash && left.exactHash === right.exactHash) {
+    return true;
+  }
+
+  const hashDistance = hammingDistance(left.metrics?.fingerprint, right.metrics?.fingerprint);
+  if (hashDistance <= DUPLICATE_HASH_DISTANCE) {
+    return true;
+  }
+  if (hashDistance > NEAR_DUPLICATE_HASH_DISTANCE) {
+    return false;
+  }
+
+  const leftAspect = left.width / Math.max(left.height, 1);
+  const rightAspect = right.width / Math.max(right.height, 1);
+  const aspectDelta = Math.abs(leftAspect - rightAspect);
+  const centerSimilarity = colorSimilarity(
+    left.metrics?.centerSignature || left.metrics?.signature,
+    right.metrics?.centerSignature || right.metrics?.signature,
+  );
+  const fullSimilarity = colorSimilarity(left.metrics?.signature, right.metrics?.signature);
+
+  return aspectDelta <= 0.08 &&
+    centerSimilarity >= NEAR_DUPLICATE_COLOR_SIMILARITY &&
+    fullSimilarity >= 0.84;
+}
+
+function hammingDistance(left, right) {
+  if (typeof left !== "string" || typeof right !== "string" || left.length !== right.length) {
+    return Infinity;
+  }
+  let distance = 0;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) {
+      distance += 1;
+    }
+  }
+  return distance;
+}
+
+function averageHashFromLumas(lumas, width, height) {
+  const size = 8;
+  const values = [];
+  for (let gridY = 0; gridY < size; gridY++) {
+    for (let gridX = 0; gridX < size; gridX++) {
+      const xStart = Math.floor((gridX * width) / size);
+      const xEnd = Math.floor(((gridX + 1) * width) / size);
+      const yStart = Math.floor((gridY * height) / size);
+      const yEnd = Math.floor(((gridY + 1) * height) / size);
+      let sum = 0;
+      let count = 0;
+      for (let y = yStart; y < yEnd; y++) {
+        for (let x = xStart; x < xEnd; x++) {
+          sum += lumas[y * width + x];
+          count += 1;
+        }
+      }
+      values.push(count ? sum / count : 0);
+    }
+  }
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return values.map((value) => value >= mean ? "1" : "0").join("");
+}
+
+function averageRgbRegion(data, width, height, left, top, right, bottom) {
+  const xStart = Math.floor(width * left);
+  const xEnd = Math.max(xStart + 1, Math.floor(width * right));
+  const yStart = Math.floor(height * top);
+  const yEnd = Math.max(yStart + 1, Math.floor(height * bottom));
+  let rSum = 0;
+  let gSum = 0;
+  let bSum = 0;
+  let count = 0;
+  for (let y = yStart; y < yEnd; y++) {
+    for (let x = xStart; x < xEnd; x++) {
+      const index = (y * width + x) * 4;
+      rSum += data[index];
+      gSum += data[index + 1];
+      bSum += data[index + 2];
+      count += 1;
+    }
+  }
+  return count ? [rSum / count, gSum / count, bSum / count] : [0, 0, 0];
+}
+
+async function hashFile(file) {
+  if (!globalThis.crypto?.subtle) {
+    return "";
+  }
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    return [...new Uint8Array(digest)]
+      .map((value) => value.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return "";
+  }
+}
+
+function formatImportStatus({ limited, prefilterRejectCount, duplicateCount, skippedCount }) {
+  const parts = [];
+  if (prefilterRejectCount) {
+    parts.push(`已过滤 ${prefilterRejectCount} 张`);
+  }
+  if (duplicateCount) {
+    parts.push(`已去重 ${duplicateCount} 张`);
+  }
+  if (limited) {
+    parts.push(`已取前 ${MAX_IMPORT_IMAGES} 张`);
+  }
+  if (skippedCount) {
+    parts.push("部分文件已跳过");
+  }
+  return parts.length ? parts.join("，") : "上传完成";
 }
 
 function drawTemplate() {
@@ -1212,12 +1684,22 @@ function drawImageLayer(photo, layer) {
   ctx.clip();
 
   if (layer.type === "image_cutout") {
-    drawImageCoverToContext(
-      ctx,
-      photo.cutoutImage || photo.image,
-      { x: -frame.w / 2, y: -frame.h / 2, w: frame.w, h: frame.h },
-      layer,
-    );
+    const cutoutImage = photo.cutoutImage || photo.image;
+    if (photo.cutoutImage || photo.hasTransparency) {
+      drawCutoutImageToContext(
+        ctx,
+        cutoutImage,
+        { x: -frame.w / 2, y: -frame.h / 2, w: frame.w, h: frame.h },
+        layer,
+      );
+    } else {
+      drawImageCoverToContext(
+        ctx,
+        cutoutImage,
+        { x: -frame.w / 2, y: -frame.h / 2, w: frame.w, h: frame.h },
+        layer,
+      );
+    }
   } else {
     drawImageCoverToContext(
       ctx,
@@ -1349,6 +1831,142 @@ function drawCopy(template) {
 
 function drawImageCover(image, frame) {
   drawImageCoverToContext(ctx, image, frame);
+}
+
+function drawCutoutImageToContext(targetCtx, image, frame, layer = {}) {
+  const alphaBounds = getImageAlphaBounds(image);
+  if (!alphaBounds.hasAlphaBounds) {
+    drawImageCoverToContext(targetCtx, image, frame, layer);
+    return;
+  }
+
+  const display = layer.requirements?.cutoutDisplay || layer.cutoutDisplay || {};
+  const source = expandAlphaBounds(
+    alphaBounds,
+    image,
+    optionNumber(display.transparentTrimPadding, 0.018),
+  );
+  const containScale = Math.min(frame.w / source.w, frame.h / source.h);
+  const coverScale = Math.max(frame.w / source.w, frame.h / source.h);
+  const minFrameCoverage = optionNumber(display.minFrameCoverage, 0.76);
+  const maxAutoScale = optionNumber(display.maxAutoScale, 1.32);
+  const maxCoverScale = optionNumber(display.maxCoverScale, 1.06);
+  const coverageScale = Math.sqrt((minFrameCoverage * frame.w * frame.h) / (source.w * source.h));
+  const scale = Math.min(
+    Math.max(containScale, coverageScale),
+    containScale * maxAutoScale,
+    coverScale * maxCoverScale,
+  );
+  const drawWidth = source.w * scale;
+  const drawHeight = source.h * scale;
+  const alignX = alignmentFactor(display.alignX || layer.cutoutAlignX || layer.alignX);
+  const alignY = alignmentFactor(display.alignY || layer.cutoutAlignY || layer.alignY);
+  const dx = frame.x + (frame.w - drawWidth) * alignX;
+  const dy = frame.y + (frame.h - drawHeight) * alignY;
+
+  targetCtx.drawImage(image, source.x, source.y, source.w, source.h, dx, dy, drawWidth, drawHeight);
+}
+
+function getImageAlphaBounds(image) {
+  if (cutoutBoundsCache.has(image)) {
+    return cutoutBoundsCache.get(image);
+  }
+
+  const fallback = {
+    x: 0,
+    y: 0,
+    w: image.naturalWidth || 1,
+    h: image.naturalHeight || 1,
+    hasAlphaBounds: false,
+    alphaCoverage: 1,
+    bboxCoverage: 1,
+  };
+
+  if (!image.naturalWidth || !image.naturalHeight) {
+    cutoutBoundsCache.set(image, fallback);
+    return fallback;
+  }
+
+  const maxScanSide = 900;
+  const scanScale = Math.min(1, maxScanSide / Math.max(image.naturalWidth, image.naturalHeight));
+  const scanWidth = Math.max(1, Math.round(image.naturalWidth * scanScale));
+  const scanHeight = Math.max(1, Math.round(image.naturalHeight * scanScale));
+  const scanCanvas = document.createElement("canvas");
+  scanCanvas.width = scanWidth;
+  scanCanvas.height = scanHeight;
+  const scanCtx = scanCanvas.getContext("2d", { willReadFrequently: true });
+
+  try {
+    scanCtx.drawImage(image, 0, 0, scanWidth, scanHeight);
+    const { data } = scanCtx.getImageData(0, 0, scanWidth, scanHeight);
+    let minX = scanWidth;
+    let minY = scanHeight;
+    let maxX = -1;
+    let maxY = -1;
+    let opaqueCount = 0;
+    const alphaThreshold = 12;
+
+    for (let y = 0; y < scanHeight; y++) {
+      for (let x = 0; x < scanWidth; x++) {
+        const alpha = data[(y * scanWidth + x) * 4 + 3];
+        if (alpha <= alphaThreshold) continue;
+        opaqueCount += 1;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (!opaqueCount) {
+      cutoutBoundsCache.set(image, fallback);
+      return fallback;
+    }
+
+    const sampleBoundsWidth = Math.max(1, maxX - minX + 1);
+    const sampleBoundsHeight = Math.max(1, maxY - minY + 1);
+    const edgeMargin = Math.max(2, Math.round(Math.max(scanWidth, scanHeight) * 0.004));
+    const hasAlphaBounds = (
+      minX > edgeMargin ||
+      minY > edgeMargin ||
+      maxX < scanWidth - edgeMargin - 1 ||
+      maxY < scanHeight - edgeMargin - 1
+    );
+    const result = {
+      x: minX / scanScale,
+      y: minY / scanScale,
+      w: sampleBoundsWidth / scanScale,
+      h: sampleBoundsHeight / scanScale,
+      hasAlphaBounds,
+      alphaCoverage: opaqueCount / (scanWidth * scanHeight),
+      bboxCoverage: (sampleBoundsWidth * sampleBoundsHeight) / (scanWidth * scanHeight),
+    };
+    cutoutBoundsCache.set(image, result);
+    return result;
+  } catch (error) {
+    console.warn("Unable to measure cutout alpha bounds", error);
+    cutoutBoundsCache.set(image, fallback);
+    return fallback;
+  }
+}
+
+function expandAlphaBounds(bounds, image, paddingRatio) {
+  const padding = Math.max(bounds.w, bounds.h) * Math.max(0, paddingRatio);
+  const x = Math.max(0, bounds.x - padding);
+  const y = Math.max(0, bounds.y - padding);
+  const right = Math.min(image.naturalWidth, bounds.x + bounds.w + padding);
+  const bottom = Math.min(image.naturalHeight, bounds.y + bounds.h + padding);
+  return {
+    x,
+    y,
+    w: Math.max(1, right - x),
+    h: Math.max(1, bottom - y),
+  };
+}
+
+function optionNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function drawImageCoverToContext(targetCtx, image, frame, options = {}) {

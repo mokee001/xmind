@@ -28,6 +28,18 @@ Any implementation that runs the full image pipeline should follow this order:
 11. Final review and targeted revision.
 12. Return the final asset and QA status.
 
+## Hard Prefilter Rule
+
+Stage 1 must remove obvious non-candidate images before model upload: video
+screenshots or screen-recording frames, phone or desktop screenshots, chat
+records, documents, tickets, QR/payment codes, certificates, and images that
+expose private user information.
+
+Duplicate and near-duplicate photos must be clustered before the qualified
+pool is created. Each cluster keeps only the best-quality candidate unless a
+future template explicitly declares that it needs visual variants from the same
+moment.
+
 ## Current Prototype Gap
 
 The current template lab and Flutter prototype are still an early local
