@@ -1,53 +1,60 @@
-# ============================================================
-#  手帐照片墙 · .gitignore
-#  规则：代码 / 模板(JSON) / 贴纸(种子素材) 进 git；
-#        照片、生成图、运行状态、依赖包、模型权重 不进 git。
-# ============================================================
+# === 敏感数据 (绝对不能推!) ===
+.env
+.env.*
+!.env.example
 
-# --- 用户数据 & 生成物（超大 / 随时重建 / 隐私）---
+# === 用户私有照片数据 ===
+raw/
+pet-only/
 photos/
 output/
-backend/data/
+assets/
+
+# 照片文件通配 (兜底: 万一某张照片放到项目根目录, 也不会误推)
 *.jpg
 *.jpeg
 *.heic
 *.HEIC
 
-# 例外：模板缩略图占位目录不需要，忽略即可（上面 output/ 已含）
+# === 打分/选片缓存 (含照片路径 + 100+ MB, 每人自己跑) ===
+cache/
 
-# --- 运行时 / 缓存 ---
-*.log
-/tmp/
+# === Python 环境 (macOS 专属, 别人机器上也用不了) ===
+venv/
+venv-collage/
+.venv/
+env/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
 .pytest_cache/
-.DS_Store
 
-# --- 依赖包（各自 install，不入库）---
+# === 归档目录 (含旧 v1.5 代码 + 照片, 保留在本地) ===
+archives/
+
+# === 前端/依赖 (未来做 app 时预留) ===
 node_modules/
 .expo/
 dist/
 web-build/
 
-# --- 模型权重（大二进制，另行下载，见 README）---
+# === 模型权重 (若以后引入本地模型) ===
 *.pt
 *.onnx
 *.pth
 
-# --- Python 虚拟环境 ---
-.venv/
-venv/
-env/
+# === 调试/临时产物 ===
+tmp_*.py
+test_cutout.png
+*.log
+/tmp/
 
-# --- 编辑器 / 系统 ---
+# === 系统/编辑器 ===
+.DS_Store
+.vscode/
+.vscode/settings.json
 .idea/
 *.swp
-.vscode/settings.json
-
-# ============================================================
-#  下面这些「要」进 git（默认就会被追踪，这里只是提醒，不要忽略）：
-#    backend/*.py   engine.py   main.py   requirements.txt
-#    templates/*.json           <- B 的模板成果，文本、必须共享
-#    stickers/*.png             <- B 的贴纸种子素材（如太大可改为忽略）
-#    photo-wall-app/  webapp/  studio/  display/  firmware/  README.md
-# ============================================================
+*.swo
