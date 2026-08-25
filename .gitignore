@@ -6,8 +6,15 @@
 # === 用户私有照片数据 ===
 raw/
 pet-only/
+photos/
 output/
 assets/
+
+# 照片文件通配 (兜底: 万一某张照片放到项目根目录, 也不会误推)
+*.jpg
+*.jpeg
+*.heic
+*.HEIC
 
 # === 打分/选片缓存 (含照片路径 + 100+ MB, 每人自己跑) ===
 cache/
@@ -15,23 +22,39 @@ cache/
 # === Python 环境 (macOS 专属, 别人机器上也用不了) ===
 venv/
 venv-collage/
+.venv/
+env/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+.pytest_cache/
 
 # === 归档目录 (含旧 v1.5 代码 + 照片, 保留在本地) ===
 archives/
+
+# === 前端/依赖 (未来做 app 时预留) ===
+node_modules/
+.expo/
+dist/
+web-build/
+
+# === 模型权重 (若以后引入本地模型) ===
+*.pt
+*.onnx
+*.pth
 
 # === 调试/临时产物 ===
 tmp_*.py
 test_cutout.png
 *.log
+/tmp/
 
 # === 系统/编辑器 ===
 .DS_Store
 .vscode/
+.vscode/settings.json
 .idea/
 *.swp
 *.swo

@@ -1,0 +1,117 @@
+{
+  "id": "grid_5",
+  "name": "精选五格",
+  "description": "5张照片横向拼贴，16:9 宽屏",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": {
+      "type": "color",
+      "value": "#F4EFE6"
+    }
+  },
+  "slots": [
+    {
+      "x": 49,
+      "y": 193,
+      "w": 200,
+      "h": 490,
+      "rotation": 3,
+      "border": {
+        "top": 8,
+        "right": 8,
+        "bottom": 8,
+        "left": 8,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 291,
+      "y": 193,
+      "w": 200,
+      "h": 490,
+      "rotation": -3,
+      "border": {
+        "top": 8,
+        "right": 8,
+        "bottom": 8,
+        "left": 8,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 532,
+      "y": 193,
+      "w": 200,
+      "h": 490,
+      "rotation": 3,
+      "border": {
+        "top": 8,
+        "right": 8,
+        "bottom": 8,
+        "left": 8,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 774,
+      "y": 193,
+      "w": 200,
+      "h": 490,
+      "rotation": -3,
+      "border": {
+        "top": 8,
+        "right": 8,
+        "bottom": 8,
+        "left": 8,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    },
+    {
+      "x": 1015,
+      "y": 193,
+      "w": 200,
+      "h": 490,
+      "rotation": 3,
+      "border": {
+        "top": 8,
+        "right": 8,
+        "bottom": 8,
+        "left": 8,
+        "color": "#FFFFFF"
+      },
+      "shadow": true
+    }
+  ],
+  "decorations": [
+    {
+      "type": "tape",
+      "x": 40,
+      "y": 22,
+      "w": 200,
+      "h": 56,
+      "rotation": -7,
+      "color": "#E7B7A8",
+      "alpha": 200
+    },
+    {
+      "type": "title",
+      "text": "{{title}}",
+      "x": 60,
+      "y": 18,
+      "size": 60,
+      "color": "#4A4034"
+    },
+    {
+      "type": "date",
+      "x": 64,
+      "y": 100,
+      "size": 34,
+      "color": "#8A7E6C"
+    }
+  ]
+}

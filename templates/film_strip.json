@@ -1,0 +1,25 @@
+{
+  "id": "film_strip",
+  "name": "胶片胶卷",
+  "description": "深色胶片底 + 齿孔 + 5 格连拍，复古电影感",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": { "type": "gradient", "from": "#211C15", "to": "#0E0C09", "angle": 90 }
+  },
+  "slots": [
+    { "x": 70,  "y": 262, "w": 212, "h": 196, "radius": 4, "shadow": false },
+    { "x": 302, "y": 262, "w": 212, "h": 196, "radius": 4, "shadow": false },
+    { "x": 534, "y": 262, "w": 212, "h": 196, "radius": 4, "shadow": false },
+    { "x": 766, "y": 262, "w": 212, "h": 196, "radius": 4, "shadow": false },
+    { "x": 998, "y": 262, "w": 212, "h": 196, "radius": 4, "shadow": false }
+  ],
+  "decorations": [
+    { "type": "rect", "layer": "back", "x": 40, "y": 210, "w": 1200, "h": 300, "radius": 8, "color": "#262019" },
+    { "type": "dots", "layer": "back", "x": 66, "y": 224, "count": 15, "gap": 78, "size": 26, "round": 6, "color": "#E8E2D2", "alpha": 235 },
+    { "type": "dots", "layer": "back", "x": 66, "y": 470, "count": 15, "gap": 78, "size": 26, "round": 6, "color": "#E8E2D2", "alpha": 235 },
+    { "type": "title", "text": "{{title}}", "x": 60, "y": 70, "size": 62, "color": "#F2ECD9" },
+    { "type": "date", "x": 62, "y": 150, "size": 30, "color": "#C0B79E", "letter_spacing": 4 },
+    { "type": "text", "text": "35mm · FILM", "x": 60, "y": 566, "size": 26, "color": "#8A8064", "letter_spacing": 6 }
+  ]
+}

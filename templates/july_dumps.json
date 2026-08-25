@@ -1,0 +1,33 @@
+{
+  "id": "july_dumps",
+  "name": "深海拼贴·本周随记",
+  "description": "小红书 photo-dump 风：深海蓝渐变满铺 + 白色便签面板垫底 + 蓝色撕纸色块 + 拍立得照片 + 花体标题，配相机/胶卷贴纸出效果",
+  "canvas": {
+    "width": 960,
+    "height": 1280,
+    "background": { "type": "gradient", "from": "#17323F", "to": "#0A1B25", "angle": 90 }
+  },
+  "slots": [
+    { "x": 150, "y": 340, "w": 300, "h": 320, "rotation": -3, "border": { "top": 14, "right": 14, "bottom": 40, "left": 14, "color": "#FBFAF4" }, "shadow": true },
+    { "x": 500, "y": 300, "w": 320, "h": 340, "rotation": 4,  "border": { "top": 14, "right": 14, "bottom": 40, "left": 14, "color": "#FBFAF4" }, "shadow": true },
+    { "x": 160, "y": 730, "w": 320, "h": 300, "rotation": 3,  "border": { "top": 14, "right": 14, "bottom": 40, "left": 14, "color": "#FBFAF4" }, "shadow": true },
+    { "x": 520, "y": 750, "w": 300, "h": 320, "rotation": -3, "border": { "top": 14, "right": 14, "bottom": 40, "left": 14, "color": "#FBFAF4" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "rect", "layer": "back", "x": 90,  "y": 260, "w": 780, "h": 900, "radius": 30, "color": "#F5F2E9", "alpha": 250 },
+    { "type": "rect", "layer": "back", "x": 120, "y": 300, "w": 190, "h": 130, "radius": 6, "rotation": -8, "color": "#3E7CA8", "alpha": 235 },
+    { "type": "rect", "layer": "back", "x": 630, "y": 980, "w": 210, "h": 120, "radius": 6, "rotation": 6,  "color": "#2F6E9E", "alpha": 235 },
+    { "type": "rect", "layer": "back", "x": 560, "y": 690, "w": 150, "h": 96,  "radius": 6, "rotation": -5, "color": "#4C93BF", "alpha": 220 },
+
+    { "type": "text", "text": "July Dumps", "font": "script", "x": 96,  "y": 120, "size": 82, "color": "#F3F0E6" },
+    { "type": "text", "text": "\u00b7 week 1", "font": "marker", "x": 620, "y": 168, "size": 40, "color": "#9FD0E8" },
+
+    { "type": "text", "text": "salty air", "font": "hand", "x": 400, "y": 250, "size": 30, "color": "#2A4A57" },
+    { "type": "text", "text": "golden hour", "font": "hand", "x": 470, "y": 690, "size": 30, "color": "#2A4A57" },
+    { "type": "arrow", "x1": 468, "y1": 254, "cx": 460, "cy": 290, "x2": 450, "y2": 330, "color": "#37606E", "width": 3, "head": 15 },
+    { "type": "arrow", "x1": 520, "y1": 720, "cx": 545, "cy": 745, "x2": 560, "y2": 770, "color": "#37606E", "width": 3, "head": 15 },
+
+    { "type": "text", "text": "waves & quiet", "font": "hand", "x": 150, "y": 1080, "size": 30, "color": "#2A4A57" },
+    { "type": "text", "text": "see you next week", "font": "script", "x": 300, "y": 1185, "size": 40, "color": "#DCEAF1" }
+  ]
+}

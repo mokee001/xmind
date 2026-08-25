@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "手帐照片墙",
+    "slug": "photo-wall-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "需要读取相册，自动挑选照片生成照片墙并投屏。"
+      }
+    },
+    "android": {
+      "permissions": ["READ_MEDIA_IMAGES", "READ_EXTERNAL_STORAGE"],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "需要读取相册，自动挑选照片生成照片墙并投屏。",
+          "savePhotosPermission": "需要访问相册以读取照片。",
+          "isAccessMediaLocationEnabled": true
+        }
+      ]
+    ]
+  }
+}

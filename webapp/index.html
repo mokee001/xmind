@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>手帐照片墙 · 手机端</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>手帐照片墙</h1>
+    <span id="conn" class="pill">未连接屏幕</span>
+  </header>
+
+  <section class="card">
+    <h2>1 · 相册授权</h2>
+    <p class="hint">点「授权相册」会弹出系统相册，选中的照片会上传并自动 AI 识别打标（人物 / 宠物 / 场景 / 画质）。</p>
+    <div class="row">
+      <button id="btnAuth">授权相册并选照片</button>
+      <button id="btnSample" class="ghost">载入示例照片</button>
+      <span id="photoCount" class="muted"></span>
+    </div>
+    <input id="fileInput" type="file" accept="image/*" multiple hidden />
+    <div id="photoGrid" class="grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · 智能相簿</h2>
+    <p class="hint">像苹果相册一样，AI 已自动整理：剔除废片，并按<strong>人物 / 宠物 / 主题 / 情绪 / 色彩 / 精选</strong>归类。每个相簿都是从<strong>整个相册</strong>里挑出的该主题精选，点一个即生成那一屏并上屏，不用手动勾标签。</p>
+    <div id="junkHint" class="junk"></div>
+    <div class="row">
+      <select id="template">
+        <option value="daily_polaroid">每日拍立得</option>
+        <option value="editorial_magazine">杂志编辑风 ✨</option>
+        <option value="minimal_gallery">美术馆三联 ✨</option>
+        <option value="film_strip">胶片胶卷 ✨</option>
+        <option value="collage_pop">撞色拼贴 ✨</option>
+        <option value="scrapbook_echoes">手帐拼贴·城市回响 ✨</option>
+        <option value="corkboard_recap">软木板手帐·月度回顾 ✨</option>
+        <option value="july_dumps">深海拼贴·本周随记 ✨</option>
+        <option value="travel_grid">旅行方格</option>
+        <option value="monthly_collage">月度手帐</option>
+        <option value="grid_5">网格 · 5 张</option>
+        <option value="grid_10">网格 · 10 张</option>
+        <option value="grid_15">网格 · 15 张</option>
+        <option value="grid_20">网格 · 20 张</option>
+        <option value="grid_24">网格 · 24 张</option>
+      </select>
+      <input id="title" placeholder="标题" value="我的一天" />
+      <input id="date" placeholder="日期 2026-07-19" />
+    </div>
+    <div id="albumBox" class="albums"><span class="muted">载入相簿中…</span></div>
+    <div id="genStatus" class="genStatus"></div>
+    <div class="row">
+      <button id="btnCluster" class="ghost">重新识别人物</button>
+      <button id="btnRefresh" class="ghost">刷新相簿</button>
+    </div>
+    <div id="wallPreview" class="preview"></div>
+  </section>
+
+  <section class="card">
+    <h2>3 · 贴纸库</h2>
+    <p class="hint">上传<strong>透明抠图贴纸</strong>（PNG / WEBP，带透明背景）。系统会<strong>达标校验</strong>（是抠图、尺寸/比例合理），并给每张打<strong>主题标签</strong>。生成照片墙时会<strong>随机</strong>把主题相符的贴纸贴到画面上（贴在照片角/留白，避开人脸），克制出现、偶有惊喜。</p>
+    <div class="row">
+      <input id="stickerThemes" placeholder="主题（逗号分隔，如 美食,清新 或留空=通用）" />
+      <button id="btnSticker">上传贴纸</button>
+      <span id="stickerCount" class="muted"></span>
+    </div>
+    <input id="stickerInput" type="file" accept="image/png,image/webp" multiple hidden />
+    <div id="stickerReject" class="junk"></div>
+    <div id="stickerGrid" class="grid"></div>
+  </section>
+
+  <section class="card">
+    <h2>4 · 打标训练</h2>
+    <p class="hint">给本次画面涉及的<strong>元素维度</strong>打分：喜欢的点「好」，不想要的点「差」。累计训练你的专属偏好模型。</p>
+    <div id="labelArea" class="muted">先生成一次画面…</div>
+    <div class="row">
+      <button id="btnTrainAll" class="ghost">用全部历史标签重训</button>
+    </div>
+    <div id="modelBox" class="model"></div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

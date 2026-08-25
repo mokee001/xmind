@@ -1,0 +1,21 @@
+{
+  "id": "travel_grid",
+  "name": "旅行方格",
+  "description": "4张照片横向方格拼贴，16:9 宽屏，适合一次旅行/出游",
+  "canvas": {
+    "width": 1280,
+    "height": 720,
+    "background": { "type": "color", "value": "#EDE9E0" }
+  },
+  "slots": [
+    { "x": 50,  "y": 270, "w": 265, "h": 265, "rotation": -3, "border": { "top": 15, "right": 15, "bottom": 15, "left": 15, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 350, "y": 250, "w": 265, "h": 265, "rotation": 3,  "border": { "top": 15, "right": 15, "bottom": 15, "left": 15, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 650, "y": 270, "w": 265, "h": 265, "rotation": 4,  "border": { "top": 15, "right": 15, "bottom": 15, "left": 15, "color": "#FFFFFF" }, "shadow": true },
+    { "x": 950, "y": 250, "w": 265, "h": 265, "rotation": -4, "border": { "top": 15, "right": 15, "bottom": 15, "left": 15, "color": "#FFFFFF" }, "shadow": true }
+  ],
+  "decorations": [
+    { "type": "tape", "x": 380, "y": 70, "w": 280, "h": 60, "rotation": 4, "color": "#A9C4A2", "alpha": 200 },
+    { "type": "title", "text": "{{title}}", "x": 60, "y": 66, "size": 76, "color": "#3C4A3A" },
+    { "type": "date", "x": 64, "y": 162, "size": 38, "color": "#6E7A6A" }
+  ]
+}
