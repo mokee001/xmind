@@ -11,6 +11,8 @@ const BLUETOOTH_READY_TIMEOUT_MS = 10000;
 const WIFI_SCAN_TIMEOUT_MS = 20000;
 const PHYSICAL_CONFIRM_TIMEOUT_MS = 30000;
 const PHYSICAL_CONFIRM_RETRY_MS = 750;
+const PAIRING_TIMEOUT_MS = 30000;
+const PAIRING_RETRY_MS = 750;
 
 let manager;
 let connectedDevice;
@@ -220,9 +222,35 @@ function friendlyBleError(error) {
   const message = String(error?.reason || error?.message || error || '蓝牙操作失败');
   if (/unauthorized|permission|not authorized/i.test(message)) return new Error('请在系统设置中允许 PhotoWall 使用蓝牙');
   if (/powered.?off|bluetooth.*off/i.test(message)) return new Error('请打开手机蓝牙后重试');
+  if (/encrypt(ion)?.*insufficient|insufficient.*encrypt(ion)?/i.test(message)) return new Error('蓝牙安全配对未完成，请在系统提示中点击“配对”后重试');
   if (/cancel/i.test(message)) return new Error('蓝牙操作已取消');
   if (/timeout/i.test(message)) return new Error('连接设备超时，请靠近设备后重试');
   return new Error(message);
+}
+
+function isPairingInProgressError(error) {
+  const message = String(error?.reason || error?.message || error || '');
+  return /encrypt(ion)?.*insufficient|insufficient.*encrypt(ion)?/i.test(message);
+}
+
+async function readEncryptedDeviceInfo(device) {
+  const deadline = Date.now() + PAIRING_TIMEOUT_MS;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      return await device.readCharacteristicForService(SERVICE_UUID, INFO_UUID);
+    } catch (error) {
+      if (!isPairingInProgressError(error)) throw error;
+      lastError = error;
+      emitStatus({
+        status: 'pairing',
+        message: '请在系统提示中点击“配对”',
+        deviceId: connectedInfo?.deviceId,
+      });
+      await new Promise(resolve => setTimeout(resolve, PAIRING_RETRY_MS));
+    }
+  }
+  throw lastError || new Error('蓝牙安全配对超时');
 }
 
 function normalizeApiBase(value) {
@@ -346,6 +374,22 @@ export async function startDeviceDiscovery(onDevice) {
     await stopDeviceDiscovery();
     await releaseProvisioningConnection('discovery_restarted');
     discoveredDevices.clear();
+    let knownDevices = [];
+    try {
+      knownDevices = await getManager().connectedDevices([SERVICE_UUID]);
+    } catch (error) {
+      logBle('known_devices_unavailable', { message: friendlyBleError(error).message });
+    }
+    for (const device of knownDevices) {
+      discoveredDevices.set(device.id, device);
+      onDevice?.({
+        deviceId: device.id,
+        deviceName: device.name || device.localName || 'PhotoWall',
+        firmwareVersion: null,
+        setupToken: null,
+        signalStrength: Number(device.rssi) || -60,
+      });
+    }
     await getManager().startDeviceScan([SERVICE_UUID], { allowDuplicates: true }, (error, device) => {
       if (error) {
         emitStatus({ status: 'error', message: friendlyBleError(error).message, errorCode: 'ble_scan_failed' });
@@ -394,7 +438,7 @@ export async function connectProvisioningDevice(deviceId) {
     const transportId = discoveredDevices.get(deviceId)?.id || deviceId;
     connectedDevice = await getManager().connectToDevice(transportId, { timeout: 15000, requestMTU: 185 });
     connectedDevice = await connectedDevice.discoverAllServicesAndCharacteristics();
-    const infoCharacteristic = await connectedDevice.readCharacteristicForService(SERVICE_UUID, INFO_UUID);
+    const infoCharacteristic = await readEncryptedDeviceInfo(connectedDevice);
     const info = JSON.parse(decodeUtf8(toByteArray(infoCharacteristic.value || '')));
     if (!info.deviceId) throw new Error('设备身份信息不完整');
     logBle('encrypted_link_verified', {
