@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "手帐照片墙",
+    "name": "Echooo",
     "slug": "photo-wall-app",
     "version": "1.3.0",
     "scheme": "photowall",
@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "cn.mokeedesign.photowall",
-      "buildNumber": "11",
+      "buildNumber": "12",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "需要读取相册，自动挑选照片生成照片墙并投屏。",
