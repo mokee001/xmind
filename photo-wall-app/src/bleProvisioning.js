@@ -11,6 +11,11 @@ const BLUETOOTH_READY_TIMEOUT_MS = 10000;
 const WIFI_SCAN_TIMEOUT_MS = 20000;
 const PHYSICAL_CONFIRM_TIMEOUT_MS = 30000;
 const PHYSICAL_CONFIRM_RETRY_MS = 750;
+const PAIRING_TIMEOUT_MS = 30000;
+const PAIRING_RETRY_MS = 750;
+// ESP32 restarts advertising 500 ms after a central disconnects. iOS also needs
+// a short settling window before the same peripheral can be discovered again.
+const ADVERTISING_RECOVERY_MS = 1100;
 
 let manager;
 let connectedDevice;
@@ -23,6 +28,7 @@ let wifiScanWaiter;
 let authorizationWaiter;
 let provisionCompleted = false;
 let connectionReleasePromise;
+let lastConnectionReleasedAt = 0;
 const discoveredDevices = new Map();
 const statusListeners = new Set();
 
@@ -143,8 +149,39 @@ async function releaseProvisioningConnection(reason) {
   try {
     await connectionReleasePromise;
   } finally {
+    lastConnectionReleasedAt = Date.now();
     connectionReleasePromise = undefined;
   }
+}
+
+async function releaseOrphanedConnections() {
+  let orphaned = [];
+  try {
+    orphaned = await getManager().connectedDevices([SERVICE_UUID]);
+  } catch (error) {
+    logBle('orphaned_connections_unavailable', { message: friendlyBleError(error).message });
+    return;
+  }
+  for (const device of orphaned) {
+    logBle('orphaned_connection_released', { transportId: String(device.id || '') });
+    try { await device.cancelConnection(); } catch {}
+    lastConnectionReleasedAt = Date.now();
+  }
+}
+
+async function waitForPeripheralAdvertising() {
+  const remaining = ADVERTISING_RECOVERY_MS - (Date.now() - lastConnectionReleasedAt);
+  if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+}
+
+function deviceSummary(device, fallbackSignalStrength = -80) {
+  return {
+    deviceId: device.id,
+    deviceName: device.name || device.localName || 'PhotoWall',
+    firmwareVersion: null,
+    setupToken: null,
+    signalStrength: Number(device.rssi) || fallbackSignalStrength,
+  };
 }
 
 function processEvent(event) {
@@ -220,9 +257,35 @@ function friendlyBleError(error) {
   const message = String(error?.reason || error?.message || error || '蓝牙操作失败');
   if (/unauthorized|permission|not authorized/i.test(message)) return new Error('请在系统设置中允许 PhotoWall 使用蓝牙');
   if (/powered.?off|bluetooth.*off/i.test(message)) return new Error('请打开手机蓝牙后重试');
+  if (/encrypt(ion)?.*insufficient|insufficient.*encrypt(ion)?/i.test(message)) return new Error('蓝牙安全配对未完成，请在系统提示中点击“配对”后重试');
   if (/cancel/i.test(message)) return new Error('蓝牙操作已取消');
   if (/timeout/i.test(message)) return new Error('连接设备超时，请靠近设备后重试');
   return new Error(message);
+}
+
+function isPairingInProgressError(error) {
+  const message = String(error?.reason || error?.message || error || '');
+  return /encrypt(ion)?.*insufficient|insufficient.*encrypt(ion)?/i.test(message);
+}
+
+async function readEncryptedDeviceInfo(device) {
+  const deadline = Date.now() + PAIRING_TIMEOUT_MS;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      return await device.readCharacteristicForService(SERVICE_UUID, INFO_UUID);
+    } catch (error) {
+      if (!isPairingInProgressError(error)) throw error;
+      lastError = error;
+      emitStatus({
+        status: 'pairing',
+        message: '请在系统提示中点击“配对”',
+        deviceId: connectedInfo?.deviceId,
+      });
+      await new Promise(resolve => setTimeout(resolve, PAIRING_RETRY_MS));
+    }
+  }
+  throw lastError || new Error('蓝牙安全配对超时');
 }
 
 function normalizeApiBase(value) {
@@ -344,14 +407,34 @@ export async function startDeviceDiscovery(onDevice) {
     logBle('discovery_started');
     await waitForBluetooth();
     await stopDeviceDiscovery();
+    const cachedDevices = [...discoveredDevices.values()];
     await releaseProvisioningConnection('discovery_restarted');
-    discoveredDevices.clear();
-    await getManager().startDeviceScan([SERVICE_UUID], { allowDuplicates: true }, (error, device) => {
+    // Recover connections left open by an interrupted/older App process. A BLE
+    // peripheral does not advertise while iOS still considers it connected.
+    await releaseOrphanedConnections();
+    await waitForPeripheralAdvertising();
+
+    for (const device of cachedDevices) {
+      discoveredDevices.set(device.id, device);
+      onDevice?.(deviceSummary(device));
+    }
+
+    // An unfiltered scan avoids iOS service-filter caching after a rapid
+    // disconnect/re-advertise cycle. We still filter results before exposing them.
+    await getManager().startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
       if (error) {
         emitStatus({ status: 'error', message: friendlyBleError(error).message, errorCode: 'ble_scan_failed' });
         return;
       }
       if (!device) return;
+      const advertisedName = String(device.name || device.localName || '').toLowerCase();
+      const advertisedServices = Array.isArray(device.serviceUUIDs)
+        ? device.serviceUUIDs.map(value => String(value).toLowerCase())
+        : [];
+      const isPhotoWall = advertisedName.startsWith('photowall-')
+        || advertisedServices.includes(SERVICE_UUID)
+        || discoveredDevices.has(device.id);
+      if (!isPhotoWall) return;
       const firstDiscovery = !discoveredDevices.has(device.id);
       discoveredDevices.set(device.id, device);
       if (firstDiscovery) {
@@ -361,13 +444,7 @@ export async function startDeviceDiscovery(onDevice) {
           signalStrength: Number(device.rssi) || -127,
         });
       }
-      onDevice?.({
-        deviceId: device.id,
-        deviceName: device.name || device.localName || 'PhotoWall',
-        firmwareVersion: null,
-        setupToken: null,
-        signalStrength: Number(device.rssi) || -127,
-      });
+      onDevice?.(deviceSummary(device, -127));
     });
     return stopDeviceDiscovery;
   } catch (error) {
@@ -392,9 +469,13 @@ export async function connectProvisioningDevice(deviceId) {
     connectedInfo = undefined;
 
     const transportId = discoveredDevices.get(deviceId)?.id || deviceId;
-    connectedDevice = await getManager().connectToDevice(transportId, { timeout: 15000, requestMTU: 185 });
+    const discoveredDevice = discoveredDevices.get(deviceId);
+    const alreadyConnected = discoveredDevice ? await discoveredDevice.isConnected().catch(() => false) : false;
+    connectedDevice = alreadyConnected
+      ? discoveredDevice
+      : await getManager().connectToDevice(transportId, { timeout: 15000, requestMTU: 185 });
     connectedDevice = await connectedDevice.discoverAllServicesAndCharacteristics();
-    const infoCharacteristic = await connectedDevice.readCharacteristicForService(SERVICE_UUID, INFO_UUID);
+    const infoCharacteristic = await readEncryptedDeviceInfo(connectedDevice);
     const info = JSON.parse(decodeUtf8(toByteArray(infoCharacteristic.value || '')));
     if (!info.deviceId) throw new Error('设备身份信息不完整');
     logBle('encrypted_link_verified', {
@@ -435,6 +516,9 @@ export async function connectProvisioningDevice(deviceId) {
         authorizationWaiter = undefined;
       }
       connectedDevice = undefined;
+      connectedInfo = undefined;
+      disconnectSubscription = undefined;
+      lastConnectionReleasedAt = Date.now();
       eventSubscription?.remove();
       eventSubscription = undefined;
       if (!provisionCompleted) emitStatus({
@@ -451,8 +535,9 @@ export async function connectProvisioningDevice(deviceId) {
     emitStatus({ status: 'idle', message: '设备已连接', deviceId: connectedInfo.deviceId });
     return { ...connectedInfo };
   } catch (error) {
-    connectedDevice = undefined;
-    connectedInfo = undefined;
+    // Clearing the JS reference alone leaves iOS connected and prevents the
+    // peripheral from advertising, so always release the native GATT session.
+    await releaseProvisioningConnection('connection_failed');
     throw friendlyBleError(error);
   }
 }
@@ -493,6 +578,11 @@ export async function provisionWifi({ ssid, password, apiBase }) {
     throw new Error('Wi-Fi 名称或密码过长');
   }
   if (!serviceBase) throw new Error('PhotoWall 服务地址无效');
+  const device = requireConnection();
+  if (!await device.isConnected().catch(() => false)) {
+    await releaseProvisioningConnection('wifi_submit_disconnected');
+    throw new Error('设备蓝牙连接已断开，请返回设备列表重新连接');
+  }
   logBle('wifi_credentials_submitted', {
     networkNameLength: networkName.length,
     passwordPresent: String(password || '').length > 0,
@@ -519,7 +609,11 @@ export function subscribeProvisionStatus(callback) {
 
 export async function cancelProvisioning() {
   try {
-    if (connectedDevice && connectedInfo) await sendCommand({ op: 'cancel' });
+    if (connectedDevice && connectedInfo) {
+      await sendCommand({ op: 'cancel' });
+      // Let the ESP32 process the command before closing the GATT connection.
+      await new Promise(resolve => setTimeout(resolve, 160));
+    }
   } finally {
     await releaseProvisioningConnection('cancelled');
   }

@@ -104,7 +104,6 @@ export default function DeviceSetupFlow({
   existingSession = null,
   onClose,
   onConnected,
-  onReconfigure,
   onRemoveDevice,
   previewMode = false,
   adapter = null,
@@ -215,7 +214,7 @@ export default function DeviceSetupFlow({
         setBusy(false);
       });
       discoveryStopRef.current = typeof stop === 'function' ? stop : adapter.stopDeviceDiscovery;
-      discoveryTimeoutRef.current = setTimeout(() => setBusy(false), 12000);
+      discoveryTimeoutRef.current = setTimeout(() => setBusy(false), 20000);
       scanContinues = true;
     } catch (caught) {
       setError(caught.message || '没有发现附近的照片墙');
@@ -252,7 +251,11 @@ export default function DeviceSetupFlow({
     try {
       const found = await adapter.scanWifiNetworks();
       if (flowGenerationRef.current !== generation) return;
-      setNetworks(Array.isArray(found) ? found : []);
+      const availableNetworks = Array.isArray(found) ? found : [];
+      if (!availableNetworks.length) {
+        throw new Error('未发现附近的 Wi-Fi，请靠近路由器后重试');
+      }
+      setNetworks(availableNetworks);
     } catch (caught) {
       if (flowGenerationRef.current !== generation) return;
       setError(caught.message || '无法读取附近的 Wi-Fi');
@@ -303,12 +306,12 @@ export default function DeviceSetupFlow({
     deviceConnectionRef.current = false;
     setBusy(true);
     setError('');
+    setStatusText('正在释放旧连接并等待设备重新出现…');
     try { await adapter?.cancelProvisioning?.(); } catch {}
     setNetworks([]);
     setSelectedDevice(null);
     setSelectedNetwork(null);
     setPassword('');
-    setStatusText('');
     transition('device');
     await discoverDevices();
   };
@@ -376,7 +379,6 @@ export default function DeviceSetupFlow({
   };
 
   const retryPassword = () => {
-    setPassword('');
     setProgress(0);
     setStatusText('');
     setError('');
@@ -418,10 +420,10 @@ export default function DeviceSetupFlow({
           <View style={styles.centeredState}>
             <View style={[styles.stateIcon, styles.failureIcon]}><Text style={styles.failureMark}>!</Text></View>
             <Text style={styles.stateTitle}>删除这台照片墙？</Text>
-            <Text style={styles.stateDescription}>App 会解除绑定，屏幕会清除当前 Wi-Fi，并重新进入首次连接模式。</Text>
+            <Text style={styles.stateDescription}>删除后，当前管理员权限会被撤销，屏幕会清除 Wi-Fi 并重新进入连接模式。再次连接必须从“添加设备”开始。</Text>
             {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
             <PrimaryButton disabled={busy} onPress={() => runDeviceAction(onRemoveDevice)}>
-              {busy ? '正在删除…' : '确认删除并重置'}
+              {busy ? '正在删除…' : '确认删除'}
             </PrimaryButton>
             <PrimaryButton secondary disabled={busy} onPress={() => setConfirmingRemoval(false)}>取消</PrimaryButton>
           </View>
@@ -435,9 +437,6 @@ export default function DeviceSetupFlow({
           <View style={styles.deviceIdentifier}><Text style={styles.deviceIdentifierText}>{session.device?.device_id}</Text></View>
           {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
           <PrimaryButton onPress={onClose}>完成</PrimaryButton>
-          <PrimaryButton secondary disabled={busy} onPress={() => runDeviceAction(onReconfigure)}>
-            {busy ? '正在准备…' : '更换 Wi-Fi'}
-          </PrimaryButton>
           <PrimaryButton secondary disabled={busy} onPress={() => setConfirmingRemoval(true)}>删除设备</PrimaryButton>
         </View>
       );
@@ -446,16 +445,29 @@ export default function DeviceSetupFlow({
     if (stage === 'device') {
       return (
         <>
-          <Text style={styles.title}>选择照片墙</Text>
-          <Text style={styles.description}>{existingSession
-            ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。`
-            : '保持照片墙通电并靠近手机，无需进入系统 Wi-Fi 设置。'}</Text>
+          <View style={styles.deviceDiscoveryHeader}>
+            <View style={styles.flex}>
+              <Text style={styles.title}>选择照片墙</Text>
+              <Text style={styles.description}>{existingSession
+                ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。`
+                : '保持照片墙通电并靠近手机，无需进入系统 Wi-Fi 设置。'}</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="刷新附近设备"
+              disabled={busy}
+              onPress={discoverDevices}
+              style={({ pressed }) => [styles.refreshButton, pressed && styles.rowPressed, busy && styles.refreshButtonDisabled]}
+            >
+              <Text style={styles.refreshButtonIcon}>↻</Text>
+            </Pressable>
+          </View>
           <View style={styles.discoveryArt}>
             <View style={styles.discoveryRingLarge} />
             <View style={styles.discoveryRingSmall} />
             <View style={styles.deviceGlyph}><Text style={styles.deviceGlyphText}>▧</Text></View>
           </View>
-          {busy ? <Text style={styles.scanningText}>正在寻找附近设备…</Text> : null}
+          {busy ? <Text style={styles.scanningText}>正在刷新附近设备…</Text> : null}
           {devices.map(device => (
             <Pressable key={device.deviceId} onPress={() => chooseDevice(device)} style={({ pressed }) => [styles.listRow, pressed && styles.rowPressed]}>
               <View style={styles.listIcon}><Text style={styles.listIconText}>▧</Text></View>
@@ -467,7 +479,7 @@ export default function DeviceSetupFlow({
             </Pressable>
           ))}
           {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
-          {!busy && !devices.length ? <PrimaryButton secondary onPress={discoverDevices}>重新查找</PrimaryButton> : null}
+          {!busy ? <PrimaryButton secondary onPress={discoverDevices}>{devices.length ? '刷新设备' : '重新查找'}</PrimaryButton> : null}
         </>
       );
     }
@@ -475,6 +487,7 @@ export default function DeviceSetupFlow({
     if (stage === 'wifi') {
       return (
         <>
+          <Pressable onPress={restartDeviceConnection}><Text style={styles.backLink}>‹ 返回蓝牙设备列表</Text></Pressable>
           <Text style={styles.title}>选择家庭 Wi-Fi</Text>
           <Text style={styles.description}>以下网络由照片墙扫描得到。请选择设备今后长期使用的网络。</Text>
           <View style={styles.selectedDevicePill}>
@@ -508,6 +521,7 @@ export default function DeviceSetupFlow({
     if (stage === 'password') {
       return (
         <>
+          <Pressable onPress={restartDeviceConnection}><Text style={styles.backLink}>‹ 返回蓝牙设备列表</Text></Pressable>
           <Pressable onPress={() => transition('wifi')}><Text style={styles.backLink}>‹ 重新选择网络</Text></Pressable>
           <Text style={styles.title}>输入 Wi-Fi 密码</Text>
           <Text style={styles.description}>密码只会通过蓝牙发送给照片墙，App 不会保存。</Text>
@@ -553,6 +567,7 @@ export default function DeviceSetupFlow({
           <View style={styles.connectionProgress}><View style={[styles.connectionProgressFill, { width: `${progress}%` }]} /></View>
           <Text style={styles.progressValue}>{progress}%</Text>
           <Text style={styles.keepOpenText}>请保持照片墙通电，并让 App 停留在此页面。</Text>
+          <PrimaryButton secondary onPress={restartDeviceConnection}>返回蓝牙设备列表</PrimaryButton>
         </View>
       );
     }
@@ -580,6 +595,7 @@ export default function DeviceSetupFlow({
         <Text style={styles.stateDescription}>{error || '请检查 Wi-Fi 密码后重试。'}</Text>
         <PrimaryButton onPress={retryPassword}>重新输入密码</PrimaryButton>
         <PrimaryButton secondary onPress={() => transition('wifi')}>选择其他网络</PrimaryButton>
+        <PrimaryButton secondary onPress={restartDeviceConnection}>返回蓝牙设备列表</PrimaryButton>
       </View>
     );
   };
@@ -666,6 +682,10 @@ const styles = StyleSheet.create({
   signalBarActive: { backgroundColor: COLORS.blue },
   chevron: { color: '#C7C7CC', fontSize: 24, lineHeight: 26 },
   selectedDevicePill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 11, paddingVertical: 8, borderRadius: 15, backgroundColor: COLORS.greenSoft, marginBottom: 14 },
+  deviceDiscoveryHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  refreshButton: { width: 44, height: 44, borderRadius: 8, backgroundColor: COLORS.ink, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  refreshButtonDisabled: { opacity: 0.38 },
+  refreshButtonIcon: { color: COLORS.paper, fontFamily: 'PingFang SC', fontSize: 24, lineHeight: 28, fontWeight: '600' },
   connectedDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.green },
   selectedDeviceText: { color: COLORS.ink, fontFamily: 'PingFang SC', fontSize: 11, fontWeight: '600' },
   backLink: { color: COLORS.blue, fontFamily: 'PingFang SC', fontSize: 14, fontWeight: '600', marginBottom: 14, ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : {}) },
