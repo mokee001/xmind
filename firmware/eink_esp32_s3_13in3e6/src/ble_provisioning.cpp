@@ -20,6 +20,7 @@ constexpr uint8_t kFrameVersion = 1;
 constexpr size_t kEventChunkBytes = 140;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
 constexpr uint32_t kRestartDelayMs = 5000;
+constexpr uint32_t kAdvertisingRestartDelayMs = 500;
 constexpr size_t kMaximumNetworks = 20;
 constexpr size_t kMaximumApiBaseBytes = 192;
 constexpr uint8_t kProofButton = 0;
@@ -88,6 +89,7 @@ void BleProvisioningService::begin(
   setupToken_ = setupToken;
   preserveDeviceToken_ = preserveDeviceToken;
   status_ = "idle";
+  advertisingRestartAt_ = 0;
   activeService = this;
   pinMode(kProofButton, INPUT_PULLUP);
   WiFi.persistent(false);
@@ -165,6 +167,14 @@ void BleProvisioningService::loop() {
     scanNetworks();
   }
   if (wifiConnecting_) processWifiConnection();
+  if (advertisingRestartAt_ != 0 &&
+      static_cast<int32_t>(millis() - advertisingRestartAt_) >= 0) {
+    advertisingRestartAt_ = 0;
+    if (!clientConnected_ && restartAt_ == 0) {
+      BLEDevice::startAdvertising();
+      Serial.println("BLE provisioning advertising restarted");
+    }
+  }
   if (restartAt_ != 0 && static_cast<int32_t>(millis() - restartAt_) >= 0) {
     stop();
     delay(100);
@@ -178,6 +188,7 @@ void BleProvisioningService::stop() {
   BLEDevice::deinit(true);
   active_ = false;
   clientConnected_ = false;
+  advertisingRestartAt_ = 0;
   activeService = nullptr;
 }
 
@@ -202,13 +213,16 @@ void BleProvisioningService::completeCloudBootstrap(bool success, const String& 
 void BleProvisioningService::handleClientConnected() {
   clientConnected_ = true;
   clientAuthorized_ = false;
+  advertisingRestartAt_ = 0;
   setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
 }
 
 void BleProvisioningService::handleClientDisconnected() {
   clientConnected_ = false;
   clientAuthorized_ = false;
-  if (active_ && restartAt_ == 0) BLEDevice::startAdvertising();
+  if (active_ && restartAt_ == 0) {
+    advertisingRestartAt_ = millis() + kAdvertisingRestartDelayMs;
+  }
 }
 
 void BleProvisioningService::resetCommandFrame() {
@@ -409,7 +423,7 @@ void BleProvisioningService::processWifiConnection() {
     preferences.putString("pass", pendingPassword_);
     preferences.putString("api", pendingApiBase_);
     preferences.putString("setup", setupToken_);
-    preferences.remove("force_setup");
+    preferences.putBool("force_setup", true);
     if (!preserveDeviceToken_) preferences.remove("token");
     preferences.remove("revision");
     preferences.end();

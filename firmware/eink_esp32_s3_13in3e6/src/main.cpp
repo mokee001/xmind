@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.0";
+constexpr char kFirmwareVersion[] = "0.3.6";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -100,8 +100,13 @@ bool displayLocalControlPattern() {
   if (!payload) payload = static_cast<uint8_t*>(malloc(photowall::kPackedFrameBytes));
   if (!payload) return false;
 
-  for (size_t offset = 0; offset < photowall::kPackedFrameBytes; ++offset) {
-    payload[offset] = ((offset / 300) % 2 == 0) ? 0x00 : 0xFF;
+  constexpr uint8_t kColorCodes[] = {0, 1, 2, 3, 5, 6};
+  constexpr size_t kBytesPerRow = photowall::kPanelWidth / 2;
+  for (size_t row = 0; row < photowall::kPanelHeight; ++row) {
+    const size_t colorIndex = row * 6 / photowall::kPanelHeight;
+    const uint8_t color = kColorCodes[colorIndex];
+    memset(payload + row * kBytesPerRow,
+           static_cast<uint8_t>((color << 4) | color), kBytesPerRow);
   }
   if (!panelInitialized) {
     panel.begin();
@@ -216,6 +221,14 @@ void saveDeviceToken(const String& token) {
   const size_t storedLength = prefs.putString("token", token);
   prefs.end();
   Serial.printf("Device token persisted: %s\n", storedLength == token.length() ? "yes" : "no");
+}
+
+void finalizeProvisioningConfiguration() {
+  prefs.begin("photowall", false);
+  prefs.remove("force_setup");
+  prefs.end();
+  forceProvisioning = false;
+  Serial.println("Provisioning configuration committed");
 }
 
 void saveRevision(const String& revision) {
@@ -708,6 +721,7 @@ void loop() {
   if (provisioningMode && photowall::bleProvisioning.cloudBootstrapPending()) {
     loadConfiguration();
     if (bootstrapDevice()) {
+      finalizeProvisioningConfiguration();
       photowall::bleProvisioning.completeCloudBootstrap(
           true, "设备已连接 PhotoWall 服务");
     } else {

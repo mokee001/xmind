@@ -58,6 +58,7 @@ class BleProvisioningService {
   bool preserveDeviceToken_ = false;
   uint32_t wifiConnectStartedAt_ = 0;
   uint32_t restartAt_ = 0;
+  uint32_t advertisingRestartAt_ = 0;
   portMUX_TYPE commandMux_ = portMUX_INITIALIZER_UNLOCKED;
 };
 

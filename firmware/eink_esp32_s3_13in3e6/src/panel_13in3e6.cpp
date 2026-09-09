@@ -7,7 +7,7 @@
 namespace photowall {
 
 void Panel13in3E6::begin() {
-  pinMode(kBusy, INPUT_PULLUP);
+  pinMode(kBusy, INPUT);
   pinMode(kReset, OUTPUT);
   pinMode(kDc, OUTPUT);
   pinMode(kSck, OUTPUT);
@@ -18,7 +18,7 @@ void Panel13in3E6::begin() {
   digitalWrite(kCsMaster, HIGH);
   digitalWrite(kCsSlave, HIGH);
   digitalWrite(kReset, LOW);
-  digitalWrite(kPower, LOW);
+  digitalWrite(kPower, HIGH);
   digitalWrite(kSck, LOW);
 }
 
@@ -66,8 +66,9 @@ bool Panel13in3E6::waitUntilIdle(const char* stage, uint32_t timeoutMs) {
       Serial.printf("Panel BUSY timeout during %s (pin=%d)\n", stage, digitalRead(kBusy));
       return false;
     }
-    delay(100);
+    delay(10);
   }
+  delay(20);
   Serial.printf("Panel ready after %s (%lu ms)\n", stage,
                 static_cast<unsigned long>(millis() - started));
   return true;
@@ -75,15 +76,9 @@ bool Panel13in3E6::waitUntilIdle(const char* stage, uint32_t timeoutMs) {
 
 bool Panel13in3E6::initialize() {
   selectAll(false);
-  digitalWrite(kReset, LOW);
-  digitalWrite(kPower, LOW);
-  delay(100);
-  Serial.printf("Panel BUSY with power off: %d\n", digitalRead(kBusy));
-  digitalWrite(kPower, HIGH);
-  delay(10);
-  Serial.printf("Panel BUSY after power on: %d\n", digitalRead(kBusy));
   reset();
   Serial.printf("Panel BUSY after reset: %d\n", digitalRead(kBusy));
+  if (!waitUntilIdle("reset")) return false;
 
   digitalWrite(kCsMaster, LOW);
   command(0x74);
@@ -207,9 +202,6 @@ bool Panel13in3E6::refreshAndSleep() {
   command(0x07);
   data(0xA5);
   selectAll(false);
-  delay(100);
-  digitalWrite(kPower, LOW);
-  digitalWrite(kReset, LOW);
   return true;
 }
 
