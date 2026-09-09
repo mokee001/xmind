@@ -402,12 +402,15 @@ async function awaitPhysicalConfirmation() {
   }
 }
 
-export async function startDeviceDiscovery(onDevice) {
+export async function startDeviceDiscovery(onDevice, { includeCached = true } = {}) {
   try {
     logBle('discovery_started');
     await waitForBluetooth();
     await stopDeviceDiscovery();
-    const cachedDevices = [...discoveredDevices.values()];
+    const cachedDevices = includeCached ? [...discoveredDevices.values()] : [];
+    // 首次进入 App 的发现弹窗只应该由真实、正在广播的设备触发；
+    // 否则 iOS 进程内缓存会把已经离开的旧设备误显示为“就在附近”。
+    if (!includeCached) discoveredDevices.clear();
     await releaseProvisioningConnection('discovery_restarted');
     // Recover connections left open by an interrupted/older App process. A BLE
     // peripheral does not advertise while iOS still considers it connected.

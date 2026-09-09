@@ -2,11 +2,34 @@ import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library/legacy';
+import { cutoutPet, isPetCutoutAvailable, removePetCutout } from '../modules/pet-cutout';
+import {
+  curateLocalPhotos,
+  isLocalPhotoCurationAvailable,
+} from '../modules/local-photo-curation';
 
-export const DEFAULT_API_BASE = process.env.EXPO_PUBLIC_API_BASE || 'https://api.mokeedesign.cn';
+const CLOUD_API_BASE = 'https://api.mokeedesign.cn';
+const configuredApiBase = process.env.EXPO_PUBLIC_API_BASE;
+const configuredForLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(?::|\/|$)/i.test(
+  configuredApiBase || '',
+);
+
+// Local endpoints are useful for browser/simulator work, but a release build
+// must never try to call the phone itself.
+export const DEFAULT_API_BASE = !__DEV__ && configuredForLocalhost
+  ? CLOUD_API_BASE
+  : configuredApiBase || CLOUD_API_BASE;
 export const DEFAULT_PROVISION_URL = 'http://192.168.4.1';
 const PHOTO_UPLOAD_BATCH_SIZE = 1;
+const PHOTO_PIPELINE = process.env.EXPO_PUBLIC_PHOTO_PIPELINE || 'local_preferred';
+const LOCAL_CANDIDATE_LIMIT = Number(process.env.EXPO_PUBLIC_LOCAL_CANDIDATE_LIMIT) || 160;
+const LOCAL_MINIMUM_CANDIDATES = Number(process.env.EXPO_PUBLIC_LOCAL_MINIMUM_CANDIDATES) || 12;
+const LOCAL_INITIAL_ANALYSIS_LIMIT = Number(process.env.EXPO_PUBLIC_LOCAL_INITIAL_ANALYSIS_LIMIT) || 600;
 const PWE6_FRAME_BYTES = 960045;
+const PET_COLLAGE_ASSET_LIMIT = 5000;
+const PET_COLLAGE_POLL_INTERVAL_MS = 1500;
+const PET_COLLAGE_TIMEOUT_MS = 10 * 60 * 1000;
+const PET_COLLAGE_ANALYSIS_TIMEOUT_MS = 30 * 60 * 1000;
 
 function baseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -246,6 +269,120 @@ async function uploadAssets({ apiBase, accountToken, assets, onProgress }) {
   });
 }
 
+async function fetchKnownPhotoNames({ apiBase, accountToken }) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/known_photos`, {
+    headers: accountToken ? { 'X-Account-Token': accountToken } : {},
+  });
+  return new Set((await responseJson(response)).names || []);
+}
+
+function selectedAlbumSources(album) {
+  const sources = Array.isArray(album?.albums) && album.albums.length
+    ? album.albums
+    : album ? [album] : [{ allPhotos: true }];
+  const allPhotos = sources.find(source => source?.allPhotos);
+  if (allPhotos) return [allPhotos];
+  return [...new Map(sources.filter(source => source?.id).map(source => [source.id, source])).values()];
+}
+
+async function readAssetsFromSelectedAlbums({ album, knownNames = null, limit = Infinity, onProgress }) {
+  const sources = selectedAlbumSources(album);
+  const assetsById = new Map();
+  let scanned = 0;
+
+  for (const source of sources) {
+    let after;
+    do {
+      const request = {
+        first: Math.min(100, Math.max(1, limit - assetsById.size)),
+        after,
+        mediaType: [MediaLibrary.MediaType.photo],
+        sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+      };
+      if (!source?.allPhotos) request.album = source.nativeAlbum || source.id;
+      const page = await MediaLibrary.getAssetsAsync(request);
+      scanned += page.assets.length;
+      for (const asset of page.assets) {
+        if (knownNames?.has(asset.filename)) continue;
+        const assetId = asset.id || asset.uri || asset.filename;
+        if (assetId && !assetsById.has(assetId)) assetsById.set(assetId, asset);
+      }
+      onProgress?.({ stage: 'scanning', progress: 0, scanned: assetsById.size, inspected: scanned, uploaded: 0 });
+      after = page.endCursor;
+      if (!page.hasNextPage || assetsById.size >= limit) break;
+    } while (after);
+    if (assetsById.size >= limit) break;
+  }
+
+  return { assets: [...assetsById.values()], scanned };
+}
+
+function localFallback(reason, assets, preserveAll = false) {
+  const fallbackAssets = preserveAll ? assets : assets.slice(0, LOCAL_CANDIDATE_LIMIT);
+  return {
+    assets: fallbackAssets,
+    local: {
+      used: false,
+      fallback: true,
+      reason,
+      inspected: assets.length,
+      candidates: fallbackAssets.length,
+    },
+  };
+}
+
+async function selectUploadCandidatesLocally(assets, onProgress) {
+  if (PHOTO_PIPELINE === 'cloud_legacy') return localFallback('legacy_mode', assets, true);
+  if (!isLocalPhotoCurationAvailable()) {
+    if (PHOTO_PIPELINE === 'local_only') throw new Error('设备端识别模块不可用，且本地专用模式禁止云端兜底');
+    return localFallback('native_module_unavailable', assets);
+  }
+
+  onProgress?.({
+    stage: 'local_analysis',
+    progress: 5,
+    scanned: assets.length,
+    uploaded: 0,
+  });
+  try {
+    // Assets arrive newest-first. The first pass is deliberately bounded so a
+    // large library can show value before the persistent background index is ready.
+    const initialAssets = assets.slice(0, LOCAL_INITIAL_ANALYSIS_LIMIT);
+    const result = await curateLocalPhotos(
+      initialAssets.map(asset => asset.id).filter(Boolean),
+      { maximumCandidates: LOCAL_CANDIDATE_LIMIT },
+    );
+    const byID = new Map(initialAssets.map(asset => [asset.id, asset]));
+    const candidates = (result.candidates || []).map(item => byID.get(item.id)).filter(Boolean);
+    if (candidates.length < Math.min(LOCAL_MINIMUM_CANDIDATES, assets.length)) {
+      if (PHOTO_PIPELINE === 'local_only') {
+        throw new Error(`本机只找到 ${candidates.length} 张候选照片，低于安全下限`);
+      }
+      return localFallback('insufficient_local_candidates', assets);
+    }
+    onProgress?.({
+      stage: 'local_analysis',
+      progress: 100,
+      scanned: assets.length,
+      selected: candidates.length,
+      uploaded: 0,
+      local: result,
+    });
+    return {
+      assets: candidates,
+      local: {
+        ...result,
+        used: true,
+        fallback: false,
+        candidates: candidates.length,
+      },
+    };
+  } catch (error) {
+    if (PHOTO_PIPELINE === 'local_only') throw error;
+    return localFallback(`local_analysis_failed:${error.message}`, assets);
+  }
+}
+
 export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken, album, onProgress }) {
   if (Platform.OS === 'web') {
     throw new Error('网页预览无法读取系统相册，请在已安装的手机 App 中同步照片');
@@ -254,30 +391,19 @@ export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken,
   if (permission.status !== 'granted') {
     throw new Error('需要照片访问权限，才能同步相册');
   }
-  const knownResponse = await fetch(`${baseUrl(apiBase)}/api/known_photos`, {
-    headers: accountToken ? { 'X-Account-Token': accountToken } : {},
-  });
-  const known = new Set((await responseJson(knownResponse)).names || []);
-  const assets = [];
-  let after;
+  const known = await fetchKnownPhotoNames({ apiBase, accountToken });
   onProgress?.({ stage: 'scanning', progress: 0, scanned: 0, uploaded: 0 });
-  do {
-    const page = await MediaLibrary.getAssetsAsync({
-      first: 100,
-      after,
-      album,
-      mediaType: [MediaLibrary.MediaType.photo],
-      sortBy: [[MediaLibrary.SortBy.creationTime, false]],
-    });
-    assets.push(...page.assets.filter(asset => !known.has(asset.filename)));
-    onProgress?.({ stage: 'scanning', progress: 0, scanned: assets.length, uploaded: 0 });
-    after = page.endCursor;
-    if (!page.hasNextPage) break;
-  } while (after);
+  const { assets: discoveredAssets } = await readAssetsFromSelectedAlbums({
+    album,
+    knownNames: known,
+    onProgress,
+  });
 
-  if (!assets.length) {
-    return { scanned: 0, synced: 0, unchanged: true };
+  if (!discoveredAssets.length) {
+    return { scanned: 0, synced: 0, unchanged: true, local: null };
   }
+  const selection = await selectUploadCandidatesLocally(discoveredAssets, onProgress);
+  const assets = selection.assets;
   let synced = 0;
   for (let index = 0; index < assets.length; index += PHOTO_UPLOAD_BATCH_SIZE) {
     const batch = assets.slice(index, index + PHOTO_UPLOAD_BATCH_SIZE);
@@ -295,7 +421,13 @@ export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken,
     synced += Number(result.saved) || batch.length;
   }
   onProgress?.({ stage: 'uploaded', progress: 100, scanned: assets.length, uploaded: synced });
-  return { scanned: assets.length, synced, unchanged: false };
+  return {
+    scanned: discoveredAssets.length,
+    selected: assets.length,
+    synced,
+    unchanged: false,
+    local: selection.local,
+  };
 }
 
 export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken }) {
@@ -342,10 +474,21 @@ export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, acc
   return { ...(await readRecognizedContent({ apiBase, accountToken })), cluster };
 }
 
+export async function listWallTemplates({ apiBase = DEFAULT_API_BASE } = {}) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/templates`);
+  const result = await responseJson(response);
+  return {
+    ...result,
+    templates: Array.isArray(result.templates)
+      ? result.templates.filter(template => template?.qualified !== false)
+      : [],
+  };
+}
+
 export async function generateWall({
   apiBase = DEFAULT_API_BASE,
   accountToken,
-  template = 'daily_polaroid',
+  template = 'template_1',
   title = '我的一天',
   filters = [],
   excludeFilters = [],
@@ -358,12 +501,194 @@ export async function generateWall({
   return responseJson(response);
 }
 
-export async function publishGeneratedWall({ apiBase, deviceId, accountToken }) {
+export async function publishGeneratedWall({ apiBase, deviceId, accountToken, wallId }) {
   const response = await fetch(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/publish-last-wall`,
-    { method: 'POST', headers: { 'X-Account-Token': accountToken } },
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Account-Token': accountToken },
+      body: JSON.stringify({ wall_id: wallId || '' }),
+    },
   );
   return responseJson(response);
+}
+
+export async function createPetCollageJob({
+  apiBase = DEFAULT_API_BASE,
+  accountToken,
+  filenames,
+}) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/pet-collage/jobs`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accountToken ? { 'X-Account-Token': accountToken } : {}),
+    },
+    body: JSON.stringify({ filenames }),
+  });
+  return responseJson(response);
+}
+
+export async function readPetCollageJob({ apiBase = DEFAULT_API_BASE, accountToken, jobId }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/pet-collage/jobs/${encodeURIComponent(jobId)}`,
+    { headers: accountToken ? { 'X-Account-Token': accountToken } : {} },
+  );
+  return responseJson(response);
+}
+
+export async function uploadPetCollageCutout({
+  apiBase = DEFAULT_API_BASE,
+  accountToken,
+  jobId,
+  filename,
+  cutoutUri,
+  onProgress,
+}) {
+  const form = new FormData();
+  form.append('filename', filename);
+  form.append('file', {
+    uri: cutoutUri,
+    name: `${filename.replace(/\.[^.]+$/, '') || 'pet'}-cutout.png`,
+    type: 'image/png',
+  });
+  return uploadForm({
+    url: `${baseUrl(apiBase)}/api/pet-collage/jobs/${encodeURIComponent(jobId)}/cutouts`,
+    form,
+    headers: accountToken ? { 'X-Account-Token': accountToken } : {},
+    onProgress,
+    timeoutMs: 120000,
+  });
+}
+
+async function waitForPetCollageJob({
+  apiBase,
+  accountToken,
+  jobId,
+  statuses,
+  onProgress,
+  timeoutMs = PET_COLLAGE_TIMEOUT_MS,
+}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = await readPetCollageJob({ apiBase, accountToken, jobId });
+    onProgress?.({
+      stage: job.status,
+      progress: Number(job.progress) || 0,
+      message: job.message || '',
+      job,
+    });
+    if (job.status === 'failed') throw new Error(job.error || job.message || '宠物拼贴任务失败');
+    if (statuses.includes(job.status)) return job;
+    await new Promise(resolve => setTimeout(resolve, PET_COLLAGE_POLL_INTERVAL_MS));
+  }
+  throw new Error('宠物拼贴处理超时，请稍后重试');
+}
+
+async function readAuthorizedPetAssets({ album, onProgress }) {
+  const permission = await MediaLibrary.getPermissionsAsync(false, ['photo']);
+  if (permission.status !== 'granted') {
+    throw new Error('需要照片访问权限，才能制作宠物拼贴');
+  }
+  const { assets } = await readAssetsFromSelectedAlbums({
+    album,
+    limit: PET_COLLAGE_ASSET_LIMIT,
+    onProgress,
+  });
+  return assets;
+}
+
+export async function generatePetCollage({
+  apiBase = DEFAULT_API_BASE,
+  accountToken,
+  album,
+  onProgress,
+}) {
+  if (Platform.OS !== 'ios') {
+    throw new Error('宠物拼贴抠图仅支持 iPhone App');
+  }
+  if (!isPetCutoutAvailable()) {
+    throw new Error('当前安装包未包含宠物抠图组件。请安装最新测试版；这不是 iOS 版本不足。');
+  }
+
+  const assets = await readAuthorizedPetAssets({ album, onProgress });
+  const assetsByFilename = new Map();
+  const duplicateFilenames = new Set();
+  assets.forEach(asset => {
+    if (!asset.filename || duplicateFilenames.has(asset.filename)) return;
+    if (!assetsByFilename.has(asset.filename)) {
+      assetsByFilename.set(asset.filename, asset);
+      return;
+    }
+    assetsByFilename.delete(asset.filename);
+    duplicateFilenames.add(asset.filename);
+  });
+  if (assetsByFilename.size < 5) {
+    throw new Error('排除同名文件后，当前授权的照片不足 5 张，无法制作宠物拼贴');
+  }
+
+  const created = await createPetCollageJob({
+    apiBase,
+    accountToken,
+    filenames: [...assetsByFilename.keys()],
+  });
+  const selectedJob = await waitForPetCollageJob({
+    apiBase,
+    accountToken,
+    jobId: created.job_id,
+    statuses: ['awaiting_cutouts'],
+    onProgress,
+    timeoutMs: PET_COLLAGE_ANALYSIS_TIMEOUT_MS,
+  });
+
+  const selected = Array.isArray(selectedJob.selected) ? selectedJob.selected : [];
+  if (selected.length !== 5) throw new Error('云端没有返回 5 张待抠图照片');
+  for (let index = 0; index < selected.length; index += 1) {
+    const item = selected[index];
+    const asset = assetsByFilename.get(item.filename);
+    if (!asset) throw new Error(`iPhone 中找不到云端选中的照片：${item.filename}`);
+    const info = await MediaLibrary.getAssetInfoAsync(asset, { shouldDownloadFromNetwork: true });
+    const sourceUri = info.localUri;
+    if (!sourceUri) throw new Error(`无法将照片下载到 iPhone：${item.filename}`);
+
+    let cutout;
+    try {
+      onProgress?.({
+        stage: 'cutout',
+        progress: 72 + Math.round((index / selected.length) * 18),
+        completed: index,
+        total: selected.length,
+        message: `正在抠取第 ${index + 1}/5 张宠物照片`,
+      });
+      cutout = await cutoutPet(sourceUri);
+      await uploadPetCollageCutout({
+        apiBase,
+        accountToken,
+        jobId: created.job_id,
+        filename: item.filename,
+        cutoutUri: cutout.uri,
+        onProgress: fraction => onProgress?.({
+          stage: 'cutout',
+          progress: 72 + Math.round(((index + fraction) / selected.length) * 18),
+          completed: index,
+          total: selected.length,
+          message: `正在上传第 ${index + 1}/5 张透明抠图`,
+        }),
+      });
+    } finally {
+      if (cutout?.uri) await removePetCutout(cutout.uri).catch(() => {});
+    }
+  }
+
+  const ready = await waitForPetCollageJob({
+    apiBase,
+    accountToken,
+    jobId: created.job_id,
+    statuses: ['ready'],
+    onProgress,
+  });
+  if (!ready.wall?.image_url) throw new Error('云端未返回宠物拼贴预览');
+  return ready.wall;
 }
 
 export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, accountToken, onProgress }) {
@@ -378,7 +703,9 @@ export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, accountTo
 
   const start = new Date(2026, 6, 1);
   const end = new Date(2026, 7, 1);
+  const known = await fetchKnownPhotoNames({ apiBase, accountToken });
   const assets = [];
+  let matched = 0;
   let after;
   onProgress?.({ stage: 'scanning', progress: 0, scanned: 0 });
   do {
@@ -390,15 +717,17 @@ export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, accountTo
       createdBefore: end,
       sortBy: [[MediaLibrary.SortBy.creationTime, false]],
     });
-    assets.push(...page.assets);
-    onProgress?.({ stage: 'scanning', progress: 0, scanned: assets.length });
+    matched += page.assets.length;
+    assets.push(...page.assets.filter(asset => !known.has(asset.filename)));
+    onProgress?.({ stage: 'scanning', progress: 0, scanned: matched });
     after = page.endCursor;
     if (!page.hasNextPage) break;
   } while (after);
 
-  if (!assets.length) {
+  if (!matched) {
     throw new Error('没有找到已授权且拍摄于 2026 年 7 月的照片');
   }
+  if (!assets.length) return { scanned: matched, synced: 0, unchanged: true };
 
   let synced = 0;
   // React Native assembles multipart bodies in memory. Uploading a group of
@@ -413,14 +742,14 @@ export async function syncJuly2026Photos({ apiBase = DEFAULT_API_BASE, accountTo
       onProgress: fraction => onProgress?.({
         stage: 'uploading',
         progress: Math.round(((index + (batch.length * fraction)) / assets.length) * 100),
-        scanned: assets.length,
+        scanned: matched,
         uploaded: Math.min(assets.length, Math.round(index + (batch.length * fraction))),
       }),
     });
     synced += Number(result.saved) || batch.length;
   }
-  onProgress?.({ stage: 'uploaded', progress: 100, scanned: assets.length, uploaded: synced });
-  return { scanned: assets.length, synced };
+  onProgress?.({ stage: 'uploaded', progress: 100, scanned: matched, uploaded: synced });
+  return { scanned: matched, synced, unchanged: false };
 }
 
 export async function publishJulyCalendar({ apiBase, deviceId, accountToken }) {
@@ -438,10 +767,17 @@ export async function listDisplays({ apiBase, accountToken }) {
   return responseJson(response);
 }
 
-export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
+export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, setupToken = '' }) {
   const response = await fetch(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/reprovision`,
-    { method: 'POST', headers: { 'X-Account-Token': accountToken } },
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Account-Token': accountToken,
+      },
+      body: JSON.stringify({ setup_token: setupToken }),
+    },
   );
   return responseJson(response);
 }
@@ -458,7 +794,7 @@ export async function readDisplayStatus({ apiBase = DEFAULT_API_BASE, deviceId, 
   const result = await listDisplays({ apiBase, accountToken });
   const device = (result.devices || []).find(item => item.device_id === deviceId);
   if (!device) {
-    throw Object.assign(new Error('线上服务中没有找到已绑定的墨水屏'), {
+    throw Object.assign(new Error('线上服务中没有找到已绑定的设备'), {
       status: 404,
       code: 'DEVICE_NOT_FOUND',
     });

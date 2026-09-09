@@ -9,10 +9,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "cn.mokeedesign.photowall",
-      "buildNumber": "22",
+      "buildNumber": "23",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "需要读取相册，自动挑选照片生成照片墙并投屏。",
+        "NSPhotoLibraryUsageDescription": "用于在本机自动发现人物、主题和高质量照片。完整相册不会因授权而上传。",
         "NSLocalNetworkUsageDescription": "需要在家庭局域网中发现并连接你的墨水屏。",
         "NSBonjourServices": [
           "_photowall._tcp",
@@ -52,7 +52,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "需要读取相册，自动挑选照片生成照片墙并投屏。",
+          "photosPermission": "用于在本机自动发现人物、主题和高质量照片。完整相册不会因授权而上传。",
           "savePhotosPermission": "需要访问相册以读取照片。",
           "isAccessMediaLocationEnabled": true
         }

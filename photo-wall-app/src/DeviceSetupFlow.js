@@ -108,6 +108,8 @@ export default function DeviceSetupFlow({
   previewMode = false,
   adapter = null,
   embedded = false,
+  autoDiscover = false,
+  initialDevice = null,
 }) {
   const [stage, setStage] = useState('device');
   const [devices, setDevices] = useState([]);
@@ -130,6 +132,7 @@ export default function DeviceSetupFlow({
   const requestSequenceRef = useRef(0);
   const wifiScanRequestRef = useRef(0);
   const deviceConnectionRef = useRef(false);
+  const initialDeviceHandledRef = useRef('');
 
   const transition = nextStage => {
     stageMotion.setValue(0);
@@ -237,8 +240,8 @@ export default function DeviceSetupFlow({
     setError('');
     setResult(null);
     setConfirmingRemoval(false);
-    discoverDevices();
-  }, [visible, session]);
+    if (autoDiscover) discoverDevices();
+  }, [visible, session, autoDiscover]);
 
   const scanConnectedNetworks = async () => {
     if (wifiScanRequestRef.current) return;
@@ -277,11 +280,11 @@ export default function DeviceSetupFlow({
     setBusy(true);
     setError('');
     setStatusText('正在连接照片墙…');
-    transition('wifi');
     try {
       if (previewMode) {
         await wait(650);
         setNetworks(PREVIEW_NETWORKS);
+        transition('wifi');
         return;
       }
       const connected = await adapter.connectProvisioningDevice(device.deviceId);
@@ -291,6 +294,7 @@ export default function DeviceSetupFlow({
         throw new Error('这不是正在更换 Wi-Fi 的原照片墙，请返回后选择正确设备');
       }
       setSelectedDevice(current => ({ ...current, ...connected }));
+      transition('wifi');
       await scanConnectedNetworks();
     } catch (caught) {
       setError(caught.message || '无法读取附近的 Wi-Fi');
@@ -299,6 +303,14 @@ export default function DeviceSetupFlow({
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    const deviceId = initialDevice?.deviceId;
+    if (!visible || session || !deviceId || initialDeviceHandledRef.current === deviceId) return undefined;
+    initialDeviceHandledRef.current = deviceId;
+    const timer = setTimeout(() => chooseDevice(initialDevice), 120);
+    return () => clearTimeout(timer);
+  }, [visible, session, initialDevice?.deviceId]);
 
   const restartDeviceConnection = async () => {
     flowGenerationRef.current += 1;
@@ -447,27 +459,18 @@ export default function DeviceSetupFlow({
         <>
           <View style={styles.deviceDiscoveryHeader}>
             <View style={styles.flex}>
-              <Text style={styles.title}>选择照片墙</Text>
+              <Text style={styles.title}>连接照片墙</Text>
               <Text style={styles.description}>{existingSession
                 ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。`
-                : '保持照片墙通电并靠近手机，无需进入系统 Wi-Fi 设置。'}</Text>
+                : '保持照片墙通电并靠近手机。准备好后，搜索附近的照片墙。'}</Text>
             </View>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="刷新附近设备"
-              disabled={busy}
-              onPress={discoverDevices}
-              style={({ pressed }) => [styles.refreshButton, pressed && styles.rowPressed, busy && styles.refreshButtonDisabled]}
-            >
-              <Text style={styles.refreshButtonIcon}>↻</Text>
-            </Pressable>
           </View>
           <View style={styles.discoveryArt}>
             <View style={styles.discoveryRingLarge} />
             <View style={styles.discoveryRingSmall} />
             <View style={styles.deviceGlyph}><Text style={styles.deviceGlyphText}>▧</Text></View>
           </View>
-          {busy ? <Text style={styles.scanningText}>正在刷新附近设备…</Text> : null}
+          {busy ? <Text style={styles.scanningText}>{statusText || '正在搜索附近设备…'}</Text> : null}
           {devices.map(device => (
             <Pressable key={device.deviceId} onPress={() => chooseDevice(device)} style={({ pressed }) => [styles.listRow, pressed && styles.rowPressed]}>
               <View style={styles.listIcon}><Text style={styles.listIconText}>▧</Text></View>
@@ -479,7 +482,7 @@ export default function DeviceSetupFlow({
             </Pressable>
           ))}
           {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
-          {!busy ? <PrimaryButton secondary onPress={discoverDevices}>{devices.length ? '刷新设备' : '重新查找'}</PrimaryButton> : null}
+          {!busy ? <PrimaryButton onPress={discoverDevices}>{devices.length ? '重新搜索附近设备' : '搜索附近设备'}</PrimaryButton> : null}
         </>
       );
     }
