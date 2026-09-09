@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>一段时光 · 回忆实验</title><link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/memory-experiment.css">
+  <script src="/memory-experiment.js" defer></script>
+</head>
+<body>
+  <header><a href="/">PHOTO WALL <span>／ 回忆实验</span></a><span class="local">本机照片 · 本地处理</span></header>
+  <main>
+    <section class="intro"><div><p class="eyebrow">MEMORIES, RECONSIDERED</p><h1>把照片，连成一段时光。</h1><p class="lead">同一段经历，可以有不一样的画面。<br>看看换一种组织方式，能否留下更完整的回忆。</p></div><div class="intro-actions"><button id="generate">重新生成实验</button><p id="status" role="status" aria-live="polite">读取已保存结果…</p></div></section>
+    <div id="error" role="alert" hidden></div>
+    <section id="summary" class="summary" aria-label="数据与实验范围"></section>
+    <details class="method"><summary>这次比较了什么？</summary><p>默认左侧保留原来的活动分组，右侧允许时间、地点和人物线索连接不同画面。两侧使用相同的全量 Ente 内容向量、近似重复规则与选片方法，旅程分组保持一致。</p><p>也可切换“原分组·原选片”查看原算法参考；它仍有每类最多 10 组的展示上限。这里只比较有拍摄时间的活动和已有旅程候选，日期不明确的照片仍留在原有主题相册中。新增规则尚未经人工标注校准，数量和画面变化不是质量评分。</p><p id="provenance"></p></details>
+    <section class="browse"><div class="section-title"><div><p class="eyebrow">EXPLORE A MEMORY</p><h2>选一段，慢慢看。</h2></div><div class="filters" role="group" aria-label="相册类别"><button data-kind="event" class="active" aria-pressed="true">活动片段</button><button data-kind="trip" aria-pressed="false">出行候选</button></div></div><div id="album-list" class="album-list"></div></section>
+    <section id="comparison" aria-label="回忆照片对比" hidden>
+      <div class="comparison-heading"><h2 id="comparison-title"></h2><p id="match-note"></p></div>
+      <div class="compare-grid">
+        <article class="column"><div class="column-header"><span class="variant">A / 对照</span><select id="left-variant" aria-label="左侧方案"><option value="controlled">原分组 · 新选片</option><option value="legacy">原分组 · 原选片</option></select></div><select id="left-album" aria-label="左侧相册"></select><div id="left-content"></div></article>
+        <article class="column"><div class="column-header"><span class="variant green">B / 本次实验</span><strong>新分组 · 新选片</strong></div><p class="right-description">按经历连接，按画面精选</p><div id="right-content"></div></article>
+      </div>
+    </section>
+    <p class="footnote">点击照片可查看大图、入选依据并记录问题。人工标记只保存为验收样例，不会自动改变选片结果。</p>
+  </main>
+  <dialog id="viewer"><div class="dialog-toolbar"><strong id="viewer-title">照片详情</strong><button id="close-viewer">关闭</button></div><img id="viewer-image" alt=""><p id="viewer-caption"></p></dialog>
+  <dialog id="reviewer"><div class="dialog-toolbar"><div><strong id="review-title">记录这一组</strong><p>留下具体照片，下一轮才能准确比较。</p></div><button id="close-review">关闭</button></div><form id="review-form"><div class="review-controls"><label>整体感受<select id="verdict"><option value="unsure">还不确定</option><option value="good">这组值得保留</option><option value="mixed">混入了无关照片</option><option value="missing">漏了关键照片</option><option value="duplicate">重复画面太多</option><option value="cover">封面不合适</option></select></label><label>备注<textarea id="review-note" maxlength="1000" rows="2" placeholder="例如：这两张属于另一天的聚会；合照应该保留。"></textarea></label></div><p>在照片下方选择“不该入选”或“必须保留”；不确定的照片留空。</p><div class="review-search"><select id="review-scope" aria-label="标记范围"><option value="selected">本组入选照片</option><option value="pool">本组全部候选（含未入选）</option><option value="all">整个数据集（补充漏片）</option></select><input id="review-search" type="search" placeholder="按文件名查找" aria-label="按文件名查找"></div><div id="review-photos" class="review-photos"></div><div class="review-footer"><p id="review-status" role="status"></p><button id="save-review" type="submit">保存验收记录</button></div></form></dialog>
+</body>
+</html>

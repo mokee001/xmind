@@ -1,0 +1,241 @@
+{
+  "version": "recollections-rules-v1.0.0",
+  "scope": "Reusable photo selection and aggregation code; no photo membership or dataset snapshot",
+  "rules": {
+    "recollection_feed": {
+      "VERSION": "recollection-feed-v1",
+      "RULES": {
+        "minimum_photos": 12,
+        "maximum_photos": 24,
+        "featured_count": 4,
+        "text_only_min": 0.245,
+        "text_margin": 0.025,
+        "vision_min": 0.5,
+        "album_containment": 0.65,
+        "recent_days": 7
+      },
+      "TOPICS": {
+        "art": {
+          "title": "光影中的艺术",
+          "label": "艺术与展品",
+          "prompts": [
+            "a photograph of paintings and artwork in an art gallery or museum",
+            "a photograph of sculptures and art exhibits"
+          ],
+          "labels": [
+            "art",
+            "painting",
+            "sculpture"
+          ],
+          "theme": null
+        },
+        "pets": {
+          "title": "毛茸茸的日常",
+          "label": "宠物时光",
+          "prompts": [
+            "a photograph of a pet cat or dog at home",
+            "a photograph of a cute cat playing or resting"
+          ],
+          "labels": [
+            "cat",
+            "dog",
+            "feline",
+            "canine"
+          ],
+          "theme": "pet"
+        },
+        "table": {
+          "title": "餐桌上的好时光",
+          "label": "餐桌记忆",
+          "prompts": [
+            "a photograph of delicious food and dishes on a dining table",
+            "a photograph of a meal at a restaurant"
+          ],
+          "labels": [
+            "food"
+          ],
+          "theme": "food"
+        },
+        "outdoors": {
+          "title": "走进山野与天空",
+          "label": "自然风景",
+          "prompts": [
+            "a photograph of mountains forests lakes and beautiful natural scenery",
+            "a photograph of the sea and sky outdoors"
+          ],
+          "labels": [
+            "landscape",
+            "mountain",
+            "lake",
+            "ocean",
+            "forest"
+          ],
+          "theme": null
+        },
+        "stage": {
+          "title": "舞台亮起的时候",
+          "label": "演出片段",
+          "prompts": [
+            "a photograph of a live concert or theater performance on stage",
+            "a photograph of performers on stage with stage lighting"
+          ],
+          "labels": [
+            "performance",
+            "entertainer"
+          ],
+          "theme": "stage"
+        }
+      },
+      "NEGATIVES": [
+        "a screenshot of a phone application interface",
+        "a photograph of a receipt document or page of text",
+        "a photograph of an ordinary indoor room and furniture"
+      ],
+      "TOPIC_NEGATIVES": {
+        "art": [
+          "a photograph of a person posing for a portrait outdoors",
+          "a photograph of a bouquet or flower arrangement",
+          "a photograph of clothing and accessories displayed for sale"
+        ],
+        "pets": [
+          "a photograph of animal figurines toys and souvenirs on a shelf",
+          "a printed illustration of a cat on a poster or product"
+        ],
+        "table": [
+          "a photograph of wild mushrooms growing in a forest",
+          "a photograph of plants and leaves growing outdoors"
+        ]
+      }
+    },
+    "memories": {
+      "VERSION": "unified-memories-v1",
+      "RULES": {
+        "min_photos": 8,
+        "max_photos": 40,
+        "max_albums": 18,
+        "temporal_split_size": 80,
+        "event_hours": 12,
+        "event_radius_km": 3,
+        "event_context_similarity": 0.6,
+        "event_visual_similarity": 0.7,
+        "day_similarity": 0.75,
+        "trip_padding_hours": 6,
+        "trip_radius_km": 30,
+        "trip_visual_similarity": 0.55,
+        "embedding_duplicate_similarity": 0.985,
+        "album_jaccard": 0.8,
+        "fragment_containment": 0.8
+      }
+    },
+    "stories": {
+      "VERSION": "evidence-stories-v3-subject-timeline",
+      "RULES": {
+        "minimum_photos": 3,
+        "maximum_photos": 12,
+        "maximum_albums_per_kind": 10,
+        "face_score_min": 0.8,
+        "face_blur_min": 50,
+        "face_similarity_min": 0.76,
+        "face_area_min": 0.004,
+        "event_visual_min": 0.62,
+        "event_context_visual_min": 0.45,
+        "day_visual_min": 0.75,
+        "event_max_hours": 6,
+        "event_gap_hours": 4,
+        "event_radius_km": 1,
+        "base_radius_km": 35,
+        "base_min_days": 3,
+        "base_min_day_share": 0.35,
+        "trip_away_km": 50,
+        "trip_gap_hours": 72,
+        "trip_max_days": 14,
+        "trip_min_hours": 4,
+        "trip_speed_kmh": 1200,
+        "reuse_penalty": 0.35,
+        "maximum_photo_uses": 2,
+        "minimum_fresh_fraction": 0.6
+      }
+    },
+    "memory_experiment": {
+      "VERSION": "memory-experiment-v1"
+    }
+  },
+  "models": {
+    "face_detection": {
+      "file": "yolov5s_face_640_640_static_b1.onnx",
+      "sha256": "e047647409403d52696035ecd445792173e50d7fbdcccac97b958a585db9aa3d"
+    },
+    "face_embedding": {
+      "file": "mobilefacenet_portable_static_b1.onnx",
+      "sha256": "0763fc33f54e138476194da95987e133b3e976075a6b1d3e1b2caedb251b1a36"
+    },
+    "clip_image": {
+      "file": "mobileclip_s2_image_gelu_opset20.onnx",
+      "sha256": "205a430af825e501c5138e5bb9abea942482a7a4fd4a680e98e47cf0830dce7e"
+    },
+    "clip_text": {
+      "file": "mobileclip_s2_text_opset18_quant.onnx",
+      "sha256": "d92f33dfcff83077fc2e0d3414250710efbb51795dfd89767bdbefb5fdc47322"
+    },
+    "clip_text_vocab": {
+      "file": "bpe_simple_vocab_16e6.txt",
+      "sha256": "67603cfda2e032ad77b5f8808af37789d590db664b26df8705d2bf8b3c553fc8"
+    }
+  },
+  "files": {
+    "backend/__init__.py": "26fc7833158ebed73744886c53f13169ba3db332cbf4a69f14cf7024a6fe26c9",
+    "backend/curation.py": "9eac48cdaeca47e506f549eff521f6fd4e23a31bf42a2e0036a6ead11dadd50c",
+    "backend/dedup.py": "45ddf4e9dc3e35ef4de0fc5bf05b6a7ff0ada9b9296d20d3304a11dbbfbe53da",
+    "backend/selection_policy.py": "2fbc6e8084b0ca1125016f06dff4c6db1af677974273f427355fb92456f355d0",
+    "backend/selector.py": "8cec248ec5a93aa9f0b4967db729349b2d126c3fa5be5d45427244fcdbf467cf",
+    "backend/store.py": "a8d7630811f21d3f8ded5ddd8ecbb0ee342dbda3663e5919673556a745648cc6",
+    "backend/trainer.py": "6de076b4f5fae2aad5b2d124fc4d0df14b3b3f97ecae3910c6dedf5f580d6953",
+    "config/selection_profiles.json": "9fa204fd5490d60a2f939016e0d92295559d9ca0dc2ac05a90622bbc302865b9",
+    "docs/ente-lab.md": "9f835d22403ce27b6df45f33af5c11db9db41e556a8101b2b24d7933d381f73b",
+    "docs/recollection-rules-v1.0.0.md": "dd62c4784e668624b70962344fcf02b25645ec847fe66ebfb820c4de7844c0b8",
+    "docs/selection-lab.md": "068a80c35706d952afbd62161f5c7c6566b99751ba670daf08ac4395d00c770b",
+    "selection_lab/__init__.py": "d95080525f0d4b4ca44e6d132ed283b0424acbd57fbe724e4d732445a86c59fe",
+    "selection_lab/collections.py": "4c692bdf8041ae5b418e2c7de3df8f430263be8040984474ec60ba646fd38152",
+    "selection_lab/core.py": "8699c73ebd4686a024276aa4905d1dedf5f6ae3fdb46a3e09fcf534b6487f87a",
+    "selection_lab/datasets.py": "eba1ff816df1c3a87f37d90d26adca7bceb029c36378dd874f55d8919c9d6b50",
+    "selection_lab/ente.py": "dbcf419344dab187763e1124aa6cfd73a0ce65cc05a71bf15d1dd79f25c5c234",
+    "selection_lab/hybrid.py": "f4b0046b36a6256743631b4ba8f8e4a6f799808c417b3acfe1666018579ad9d0",
+    "selection_lab/memories.py": "b7acbae747c3eff3ab03e5a00e7b81e5e087377b395a606bed3ae808fb7129e7",
+    "selection_lab/memory_experiment.py": "8731e8e34c3f13293c8fc21ae9871e972ccfbd973cb2dd038c4edb964f1dcac3",
+    "selection_lab/recollection_feed.py": "2f7e190eaf4b57a3a0e0c70bc697a325f469fbe9a429d3054bbcae2a6db02ead",
+    "selection_lab/server.py": "5a443eab80d57dd357561f6c53c93c610f08c9cb86f525c72079e235e34662cf",
+    "selection_lab/static/album-comparison.js": "58110e91dadeaf1a933928c1b254d1fbb868a3505a33e0907a317123846da7d0",
+    "selection_lab/static/app.js": "351bf60ae8e73aa1bcbad50fd6a27823d43205a200333407e0625f28c55959b7",
+    "selection_lab/static/collections.css": "a28f00bf87b26874d7866ac52757dc267c075daf22c77d7790adf1cbc4a0ad6a",
+    "selection_lab/static/engines.css": "8d71d113917437fddafccb40ec3f3c0b9e3c88abc89179b6436119e8c74bfbfe",
+    "selection_lab/static/index.html": "63c7c412f156fb2b24af25bb596c60c751953605cec202d314d1cb9e96bbe832",
+    "selection_lab/static/memory-albums.js": "dc942ac1df1f8f7220acb7e4f61ff4b8a2d99353820d28dd6a08f9300cfbcf41",
+    "selection_lab/static/memory-experiment.css": "02f6f2d55534b316e765366bb62963cd4d57c68790d0a42aff86017804bcf256",
+    "selection_lab/static/memory-experiment.html": "95dd6e5f2277562293e05e728ea2400196d69d3f1ba4306e7f329617e1b18e03",
+    "selection_lab/static/memory-experiment.js": "8627ca21b0e67261af63927dcbf579bc61e11439e107ec9c513ed331047d4b50",
+    "selection_lab/static/recollections.css": "82f027f6851a69f2fd92b84b31e633b7d5f8021b66a33255824f68408e9d6797",
+    "selection_lab/static/recollections.html": "d89738e5892217eb2255f93c8398ad599d2d144879a92d4b54f620fecb99d0ec",
+    "selection_lab/static/recollections.js": "b36c9fe3089cd4c7dc59c376b2b268a976f38c8b036ad62b83a11f2e29cdb67d",
+    "selection_lab/static/story-albums.js": "259ac81ce30bfbf30ae4baf7efed086f60e2b8ed472c0b679e485a1b85479a74",
+    "selection_lab/static/style.css": "60fba24401d3123d72fa3c1543743c5c10148ad3a643ab1e82af2cefbc24c99c",
+    "selection_lab/stories.py": "eba9a0e0bd7869c8ac91875e77229ce0049e7aab783f73169892e628af8f8cad",
+    "tests/test_memory_experiment.py": "88cd6d6e1458898bd9075b4f4cfaff8017855c677c3beac48e7c64382ffab8ef",
+    "tests/test_recollection_feed.py": "3bd8e53ed48c0826513383425721ff5ed3af108cb5b41477d3cb5ddf9977fc08",
+    "tests/test_selection_lab.py": "6f86cf493db838fc514d4e8b524f892bc6c13c56d49ef1ed915f2e4803488df8",
+    "tests/test_story_albums.py": "d08cea13ac8a2bb49c60621f3dfef4db25e07b1415e9fc560b5f52e662ea4705",
+    "tools/add_lab_photos.py": "8ecc4831e16e11d0486ad4c5d21900adbcbeffd52318cb68690209d0f2a1e036",
+    "tools/album_vision_features.swift": "30c918c3f8b8a3a110a2482454138f3b439aef5dc7d525a62be14f1e3861b721",
+    "tools/build_album_features.py": "6f5f6d61c8cd56c0c89c9e7c1cf7f876249adc89cf9423ed1adb9953aaf230b9",
+    "tools/ente_memories_bridge.dart": "1d6d72b3aa7a7cdfb8d0d6d0380b8310a4f42b606b5fa85c3d88131f10ff3ae8",
+    "tools/ente_memories_test.dart": "9ed19ecfd5525ddbc059cebc6dfbe378fe3219dd1fcd3e78c71f623271832f81",
+    "tools/ente_ml_probe.rs": "aca749c6f4660fcd3e5da99d6fb7285db11460ef287e8f1dd8257d6a99ce1cb1",
+    "tools/prepare_ente_lab.py": "846ec9059586d98457bfec2ca3f4ce5a689f9eecf2a31ad275f499d195c65bb5",
+    "tools/run_ente_lab.py": "60b0b612a75a2b01698fc8a1ac1114882c8cb8303bbc6ee05e4dd5ac68d852ce",
+    "tools/run_recollection_feed.py": "cd9af060c73d27c12f079727cba4ca95770be388ec2ddd768a996e094fa2dabe",
+    "tools/selection_lab.py": "fb95b2969faac07e3982fc1e5380c2f5f2aafaaaef24d317f635ea91ef010c30",
+    "tools/share_recollections.py": "041906246a1d86247886d93684e375f503ffcc800554e939f7ccc4e99012cdbe",
+    "打开回忆精选.command": "8a3c923081c0a8cd7f6b11eaae7ab6ef73ef5512c80cd515b91c7332056ba0c4",
+    "tests/test_album_collections.py": "ddafbc5f8ebec076193d75f31965748d909806506552063ec5f00faa5626476f",
+    "tests/test_hybrid_albums.py": "a5e767388f6731bb776fa75e30ad09be4c3b48d788fa0315919625b7e884631f"
+  }
+}

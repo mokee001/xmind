@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="本地照片选片实验台：缓存回放、参数调整、淘汰解释与结果快照。">
+  <title>为你精选 · Photo Wall</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/collections.css">
+  <link rel="stylesheet" href="/engines.css">
+  <script src="/album-comparison.js" defer></script>
+  <script src="/story-albums.js" defer></script>
+  <script src="/memory-albums.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body class="collection-mode">
+<header class="topbar"><div class="brand"><span class="brand-icon" aria-hidden="true">▦</span><div><span class="eyebrow">PHOTO WALL</span><h1>照片里的时光</h1></div></div><div class="top-status"><span class="local-dot"></span>仅本机 · 不上传照片<span id="dataset-label">读取样本中…</span><button id="toggle-lab" class="secondary">调整选片策略</button></div></header>
+<section id="collection-home" aria-label="自动生成的精选相册">
+  <div class="collection-heading"><div><h2 id="collection-title">为你精选</h2><p id="collection-summary" role="status" aria-live="polite">正在整理这批照片的精选集…</p></div><span class="collection-period">相册集预览</span></div>
+  <div class="memory-navigation"><button id="engine-memories" class="primary" aria-pressed="false">回忆精选</button><details id="legacy-engines"><summary>策略与旧结果</summary><nav class="engine-switch" aria-label="保留的选片引擎"><button id="engine-local" class="active" aria-pressed="true">当前方案</button><button id="engine-hybrid" aria-pressed="false">Ente 识别＋我的成册</button><button id="engine-stories" aria-pressed="false">人物与主题时光</button><button id="engine-ente" aria-pressed="false">Ente 原版回忆</button><button id="engine-compare" aria-pressed="false">原方案／原版对比</button></nav></details></div>
+  <div id="collection-error" class="notice" role="alert" hidden></div>
+  <section id="album-comparison" aria-label="两套能力的相册结果对比" hidden></section>
+  <section id="hybrid-status" class="notice" aria-label="组合方案状态" hidden><p id="hybrid-message" role="status" aria-live="polite"></p><button id="hybrid-run" class="secondary">按当前参数生成并保存</button></section>
+  <section id="stories-status" class="notice" aria-label="新聚合状态" hidden><div class="button-row" aria-label="成册前后对比"><button id="stories-after" class="secondary" aria-pressed="true">调整后</button><button id="stories-before" class="secondary" aria-pressed="false" disabled>调整前</button></div><p id="stories-change" role="status"></p><details><summary>成册设置与来源</summary><p id="stories-message" role="status" aria-live="polite"></p><button id="stories-run" class="secondary">按当前参数生成并保存</button></details></section>
+  <section id="memories-status" class="memory-controls" aria-label="回忆精选设置" hidden><label for="memory-size">每册最多 <select id="memory-size"><option value="24">24 张</option><option value="40" selected>40 张</option><option value="60">60 张</option></select></label><button id="memories-run" class="secondary">重新生成并保存</button><span id="memories-message" role="status" aria-live="polite"></span></section>
+  <div id="story-groups" hidden></div>
+  <div id="collection-grid" class="collection-grid"></div>
+  <details id="ente-tools" class="collection-notes" hidden><summary>运行设置与识别数据</summary>
+  <div id="ente-output-controls" hidden><label for="ente-output">查看内容</label> <select id="ente-output"><option value="memories">原版回忆相册</option></select></div>
+  <section id="ente-progress" class="notice" hidden><strong id="ente-stage"></strong><p id="ente-progress-message" role="status" aria-live="polite"></p><div class="button-row"><button id="ente-run" class="primary" disabled>本机重跑 Ente</button><button id="ente-refresh" class="secondary">刷新 Ente 结果</button></div></section>
+  <section id="ente-diagnostics" class="ente-diagnostics" hidden aria-label="Ente 本次运行依据"></section>
+  </details>
+  <details id="collection-notes" class="collection-notes"><summary>这些精选集是怎么生成的？</summary><p id="collection-source"></p><div id="collection-local-notes"><p>每个主题或日期独立选片，不是把最终 20 张换一种排版。同一张照片可以出现在不同主题中；过于相似的相册不会重复展示。</p><p>七月样本沿用文件名日期；新增相簿优先 EXIF 拍摄时间，其次明确文件名时间，未知日期不进入日期组。日期组不保证同一活动，人物集不区分具体身份。</p></div></details>
+</section>
+<div class="layout">
+<aside class="sidebar">
+  <div class="section-heading"><h2>选片策略</h2><button id="reset" class="text-button" type="button">恢复默认</button></div>
+  <form id="settings">
+    <fieldset id="settings-fields" disabled>
+      <label class="field">策略预设<select id="profile"><option value="custom">自定义</option></select></label>
+      <label class="field">内容主题<select name="theme" id="theme"></select></label>
+      <div class="control"><label for="count">最终张数</label><output id="count-value">20</output><input name="count" id="count" type="range" min="1" max="100" step="1" value="20"></div>
+      <div class="control"><label for="quality_min">画质门槛</label><output id="quality_min-value">0.00</output><input name="quality_min" id="quality_min" type="range" min="0" max="1" step="0.01" value="0"></div>
+      <details open><summary>评分权重</summary><div id="weights"></div><p class="hint">自动归一化。偏好固定为中性 0.5，不使用线上用户数据。</p></details>
+      <details><summary>去重与事件</summary><div id="advanced"></div><p class="hint">CLIP 距离越大，去重越强；dHash 与内容签名去重同时生效。</p></details>
+      <label class="field">固定测试日期<input type="date" id="as_of" name="as_of"></label>
+      <label class="check"><input type="checkbox" id="auto-run" checked>调参后自动重选</label>
+      <button class="primary full" id="run" type="submit">重新选片</button>
+    </fieldset>
+  </form>
+  <section class="saved"><div class="section-heading"><h2>我的方案</h2><span id="saved-count" class="muted">0</span></div>
+    <label class="field">方案名称<input id="save-name" maxlength="80" placeholder="例如：人物优先 · 第一次"></label>
+    <button id="save" class="secondary full" disabled>保存当前结果</button>
+    <label class="field">已保存的结果<select id="saved-list"><option value="">选择方案…</option></select></label>
+    <div class="button-row"><button id="load" class="secondary" disabled>查看快照</button><button id="restore" class="secondary" disabled>恢复参数</button></div>
+    <div class="button-row"><button id="compare" class="text-button" disabled>与当前对比</button><a id="export-run" hidden>导出快照</a></div>
+  </section>
+  <p class="privacy-note">实验配置、标记与结果只保存在本机。不会修改原照片，也不会发布到线上。</p>
+</aside>
+<main>
+  <div class="result-header"><div><span class="eyebrow" id="engine-label">本项目 · 缓存回放</span><h2 id="result-title">七月，值得留下的照片</h2></div><span class="run-state" id="run-state" role="status" aria-live="polite">正在读取缓存…</span></div>
+  <div id="error" role="alert" hidden></div>
+  <div id="stats" class="stats"></div>
+  <nav class="tabs" aria-label="结果视图"><button class="active" data-tab="final" aria-pressed="true">最终照片</button><button data-tab="events" aria-pressed="false">时间事件</button><button data-tab="audit" aria-pressed="false">全部与淘汰</button><button data-tab="ente" aria-pressed="false">Ente 接入</button></nav>
+  <div id="comparison" class="notice" hidden></div>
+  <section id="view-final"><div class="view-heading"><p id="result-description">直接看结果，点击照片查看原因。</p><label class="check"><input id="clean-view" type="checkbox">纯照片预览</label></div><div id="final-grid" class="photo-grid"></div></section>
+  <section id="view-events" hidden><p id="event-description" class="view-description">按拍摄时间聚合本次入选照片。不是 Ente 旅行回忆，也不是同一个人的身份聚类。</p><div id="events-grid" class="events-grid"></div><div id="event-photos" class="photo-grid"></div></section>
+  <section id="view-audit" hidden><div class="audit-tools"><label class="field">处理阶段<select id="status-filter"><option value="all">全部照片</option></select></label><label class="field">文件名或标签<input id="search" type="search" placeholder="搜索当前样本"></label><label class="check"><input id="marked-only" type="checkbox">只看已标记</label><span id="audit-count" class="muted"></span></div><div id="audit-grid" class="photo-grid compact"></div></section>
+  <section id="view-ente" hidden class="ente-panel"><span class="eyebrow">独立引擎 / 独立结果</span><h2>Ente 本机引擎与结果导入</h2><div class="capability"><strong>本机运行 + 独立快照</strong><span id="ente-capability">正在读取运行状态</span></div><p>在精选相册首页选择“Ente 原版结果”，可查看本机源码实跑状态、结果并重跑。使用 Ente 原版 ML、人脸聚类和回忆计算；不是完整手机 App，也没有套用当前方案的选片规则。</p><ol><li><a href="/api/manifest" download>下载当前照片集清单</a>，用原文件 SHA256 对齐照片。</li><li>也可导入其他 Ente 开发版本按协议导出的 JSON。普通 App 备份文件不能直接导入。</li><li>导入结果包，保存为独立方案，保留原分组、封面和照片顺序。</li></ol><label class="field">Ente 开发版结果 JSON<input type="file" id="ente-file" accept=".json,application/json"></label><button id="ente-import" class="primary">导入并查看结果</button><p id="ente-status" role="status"></p><details><summary>结果包格式</summary><pre id="ente-schema"></pre></details><p class="hint">自然输出与调试展开候选分别保存，不能混称。外部导出来源由导出方声明；导入本身不认证来源。原版结果未套用本项目照片-only审核。</p><p class="hint">照片和识别向量保留在本机，不上传。移动端性能和完整 App 流程需另行验证；源码嵌入或分发前需核查 AGPL 与模型许可。</p></section>
+  <details class="provenance"><summary>本次执行来源与能力边界</summary><p id="signature" class="mono"></p><p id="mode"></p><ul id="warnings"></ul></details>
+</main>
+</div>
+<dialog id="album-dialog" aria-labelledby="album-title"><div class="album-toolbar"><div><h2 id="album-title"></h2><p id="album-subtitle"></p></div><button id="album-close" aria-label="关闭相册">关闭</button></div><div class="album-stage"><img id="album-image" alt=""><svg id="album-face-overlay" aria-label="本组人脸位置" hidden></svg><button id="album-prev" class="album-arrow previous" aria-label="上一张">‹</button><button id="album-next" class="album-arrow next" aria-label="下一张">›</button></div><div class="album-controls"><button id="album-play">播放精选</button><span id="album-counter" role="status" aria-live="polite"></span><span id="album-date"></span></div><div id="album-strip" class="album-strip" aria-label="本组照片"></div><details class="album-about"><summary>这组照片的选择依据</summary><p id="album-description"></p><p id="album-metadata"></p></details></dialog>
+<dialog id="photo-dialog"><div class="dialog-top"><h2 id="detail-name">照片详情</h2><button id="close-dialog" aria-label="关闭照片详情">关闭</button></div><div class="detail-layout"><div class="detail-image"><img id="detail-image" alt=""></div><div class="detail-info"><span id="detail-status" class="badge"></span><p id="detail-reason"></p><button id="show-representative" class="text-button" hidden>查看相似组保留照片</button><dl id="detail-metrics"></dl><div id="detail-tags" class="tags"></div><div id="detail-score"></div><hr><h3>记下这个问题</h3><label class="field">标记<select id="annotation-mark"></select></label><label class="field">备注<textarea id="annotation-note" rows="3" maxlength="1000" placeholder="例如：这张是朋友拍的，不该被当成截图"></textarea></label><button id="save-annotation" class="primary">保存标记</button><p class="hint">仅作为测试记录，不自动改变选片或训练模型。</p><span id="annotation-state" role="status"></span></div></div></dialog>
+</body></html>

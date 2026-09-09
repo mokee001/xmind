@@ -18,11 +18,15 @@
 
 from __future__ import annotations
 
+import math
+import os
+
 # dHash 汉明距离阈值：0=完全相同，越大越宽松。8 对 64bit 是「肉眼几乎一样/连拍」。
 HAMMING_THRESHOLD = 8
 # csig（灰度网格）平均逐格差（0~255）。越小越像。
 CSIG_STRICT = 12   # 很接近 -> 判为同场景重复（不看主体）
 CSIG_LOOSE = 22    # 较接近 + 主体相同 -> 判为同主体多拍
+CLIP_DISTANCE = float(os.environ.get("PHOTOWALL_CLIP_DUPLICATE_DISTANCE", "0.03"))
 
 # 用于判断「主体是否相同」的语义分组（命中同组视为同主体）。
 _SUBJECT_GROUPS = [
@@ -56,11 +60,30 @@ def _primary_subject(tags) -> str | None:
     return None
 
 
-def _is_similar(p1: dict, p2: dict, threshold: int) -> bool:
+def _clip_distance(p1: dict, p2: dict) -> float | None:
+    left, right = p1.get("clip_embedding"), p2.get("clip_embedding")
+    if not left or not right or len(left) != len(right):
+        return None
+    left_norm = math.sqrt(sum(float(value) ** 2 for value in left))
+    right_norm = math.sqrt(sum(float(value) ** 2 for value in right))
+    if left_norm <= 0 or right_norm <= 0:
+        return None
+    cosine = sum(float(a) * float(b) for a, b in zip(left, right)) / (left_norm * right_norm)
+    return 1.0 - max(-1.0, min(1.0, cosine))
+
+
+def _is_similar(p1: dict, p2: dict, threshold: int, *,
+                clip_distance_limit: float | None = None) -> bool:
     """综合 dHash + 内容签名 + 主体 判断两张是否为重复。"""
     h1, h2 = p1.get("phash"), p2.get("phash")
     # 1) dHash 近乎相同
     if h1 is not None and h2 is not None and _hamming(int(h1), int(h2)) <= threshold:
+        return True
+
+    # Immich CLIP catches the same scene after crop/exposure/composition changes.
+    clip_distance = _clip_distance(p1, p2)
+    limit = CLIP_DISTANCE if clip_distance_limit is None else clip_distance_limit
+    if clip_distance is not None and clip_distance <= limit:
         return True
 
     # 2)/3) 内容签名相似
@@ -79,7 +102,23 @@ def _is_similar(p1: dict, p2: dict, threshold: int) -> bool:
     return False
 
 
-def deduplicate(photos: list[dict], threshold: int = HAMMING_THRESHOLD) -> tuple[list[dict], int]:
+def duplicate_clusters(photos: list[dict], threshold: int = HAMMING_THRESHOLD, *,
+                       clip_distance_limit: float | None = None) -> list[list[dict]]:
+    """Expose the same greedy clusters used by production, without global mutation."""
+    clusters: list[list[dict]] = []
+    for photo in (p for p in photos if p.get("quality", 0) > 0):
+        for cluster in clusters:
+            rep = max(cluster, key=lambda x: x.get("quality", 0.0))
+            if _is_similar(photo, rep, threshold, clip_distance_limit=clip_distance_limit):
+                cluster.append(photo)
+                break
+        else:
+            clusters.append([photo])
+    return clusters
+
+
+def deduplicate(photos: list[dict], threshold: int = HAMMING_THRESHOLD, *,
+                clip_distance_limit: float | None = None) -> tuple[list[dict], int]:
     """
     对一批已打标照片去重。
     返回 (去重后的照片列表, 被移除的重复数量)。
@@ -93,17 +132,7 @@ def deduplicate(photos: list[dict], threshold: int = HAMMING_THRESHOLD) -> tuple
 
     # 2) 贪心聚类：每张图和「每个簇的代表」比对，相似则并入，否则自成新簇
     #    代表用簇内当前画质最高的一张，聚类更稳。
-    clusters: list[list[dict]] = []
-    for p in valid:
-        placed = False
-        for cluster in clusters:
-            rep = max(cluster, key=lambda x: x.get("quality", 0.0))
-            if _is_similar(p, rep, threshold):
-                cluster.append(p)
-                placed = True
-                break
-        if not placed:
-            clusters.append([p])
+    clusters = duplicate_clusters(valid, threshold, clip_distance_limit=clip_distance_limit)
 
     # 3) 每簇留画质最高的代表
     kept: list[dict] = []

@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
-from . import trainer
+import math
+
+from . import selection_policy, trainer
 
 # 用于衡量「题材相似度」的维度分组：同组标签越重叠，两张照片题材越像。
 _THEME_GROUPS = {
@@ -24,6 +26,58 @@ _THEME_GROUPS = {
 
 # 多样性权重：越大越强调「题材各异」，越小越接近纯按分数排。
 _DIVERSITY_LAMBDA = 0.35
+
+
+def _clip_similarity(left: dict, right: dict) -> float | None:
+    a, b = left.get("clip_embedding"), right.get("clip_embedding")
+    if not a or not b or len(a) != len(b):
+        return None
+    na = math.sqrt(sum(float(value) ** 2 for value in a))
+    nb = math.sqrt(sum(float(value) ** 2 for value in b))
+    if na <= 0 or nb <= 0:
+        return None
+    return max(-1.0, min(1.0, sum(float(x) * float(y) for x, y in zip(a, b)) / (na * nb)))
+
+
+def _semantic_mmr(ranked: list[dict], slot_count: int, avoid: set, policy: dict) -> list[dict] | None:
+    """Select high-scoring but visually varied photos when CLIP is available."""
+    if not ranked or not all(photo.get("clip_embedding") for photo in ranked):
+        return None
+    remaining = list(ranked)
+    selected: list[dict] = []
+    similarities: dict[tuple[int, int], float] = {}
+
+    def similarity_to_chosen(photo: dict, chosen: dict) -> float:
+        # A pair's cosine does not change as the selection grows. Reuse it
+        # instead of recalculating the same 512-dimensional dot product at
+        # every selection step. Keep the original cosine implementation.
+        key = (id(photo), id(chosen))
+        if key not in similarities:
+            similarities[key] = _clip_similarity(photo, chosen) or 0.0
+        return similarities[key]
+
+    while remaining and len(selected) < slot_count:
+        def utility(photo: dict) -> float:
+            similarity = max(
+                (similarity_to_chosen(photo, chosen) for chosen in selected),
+                default=0.0,
+            )
+            same_event = any(
+                photo.get("event_id") and photo.get("event_id") == chosen.get("event_id")
+                for chosen in selected
+            )
+            recent_penalty = 0.20 if photo.get("filename") in avoid else 0.0
+            return (
+                float(photo.get("final_score", 0.0))
+                - float(policy.get("semantic_diversity", _DIVERSITY_LAMBDA)) * similarity
+                - (float(policy.get("event_diversity", 0.0)) if same_event else 0.0)
+                - recent_penalty
+            )
+
+        best = max(remaining, key=utility)
+        selected.append(best)
+        remaining.remove(best)
+    return selected
 
 
 def _theme_signature(tags: list[str]) -> set[str]:
@@ -60,17 +114,29 @@ def filter_photos(photos: list[dict], filters: list[str] | None) -> list[dict]:
 
 
 
-def rank_photos(photos: list[dict], model: dict | None = None) -> list[dict]:
+def rank_photos(photos: list[dict], model: dict | None = None, policy: dict | None = None) -> list[dict]:
     """给每张照片算综合分并排序（高分在前）。
     综合分 = 0.3*画质 + 0.25*美观度 + 0.45*偏好。"""
     model = model or trainer.load_model()
+    policy = policy or selection_policy.resolve()
+    weights = policy["weights"]
     ranked = []
     for p in photos:
         pref = trainer.score_tags(p.get("tags", []), model)
         quality = p.get("quality", 0.5)
         aesthetic = p.get("aesthetic", quality)
-        final = round(0.3 * quality + 0.25 * aesthetic + 0.45 * pref, 4)
-        ranked.append({**p, "pref_score": round(pref, 4), "final_score": final})
+        memory = float(p.get("memory_score", 0.5))
+        final = round(
+            weights["quality"] * quality
+            + weights["aesthetic"] * aesthetic
+            + weights["preference"] * pref
+            + weights["memory"] * memory,
+            4,
+        )
+        ranked.append({
+            **p, "pref_score": round(pref, 4), "memory_score": round(memory, 4),
+            "selection_profile": policy["name"], "final_score": final,
+        })
     ranked.sort(key=lambda x: x["final_score"], reverse=True)
     return ranked
 
@@ -105,7 +171,8 @@ def _subcat_key(tags: list[str]) -> tuple:
 
 
 def select_for_template(photos: list[dict], slot_count: int, model: dict | None = None,
-                        rotate: int = 0, avoid: set | None = None) -> list[dict]:
+                        rotate: int = 0, avoid: set | None = None,
+                        policy: dict | None = None) -> list[dict]:
     """
     选出用于填充某模版的 N 张：高分优先 + 子分类叉乘 + 轮换 + 最近去重。
 
@@ -117,10 +184,15 @@ def select_for_template(photos: list[dict], slot_count: int, model: dict | None 
     4) avoid（最近几屏已经上过的文件名集合）里的照片被降到各子分类末尾，
        优先选没露过脸的，让「换一批」差异更明显；池子不够时才回头用它们。
     """
-    ranked = rank_photos(photos, model)
+    policy = policy or selection_policy.resolve()
+    ranked = rank_photos(photos, model, policy=policy)
     avoid = avoid or set()
     if slot_count >= len(ranked):
         return ranked[:slot_count]
+
+    semantic = _semantic_mmr(ranked, slot_count, avoid, policy)
+    if semantic is not None:
+        return semantic
 
     from collections import OrderedDict
     groups: "OrderedDict[tuple, list[dict]]" = OrderedDict()
@@ -171,5 +243,3 @@ def select_for_template(photos: list[dict], slot_count: int, model: dict | None 
             break
 
     return selected[:slot_count]
-
-
