@@ -24,11 +24,27 @@
 #include <JPEGDEC.h>
 #include <ESPmDNS.h>
 
-// ================== 按你的环境修改 ==================
-const char* WIFI_SSID = "[REDACTED]";
-const char* WIFI_PASS = "[REDACTED]";
-const char* SERVER_HOST = "127.0.0.1";  // 兑底：跑后端那台电脑的局域网 IP
-const char* SERVER_MDNS = "HJFG3FGM46";     // 优先：电脑的 .local 主机名(不含 .local)，IP变了也能自动找到
+#if __has_include("local_config.h")
+#include "local_config.h"
+#endif
+
+#ifndef PHOTOWALL_WIFI_SSID
+#define PHOTOWALL_WIFI_SSID ""
+#endif
+#ifndef PHOTOWALL_WIFI_PASS
+#define PHOTOWALL_WIFI_PASS ""
+#endif
+#ifndef PHOTOWALL_SERVER_HOST
+#define PHOTOWALL_SERVER_HOST "127.0.0.1"
+#endif
+#ifndef PHOTOWALL_SERVER_MDNS
+#define PHOTOWALL_SERVER_MDNS ""
+#endif
+
+const char* WIFI_SSID = PHOTOWALL_WIFI_SSID;
+const char* WIFI_PASS = PHOTOWALL_WIFI_PASS;
+const char* SERVER_HOST = PHOTOWALL_SERVER_HOST;
+const char* SERVER_MDNS = PHOTOWALL_SERVER_MDNS;
 const uint16_t SERVER_PORT = 8000;
 
 const int SCREEN_W = 800;

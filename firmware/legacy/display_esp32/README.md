@@ -1,5 +1,10 @@
 # ESP32-S3 + ST7262 800×480 显示屏固件 · 烧录说明
 
+> [!IMPORTANT]
+> 这是冻结的早期 4.3 寸液晶屏实验版本，仅保留作历史参考。它不是 19 寸屏固件，
+> 不参与当前 App 设备流、13.3E6 墨水屏固件、自动化测试或后续双屏演示。
+> 新功能和连接协议不得依赖此目录。
+
 这块固件让 **ESP32-S3-WROOM-1 + ST7262 800×480 RGB 屏** 成为「手帐照片墙」的家庭展示屏：
 手机端一生成画面，ESP32-S3 通过 WebSocket 收到通知，自动去后端拉一张
 按屏幕分辨率缩好的 JPEG 并显示。
@@ -15,19 +20,17 @@
 
 ## 二、先配置固件参数
 
-打开 `display_esp32.ino`，改顶部：
+复制本目录的 `local_config.example.h` 为 `local_config.h`，然后仅在本机配置：
 
 ```cpp
-const char* WIFI_SSID   = "你的WiFi名";
-const char* WIFI_PASS   = "你的WiFi密码";
-const char* SERVER_HOST = "192.168.0.102";  // 跑后端那台电脑的局域网 IP（已按你机器填好）
-const uint16_t SERVER_PORT = 8000;
-const int SCREEN_W = 800;
-const int SCREEN_H = 480;
-const int BACKLIGHT_PIN = 2;   // 背光引脚，VIEWE UEDX80480043E 官方确认 GPIO2（高电平点亮）
+#define PHOTOWALL_WIFI_SSID "your-wifi-name"
+#define PHOTOWALL_WIFI_PASS "your-wifi-password"
+#define PHOTOWALL_SERVER_HOST "192.168.1.100"
+#define PHOTOWALL_SERVER_MDNS "your-mac-hostname"
 ```
 
-> 查电脑局域网 IP（macOS）：`ipconfig getifaddr en0` → 你的是 `192.168.0.102`。
+`local_config.h` 已被 Git 忽略，不要把真实网络配置写入示例文件或提交到仓库。
+查电脑局域网 IP（macOS）：`ipconfig getifaddr en0`。
 > 一定用局域网 IP，**不能用 localhost / 127.0.0.1**。
 
 ### 引脚（已按 VIEWE 官方确认，无需改动）

@@ -19,15 +19,23 @@ from __future__ import annotations
 
 import datetime
 import glob
+import hashlib
+import hmac
 import io
+import ipaddress
 import json
 import os
 import random
+import re
+import secrets
+import shutil
 import sys
 import time
 from typing import Any, Optional
 
 from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -38,14 +46,16 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
-from . import dedup, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
+from . import dedup, eink_push, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
-PHOTOS_DIR = os.path.join(_ROOT, "photos")
-OUTPUT_DIR = os.path.join(_ROOT, "output")
+_DATA_DIR = os.environ.get("PHOTOWALL_DATA_DIR", _ROOT)
+PHOTOS_DIR = os.path.join(_DATA_DIR, "photos")
+OUTPUT_DIR = os.path.join(_DATA_DIR, "output")
 TEMPLATES_DIR = os.path.join(_ROOT, "templates")
 WEBAPP_DIR = os.path.join(_ROOT, "webapp")
 DISPLAY_DIR = os.path.join(_ROOT, "display")
+EINK_UI_DIR = os.path.join(_ROOT, "eink")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(stickers.STICKERS_DIR, exist_ok=True)
@@ -56,6 +66,14 @@ except Exception:
     pass
 
 app = FastAPI(title="手帐照片墙")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in os.environ.get(
+        "PHOTOWALL_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081"
+    ).split(",") if origin.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------- 双端互联：管理已连接的展示屏 ----------
@@ -103,6 +121,23 @@ def _tag_all() -> list[dict]:
     return photos
 
 
+def _account_scope(account_token: str) -> str:
+    """Use an opaque stable namespace; never put account tokens in file names."""
+    if not account_token:
+        return "legacy"
+    return hashlib.sha256(account_token.encode()).hexdigest()[:24]
+
+
+def _scoped_store_name(name: str, scope: str) -> str:
+    return name if scope == "legacy" else f"{name}_{scope}"
+
+
+def _scoped_photos_dir(scope: str) -> str:
+    directory = PHOTOS_DIR if scope == "legacy" else os.path.join(PHOTOS_DIR, scope)
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+
 def _slot_count(template_id: str) -> int:
     tpl = engine.load_template(os.path.join(TEMPLATES_DIR, f"{template_id}.json"))
     return len(tpl.get("slots", []))
@@ -131,6 +166,7 @@ class GenerateReq(BaseModel):
     title: str = "我的一天"
     date: str = ""
     filters: list[str] = []  # 用户吩咐的筛选维度标签（色彩/主题/情绪等）
+    exclude_filters: list[str] = []  # 用户明确关闭的人物/主题，命中任一标签即排除
 
 
 class LabelSample(BaseModel):
@@ -141,6 +177,34 @@ class LabelSample(BaseModel):
 class LabelReq(BaseModel):
     wall_id: str = ""
     samples: list[LabelSample]
+
+
+class DeviceBootstrapReq(BaseModel):
+    device_id: str
+    pairing_code: str
+    setup_token: str = ""
+    ip: str = ""
+    firmware_version: str = ""
+    device_token: str = ""
+
+
+class DeviceClaimReq(BaseModel):
+    pairing_code: str
+    name: str = "客厅照片墙"
+
+
+class DeviceAutoClaimReq(BaseModel):
+    device_id: str
+    setup_token: str
+    name: str = "客厅照片墙"
+
+
+class DeviceStatusReq(BaseModel):
+    state: str
+    revision: str = ""
+    progress: float = 0.0
+    error: str = ""
+    ip: str = ""
 
 
 # ---------- 链路1：相册授权 ----------
@@ -160,26 +224,31 @@ async def upload(
     title: str = "我的一天",
     date: str = "",
     filters: str = "",
+    x_account_token: str = Header(default=""),
 ) -> dict:
     """专属 App：上传照片到相册目录。auto=1 时上传后自动识别→筛选→套模板→上屏。
     照片会累积进整个相册库（跨批次），精选从整库里挑最好看的，不再只看本批。
     filters：逗号分隔的筛选维度标签（如 "warm,food"），按用户吩咐的维度优先选图。"""
+    scope = _account_scope(x_account_token)
+    photo_dir = _scoped_photos_dir(scope)
     saved_paths: list[str] = []
     for f in files:
-        dest = os.path.join(PHOTOS_DIR, os.path.basename(f.filename or f"up_{int(time.time())}.jpg"))
+        dest = os.path.join(photo_dir, os.path.basename(f.filename or f"up_{int(time.time())}.jpg"))
         with open(dest, "wb") as out:
             out.write(await f.read())
         saved_paths.append(dest)
     # 记录「见过的文件名」（含之后可能被去重/废片剔除的），供 App 做增量上传：
     # 只上传后端从没见过的新照片，已识别的不再重传，大幅加快后续同步。
-    seen = set(store.load("seen_names", []))
+    seen_key = _scoped_store_name("seen_names", scope)
+    photos_key = _scoped_store_name("photos", scope)
+    seen = set(store.load(seen_key, []))
     for p in saved_paths:
         seen.add(os.path.basename(p))
-    store.save("seen_names", sorted(seen))
+    store.save(seen_key, sorted(seen))
     # 对本次上传的照片打标
     tagged = [tagger.tag_photo(p) for p in saved_paths]
     # 并入已有相册库（按 path 去重更新，让"整个相册"随每次上传累积增长）
-    existing = store.load("photos", [])
+    existing = store.load(photos_key, [])
     by_path: dict[str, dict] = {p.get("path"): p for p in existing}
     for t in tagged:
         by_path[t.get("path")] = t  # 同一张重传则用最新打标覆盖
@@ -187,7 +256,7 @@ async def upload(
     # 全库去重：跨批次去掉重复/连拍/高度相似，每簇只留画质最好的一张
     uploaded, removed = dedup.deduplicate(merged)
     # 当前相册库更新为「整库去重后的精选」，展示端/生成端都以此为准
-    store.save("photos", uploaded)
+    store.save(photos_key, uploaded)
     resp: dict = {
         "saved": len(saved_paths),
         "count": len(uploaded),
@@ -196,25 +265,27 @@ async def upload(
     }
     if auto:
         filter_list = [f for f in filters.split(",") if f.strip()] if filters else None
-        resp["wall"] = await _make_wall(template, title, date, photos=uploaded, filters=filter_list)
+        resp["wall"] = await _make_wall(template, title, date, photos=uploaded, filters=filter_list, scope=scope)
     return resp
 
 
 @app.get("/api/photos")
-def get_photos() -> dict:
-    return {"photos": store.load("photos", [])}
+def get_photos(x_account_token: str = Header(default="")) -> dict:
+    return {"photos": store.load(_scoped_store_name("photos", _account_scope(x_account_token)), [])}
 
 
 @app.get("/api/known_photos")
-def known_photos() -> dict:
+def known_photos(x_account_token: str = Header(default="")) -> dict:
     """返回后端已见过的照片文件名（含被去重/废片剔除的），供 App 做增量上传：
     App 只上传不在此集合里的新照片，已识别的不再重传，第一次识别后同步几乎瞬间完成。"""
-    return {"names": store.load("seen_names", [])}
+    scope = _account_scope(x_account_token)
+    return {"names": store.load(_scoped_store_name("seen_names", scope), [])}
 
 
 # ---------- 链路2：画面生成 ----------
 
-def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> list[dict]:
+def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int,
+                          model: dict | None = None) -> list[dict]:
     """给整墙加「时间维度的惊喜」：不局限于近期照片，偶尔翻出老照片换进来。
       · 历史上的今天：拍摄月-日与今天相同、且已是 20 天前的老照片（最惊喜，优先注入）。
       · 更久以前：老照片随机挑（制造惊喜而非每屏都换，故按概率触发）。
@@ -273,7 +344,7 @@ def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> 
     order = sorted(range(len(chosen)), key=lambda i: chosen[i].get("final_score", 0.0))
     # 惊喜老照片来自原始相册库，没经过 rank_photos，本身没有 final_score；
     # 这里统一补算真实综合分，避免它们在墙上显示成 0.0，也保证按分排序/训练拿到真实分。
-    scored = selector.rank_photos([s for s, _ in surprises])
+    scored = selector.rank_photos([s for s, _ in surprises], model=model)
     score_by_path = {p.get("path"): p.get("final_score", 0.0) for p in scored}
     result = list(chosen)
     for (s, label), idx in zip(surprises, order):
@@ -284,15 +355,19 @@ def _inject_time_surprise(chosen: list[dict], pool: list[dict], slot_n: int) -> 
 
 
 async def _make_wall(template_id: str, title: str, date: str, photos: list[dict] | None = None,
-                     filters: list[str] | None = None) -> dict | None:
+                     filters: list[str] | None = None, exclude_filters: list[str] | None = None,
+                     scope: str = "legacy") -> dict | None:
     """核心流水线：选图→套模板渲染→存盘→推送上屏。
     photos 传入时只用这批照片（例如手机相册本次上传的近期照片）；
     不传则用相册库全部。相册为空返回 None。
     filters：用户吩咐的筛选维度（色彩/主题/情绪标签），优先只从命中的照片里选；
-    命中太少（不足以填满模板）时自动回退到全部照片，保证屏幕不空。"""
+    exclude_filters：用户关闭的人物/主题，命中任一项就严格排除，不会回退。"""
     if photos is None:
-        photos = store.load("photos", [])
-        if not photos:
+        photos = store.load(_scoped_store_name("photos", scope), [])
+        # Only the legacy, unscoped API may scan the shared root photo folder.
+        # An authenticated account with an empty library must stay empty instead
+        # of falling back to photos that belong to the legacy/public namespace.
+        if not photos and scope == "legacy":
             photos = _tag_all()
     if not photos:
         return None
@@ -301,6 +376,17 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
     photos, _ = dedup.deduplicate(photos)
     if not photos:
         return None
+
+    # “不展示”是隐私约束，优先级高于主题筛选：一张照片只要命中任一关闭的
+    # 人物或主题标签，就不能因为同时命中另一个开启主题而重新进入候选池。
+    excluded = {item.strip().lower() for item in (exclude_filters or []) if item and item.strip()}
+    if excluded:
+        photos = [
+            photo for photo in photos
+            if excluded.isdisjoint({str(tag).lower() for tag in photo.get("tags", [])})
+        ]
+        if not photos:
+            return None
 
     slot_n = _slot_count(template_id)
 
@@ -322,30 +408,35 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
 
     # 轮换序号：同一「模板+筛选」组合每生成一次自增，用于旋转子分类叉乘的取图，
     # 让同一主题反复刷新每次都出不同照片组合，避免时间久了同质化。
-    seq_key = f"{template_id}|{','.join(applied_filters)}"
-    seqs = store.load("wall_seq", {})
+    seq_key = f"{template_id}|{','.join(applied_filters)}|!{','.join(sorted(excluded))}"
+    seqs_key = _scoped_store_name("wall_seq", scope)
+    seqs = store.load(seqs_key, {})
     rotate = int(seqs.get(seq_key, 0))
     seqs[seq_key] = rotate + 1
-    store.save("wall_seq", seqs)
+    store.save(seqs_key, seqs)
 
     # 最近上过屏的照片：让「换一批」优先选没露过脸的，连续几屏差异更明显。
     # 只在「精选/全貌」这类大池子里避重；筛选到很小的相簿(照片本来就少)时不避重，
     # 免得反复没图可选。窗口取两屏左右，避免把整库都压成「最近」。
-    recent_shown: list[str] = store.load("recent_shown", [])
+    recent_key = _scoped_store_name("recent_shown", scope)
+    recent_shown: list[str] = store.load(recent_key, [])
     avoid = set(recent_shown) if len(photos) > slot_n * 2 else set()
+    preference_model = trainer.load_model(_scoped_store_name("model", scope))
 
-    chosen = selector.select_for_template(photos, slot_n, rotate=rotate, avoid=avoid)
+    chosen = selector.select_for_template(
+        photos, slot_n, model=preference_model, rotate=rotate, avoid=avoid,
+    )
 
     # 时间维度惊喜：不局限于近期，偶尔翻出「历史上的今天/更久以前」的老照片换进来。
     # 只在「全貌/精选」(无筛选)时注入；筛选到具体相簿(人物/主题…)时保持纯净不掺入。
     if not applied_filters and slot_n >= 2 and len(photos) > slot_n:
-        chosen = _inject_time_surprise(chosen, photos, slot_n)
+        chosen = _inject_time_surprise(chosen, photos, slot_n, model=preference_model)
 
     photo_paths = [c["path"] for c in chosen]
 
     # 更新「最近上过屏」窗口（保留最近约两屏的量），供下次避重
     new_recent = [c.get("filename") for c in chosen if c.get("filename")] + recent_shown
-    store.save("recent_shown", new_recent[: max(slot_n * 2, 20)])
+    store.save(recent_key, new_recent[: max(slot_n * 2, 20)])
 
     template = engine.load_template(os.path.join(TEMPLATES_DIR, f"{template_id}.json"))
     # 时间惊喜照片：在其槽位角上加「那年今日 / 旧时光」小标签，更有仪式感
@@ -361,7 +452,7 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
     img = engine.render(template, photo_paths, {"title": title, "date": date},
                         badges=badges, stickers=sticker_plan)
 
-    wall_id = f"{template_id}_{int(time.time())}"
+    wall_id = f"{scope}_{template_id}_{time.time_ns()}"
     out_name = f"{wall_id}.png"
     img.save(os.path.join(OUTPUT_DIR, out_name))
 
@@ -375,13 +466,14 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
         "image_url": f"/output/{out_name}",
         "elements": elements,
         "filters": applied_filters,
+        "excluded_filters": sorted(excluded),
         "filter_fallback": filter_fallback,
         "chosen": [{"filename": c["filename"], "final_score": c["final_score"],
                     **({"surprise_label": c["surprise_label"]} if c.get("surprise_label") else {})}
                    for c in chosen],
         "stickers": len(sticker_plan),
     }
-    store.save("last_wall", wall)
+    store.save(_scoped_store_name("last_wall", scope), wall)
 
     # 双端互联：实时推给所有展示屏
     await hub.broadcast({"type": "wall", **wall})
@@ -389,8 +481,12 @@ async def _make_wall(template_id: str, title: str, date: str, photos: list[dict]
 
 
 @app.post("/api/generate")
-async def generate(req: GenerateReq) -> dict:
-    wall = await _make_wall(req.template, req.title, req.date, filters=req.filters or None)
+async def generate(req: GenerateReq, x_account_token: str = Header(default="")) -> dict:
+    wall = await _make_wall(
+        req.template, req.title, req.date, filters=req.filters or None,
+        exclude_filters=req.exclude_filters or None,
+        scope=_account_scope(x_account_token),
+    )
     if wall is None:
         return JSONResponse({"error": "相册为空，请先授权/上传照片"}, status_code=400)
     return wall
@@ -405,13 +501,14 @@ _SUGGEST_VOCAB: dict[str, list[str]] = {
 
 
 @app.get("/api/suggest_filters")
-def suggest_filters() -> dict:
+def suggest_filters(x_account_token: str = Header(default="")) -> dict:
     """
     「更懂你的相册」：扫描当前相册库，统计每个筛选维度的照片数，
     只把「真实存在、且占比够高」的标签推荐出来，并按数量排序。
     App 拿到后直接高亮推荐，用户不用在一大堆标签里自己猜。
     """
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos = store.load(_scoped_store_name("photos", scope), [])
     total = len(photos)
     if not total:
         return {"total": 0, "suggestions": {}, "top": []}
@@ -445,7 +542,7 @@ def suggest_filters() -> dict:
 # ---------- 人物聚合（人脸识别聚类） ----------
 
 @app.post("/api/cluster_people")
-def cluster_people() -> dict:
+def cluster_people(x_account_token: str = Header(default="")) -> dict:
     """
     对当前相册做人物聚合：检测+编码人脸→聚类成「人」→给每张照片打上
     person_1/person_2… 标签并写回相册库。之后就能像普通维度一样按人物筛选
@@ -455,7 +552,10 @@ def cluster_people() -> dict:
     if not faces.available():
         return {"available": False, "people": [], "photos_with_face": 0}
 
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos_key = _scoped_store_name("photos", scope)
+    people_key = _scoped_store_name("people", scope)
+    photos = store.load(photos_key, [])
     if not photos:
         return {"available": True, "people": [], "photos_with_face": 0}
 
@@ -467,8 +567,8 @@ def cluster_people() -> dict:
         base = [t for t in p.get("tags", []) if not t.startswith("person_")]
         persons = photo_persons.get(p.get("path"), [])
         p["tags"] = sorted(set(base) | set(persons))
-    store.save("photos", photos)
-    store.save("people", result["people"])
+    store.save(photos_key, photos)
+    store.save(people_key, result["people"])
 
     return {
         "available": True,
@@ -479,23 +579,32 @@ def cluster_people() -> dict:
 
 
 @app.get("/api/people")
-def get_people() -> dict:
+def get_people(x_account_token: str = Header(default="")) -> dict:
     """返回上次聚合出的人物列表（供 App 展示成「按人物筛选」的选项）。"""
-    return {"people": store.load("people", []), "available": faces.available()}
+    scope = _account_scope(x_account_token)
+    return {
+        "people": store.load(_scoped_store_name("people", scope), []),
+        "available": faces.available(),
+    }
 
 
 @app.post("/api/retag")
-def retag() -> dict:
+def retag(x_account_token: str = Header(default="")) -> dict:
     """
     用当前打标规则重新给「库里已有照片」打标（应用新的画质/美观/构图/废片判定），
     然后重新聚类人物把 person_* 标签补回。
     关键：只重打「库里已有路径」的照片（含 HEIC），不重新扫目录——避免把
     _list_photo_files 不识别的 HEIC 照片丢掉。路径已不存在的照片会被剔除。
     """
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos_key = _scoped_store_name("photos", scope)
+    people_key = _scoped_store_name("people", scope)
+    photos = store.load(photos_key, [])
     if not photos:
-        photos = _tag_all()
-        return {"retagged": len(photos), "people": store.load("people", [])}
+        if scope == "legacy":
+            photos = _tag_all()
+            return {"retagged": len(photos), "people": store.load("people", [])}
+        return {"retagged": 0, "people": []}
 
     retagged: list[dict] = []
     for p in photos:
@@ -509,7 +618,7 @@ def retag() -> dict:
             fresh["tags"] = sorted(set(fresh.get("tags", [])) | set(persons))
         retagged.append(fresh)
 
-    store.save("photos", retagged)
+    store.save(photos_key, retagged)
 
     # 重新聚类人物（用新标签做 YOLO 交叉验证），把 person_* 重新写回
     people = []
@@ -520,8 +629,8 @@ def retag() -> dict:
             base = [t for t in p.get("tags", []) if not t.startswith("person_")]
             base += photo_persons.get(p.get("path"), [])
             p["tags"] = sorted(set(base))
-        store.save("photos", retagged)
-        store.save("people", result["people"])
+        store.save(photos_key, retagged)
+        store.save(people_key, result["people"])
         people = result["people"]
 
     return {"retagged": len(retagged), "people": people}
@@ -591,14 +700,15 @@ def _album_template(group: str, tag: str | None = None) -> str:
 
 
 @app.get("/api/smart_albums")
-def smart_albums() -> dict:
+def smart_albums(x_account_token: str = Header(default="")) -> dict:
     """
     智能相簿：不再让用户勾一堆底层标签（暖色/冷色/红/蓝…），
     而是像苹果相册一样，AI 主动端出少数几个语义相簿——人物 / 宠物 / 主题 / 精选，
     每个相簿只有在相册里真实存在时才出现。前端单选点一下即出对应照片墙。
     每个相簿自带 filter（发给 /api/generate 就能出这个相簿的墙）。
     """
-    photos = store.load("photos", [])
+    scope = _account_scope(x_account_token)
+    photos = store.load(_scoped_store_name("photos", scope), [])
     total = len(photos)
     # 只统计非废片（junk 已在打标时把 quality 清零 + 打 junk 标签）
     good = [p for p in photos if "junk" not in p.get("tags", []) and p.get("quality", 0) > 0]
@@ -614,7 +724,7 @@ def smart_albums() -> dict:
 
     # 1) 人物（人脸聚类结果）——只展示「高频出现」的人（借鉴苹果：路人/单张不建相簿）。
     #    count 按非废片重新计，封面也避开废片、选最美观的一张。
-    people = store.load("people", [])
+    people = store.load(_scoped_store_name("people", scope), [])
     person_albums = []
     for person in people:
         pid = person.get("id")
@@ -710,30 +820,43 @@ def smart_albums() -> dict:
 # ---------- 链路4：模型训练 ----------
 
 @app.post("/api/label")
-def label(req: LabelReq) -> dict:
+def label(req: LabelReq, x_account_token: str = Header(default="")) -> dict:
     """人工打标：对本次画面涉及的元素维度评分，并立即训练偏好模型。"""
-    labels = store.load("labels", [])
+    scope = _account_scope(x_account_token)
+    labels_key = _scoped_store_name("labels", scope)
+    model_key = _scoped_store_name("model", scope)
+    labels = store.load(labels_key, [])
     for s in req.samples:
         labels.append({"wall_id": req.wall_id, "tag": s.tag, "score": s.score, "ts": time.time()})
-    store.save("labels", labels)
+    store.save(labels_key, labels)
 
-    model = trainer.train([{"tag": s.tag, "score": s.score} for s in req.samples])
+    model = trainer.train(
+        [{"tag": s.tag, "score": s.score} for s in req.samples],
+        storage_key=model_key,
+    )
     return {"labeled": len(req.samples), "total_labels": len(labels), "model": model}
 
 
 @app.post("/api/train")
-def train_all() -> dict:
+def train_all(x_account_token: str = Header(default="")) -> dict:
     """用累计的全部标签重新训练（长期训练）。"""
-    labels = store.load("labels", [])
+    scope = _account_scope(x_account_token)
+    labels_key = _scoped_store_name("labels", scope)
+    model_key = _scoped_store_name("model", scope)
+    labels = store.load(labels_key, [])
     if not labels:
-        return {"trained": 0, "model": trainer.load_model()}
-    model = trainer.train([{"tag": l["tag"], "score": l["score"]} for l in labels])
+        return {"trained": 0, "model": trainer.load_model(model_key)}
+    model = trainer.train(
+        [{"tag": l["tag"], "score": l["score"]} for l in labels],
+        storage_key=model_key,
+    )
     return {"trained": len(labels), "model": model}
 
 
 @app.get("/api/model")
-def get_model() -> dict:
-    return trainer.load_model()
+def get_model(x_account_token: str = Header(default="")) -> dict:
+    scope = _account_scope(x_account_token)
+    return trainer.load_model(_scoped_store_name("model", scope))
 
 
 # ---------- 双端互联 WebSocket ----------
@@ -797,6 +920,682 @@ def frame(w: int = 320, h: int = 480) -> Response:
     return Response(content=buf.getvalue(), media_type="image/jpeg")
 
 
+def _spectra6_palette() -> Image.Image:
+    """创建 E Ink Spectra 6 的六色调色板：黑、白、红、黄、绿、蓝。
+    面板不是连续 RGB 彩屏；后端先收敛颜色，固件只需按厂商色码送屏即可。
+    """
+    palette = Image.new("P", (1, 1))
+    colors = [
+        (0, 0, 0),        # black
+        (255, 255, 255),  # white
+        (220, 30, 30),    # red
+        (242, 201, 32),   # yellow
+        (35, 142, 70),    # green
+        (35, 92, 184),    # blue
+    ]
+    raw = [value for color in colors for value in color]
+    palette.putpalette(raw + [0] * (768 - len(raw)))
+    return palette
+
+
+@app.get("/api/frame_eink.png")
+def frame_eink() -> Response:
+    """给 13.3 寸 E Ink Spectra 6 用的原生画面。
+
+    固定输出 1600×1200 横屏 PNG，并用 Floyd-Steinberg 抖动压到 E6 的六种可显示
+    颜色。它和 /api/frame.jpg 完全独立，保留旧 LCD 的 800×480 JPEG 传输路径。
+    """
+    w, h = 1600, 1200
+    last = store.load("last_wall", None)
+    if not last:
+        img = Image.new("RGB", (w, h), "#FFFFFF")
+    else:
+        src_path = os.path.join(OUTPUT_DIR, os.path.basename(last["image_url"]))
+        if not os.path.exists(src_path):
+            img = Image.new("RGB", (w, h), "#FFFFFF")
+        else:
+            src = Image.open(src_path).convert("RGB")
+            from PIL import ImageOps
+            # 先保持原图比例，避免把现有 16:9 模板拉伸；4:3 墨水屏多出的区域用模板背景补齐。
+            pad_color = src.getpixel((0, 0))
+            fitted = ImageOps.contain(src, (w, h), method=Image.LANCZOS)
+            img = Image.new("RGB", (w, h), pad_color)
+            img.paste(fitted, ((w - fitted.width) // 2, (h - fitted.height) // 2))
+
+    # Spectra 6 是有限色面板；抖动能让照片的明暗/细节在六色中保留得更自然。
+    eink = img.quantize(palette=_spectra6_palette(), dither=Image.Dither.FLOYDSTEINBERG)
+    buf = io.BytesIO()
+    eink.save(buf, format="PNG", optimize=True)
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/api/eink/upload")
+async def eink_upload(
+    file: UploadFile,
+    host: str = "192.168.1.200",
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+) -> dict:
+    """上传单张照片，并通过微雪官方 Wi-Fi Loader 协议直接刷新 13.3E6。"""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "墨水屏地址必须是局域网 IP"})
+    if not address.is_private:
+        return JSONResponse(status_code=400, content={"error": "只允许局域网墨水屏地址"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.verify()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别该图片格式"})
+
+    preview_name = "eink_live_preview.png"
+    try:
+        return eink_push.start_upload(
+            image_bytes,
+            host=host,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            enhancement=enhancement,
+            preview_path=os.path.join(OUTPUT_DIR, preview_name),
+            preview_url=f"/output/{preview_name}",
+        )
+    except RuntimeError as exc:
+        return JSONResponse(status_code=409, content={"error": str(exc)})
+
+
+@app.post("/api/eink/prepare")
+async def eink_prepare(
+    file: UploadFile,
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+) -> Response:
+    """把照片转换为手机可下载并直传屏幕的 PWE6 六色帧，不连接局域网设备。"""
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        preview, panel_codes = eink_push.prepare_image(
+            image_bytes,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            enhancement=enhancement,
+        )
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别或转换该图片"})
+
+    preview.save(os.path.join(OUTPUT_DIR, "eink_direct_preview.png"), format="PNG", optimize=True)
+    frame = eink_push.build_panel_frame(panel_codes)
+    return Response(
+        content=frame,
+        media_type="application/vnd.photowall.pwe6",
+        headers={
+            "Content-Disposition": 'attachment; filename="display.pwe6"',
+            "X-Panel-Width": str(eink_push.WIDTH),
+            "X-Panel-Height": str(eink_push.HEIGHT),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get("/api/eink/status")
+def eink_status() -> dict:
+    """查询当前照片转换、传输与全刷进度。"""
+    return eink_push.status()
+
+
+# ---------- 无 Mac 设备链路：App 发布，屏幕主动拉取 ----------
+
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
+_PAIRING_CODE_RE = re.compile(r"^\d{6}$")
+DEVICE_FRAMES_DIR = os.path.join(OUTPUT_DIR, "device_frames")
+os.makedirs(DEVICE_FRAMES_DIR, exist_ok=True)
+
+
+def _devices() -> dict[str, dict[str, Any]]:
+    data = store.load("eink_devices", {})
+    return data if isinstance(data, dict) else {}
+
+
+def _public_device(device: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in device.items() if key not in ("device_token", "account_token")}
+
+
+def _device_auth(device: dict[str, Any], token: str) -> bool:
+    expected = str(device.get("device_token", ""))
+    return bool(expected and token and secrets.compare_digest(expected, token))
+
+
+def _account_auth(device: dict[str, Any], token: str) -> bool:
+    expected = str(device.get("account_token", ""))
+    return bool(expected and token and secrets.compare_digest(expected, token))
+
+
+def _queue_reprovision(device: dict[str, Any], preserve_binding: bool) -> None:
+    """Ask the authenticated display to restart in BLE provisioning mode.
+
+    A Wi-Fi change keeps the account binding. Removing a display revokes the
+    account immediately, while retaining the device credential only long enough
+    for the display to receive and acknowledge the reset command.
+    """
+    device["pending_command"] = {
+        "type": "reprovision",
+        "preserve_binding": bool(preserve_binding),
+        "created_at": time.time(),
+    }
+    device["state"] = "reprovision_pending"
+    device["progress"] = 0.0
+    device["error"] = ""
+    if not preserve_binding:
+        device["claimed"] = False
+        device["account_token"] = ""
+        device.pop("setup_token_digest", None)
+        device.pop("setup_token_expires_at", None)
+
+
+def _july_calendar_plan(photos: list[dict], model: dict | None = None) -> tuple[dict[str, Any], int]:
+    """Build a deterministic July 2026 calendar plan from the existing album.
+
+    The normal selector remains the only photo-ranking authority.  Calendar
+    rendering is deliberately a downstream layout step, so it cannot change
+    daily-wall preference scores or require a Qwen credential.
+    """
+    by_day: dict[int, list[dict]] = {day: [] for day in range(1, 32)}
+    for photo in photos:
+        try:
+            taken = datetime.datetime.fromtimestamp(float(photo.get("taken_at")))
+        except (TypeError, ValueError, OSError, OverflowError):
+            continue
+        if (taken.year, taken.month) == (2026, 7) and 1 <= taken.day <= 31:
+            by_day[taken.day].append(photo)
+
+    selected_count = 0
+    days: list[dict[str, Any]] = []
+    for day in range(1, 32):
+        candidates = by_day[day]
+        if not candidates:
+            days.append({
+                "day": day,
+                "sources": [],
+                "treatment": "blank",
+                "reason": "当天没有已同步的相机照片，保留留白。",
+                "placements": [],
+            })
+            continue
+
+        chosen = selector.rank_photos(candidates, model=model)[0]
+        selected_count += 1
+        days.append({
+            "day": day,
+            "sources": [chosen["path"]],
+            "treatment": "proportional_full_image",
+            "reason": "按现有质量、美观度和偏好综合评分选出的当天代表照片。",
+            "selection": {
+                "filename": chosen.get("filename", ""),
+                "final_score": chosen.get("final_score", 0.0),
+            },
+            "placements": [{
+                "kind": "photo",
+                "fit": "cover",
+                "box": [0.01, 0.01, 0.98, 0.98],
+                "focal": [0.5, 0.5],
+                "rotation": 0,
+            }],
+        })
+
+    return {
+        "schema_version": "1.0",
+        "calendar": {
+            "year": 2026,
+            "month": 7,
+            "week_start": "sunday",
+            "template": "calendar_template_v1",
+        },
+        "decision": {
+            "backend": "photowall_selector_v1",
+            "api_used": False,
+            "cutout_style": {"white_outline": False, "shadow": False},
+        },
+        "days": days,
+    }, selected_count
+
+
+def _queue_device_image(device: dict[str, Any], image_bytes: bytes) -> tuple[str, str]:
+    """Convert an image to PWE6 and make it the device's next cloud-pulled frame."""
+    preview, panel_codes = eink_push.prepare_image(
+        image_bytes,
+        dither=True,
+        fit="contain",
+        rotation=0,
+        enhancement="standard",
+    )
+    revision = str(time.time_ns())
+    device_id = str(device["device_id"])
+    device_dir = os.path.join(DEVICE_FRAMES_DIR, device_id)
+    os.makedirs(device_dir, exist_ok=True)
+    frame_path = os.path.join(device_dir, f"{revision}.pwe6")
+    preview_path = os.path.join(device_dir, f"{revision}.png")
+    with open(frame_path, "wb") as output:
+        output.write(eink_push.build_panel_frame(panel_codes))
+    preview.save(preview_path, format="PNG", optimize=True)
+    device.update({
+        "revision": revision,
+        "frame_path": frame_path,
+        "preview_url": f"/output/device_frames/{device_id}/{revision}.png",
+        "published_at": time.time(),
+        "state": "queued",
+        "progress": 0.0,
+        "error": "",
+    })
+    return revision, preview_path
+
+
+def _materialize_calendar_sources(plan: dict[str, Any], run_dir: str) -> None:
+    """Copy selected originals into date-prefixed proxies required by calendar QA."""
+    proxy_dir = os.path.join(run_dir, "proxies")
+    os.makedirs(proxy_dir, exist_ok=True)
+    for day in plan["days"]:
+        sources = list(day.get("sources", []))
+        if not sources:
+            continue
+        source = sources[0]
+        if not os.path.isfile(source):
+            raise OSError(f"找不到日历候选照片：{source}")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(source))
+        proxy_path = os.path.join(proxy_dir, f"2026-07-{int(day['day']):02d}__{safe_name}")
+        shutil.copy2(source, proxy_path)
+        day["sources"] = [proxy_path]
+
+
+@app.post("/api/devices/bootstrap")
+def device_bootstrap(req: DeviceBootstrapReq) -> Response:
+    """设备连上 Wi-Fi 后首次登记；后续启动使用已保存的 device token 报到。"""
+    if not _DEVICE_ID_RE.fullmatch(req.device_id) or not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+        return JSONResponse(status_code=400, content={"error": "设备编号或配对码格式无效"})
+
+    devices_data = _devices()
+    existing = devices_data.get(req.device_id)
+    if existing and existing.get("device_token") and not _device_auth(existing, req.device_token):
+        pending = existing.get("pending_command")
+        reset_is_pending = (
+            not req.device_token and
+            not existing.get("claimed") and
+            isinstance(pending, dict) and
+            pending.get("type") == "reprovision" and
+            not pending.get("preserve_binding")
+        )
+        if reset_is_pending:
+            existing = None
+        else:
+            return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
+
+    now = time.time()
+    device = existing or {
+        "device_id": req.device_id,
+        "device_token": secrets.token_urlsafe(32),
+        "account_token": "",
+        "claimed": False,
+        "name": "PhotoWall E6",
+        "created_at": now,
+        "revision": "",
+        "displayed_revision": "",
+    }
+    device.update({
+        "pairing_code": req.pairing_code,
+        "ip": req.ip,
+        "firmware_version": req.firmware_version,
+        "last_seen": now,
+        "state": "online",
+        "error": "",
+    })
+    setup_token = req.setup_token.strip()
+    pending = device.get("pending_command")
+    if (
+        setup_token and
+        device.get("claimed") and
+        isinstance(pending, dict) and
+        pending.get("type") == "reprovision" and
+        pending.get("preserve_binding")
+    ):
+        # A retained device credential plus a fresh setup token proves that the
+        # display completed its replacement Wi-Fi setup, even if the earlier
+        # acknowledgement was lost on the old network.
+        device.pop("pending_command", None)
+    if not device.get("claimed") and setup_token:
+        token_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+        if device.get("setup_token_digest") != token_digest:
+            device["setup_token_digest"] = token_digest
+            device["setup_token_expires_at"] = now + 600
+    devices_data[req.device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({
+        "device_id": req.device_id,
+        "device_token": device["device_token"],
+        "claimed": bool(device.get("claimed")),
+        "poll_seconds": 15,
+    })
+
+
+@app.post("/api/devices/claim")
+def device_claim(req: DeviceClaimReq) -> Response:
+    """App 使用屏幕/机身上的六位码绑定最近在线的设备。"""
+    if not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+        return JSONResponse(status_code=400, content={"error": "请输入六位配对码"})
+    devices_data = _devices()
+    matches = [d for d in devices_data.values() if d.get("pairing_code") == req.pairing_code]
+    if not matches:
+        return JSONResponse(status_code=404, content={"error": "设备尚未联网，请完成配网后重试"})
+    device = max(matches, key=lambda item: float(item.get("last_seen", 0)))
+    if time.time() - float(device.get("last_seen", 0)) > 300:
+        return JSONResponse(status_code=409, content={"error": "设备已离线，请确认配网状态"})
+    if not device.get("account_token"):
+        device["account_token"] = secrets.token_urlsafe(32)
+    device["claimed"] = True
+    device["name"] = req.name.strip()[:40] or "客厅照片墙"
+    devices_data[device["device_id"]] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+
+
+@app.post("/api/devices/auto-claim")
+def device_auto_claim(req: DeviceAutoClaimReq) -> Response:
+    """Bind a display using the single-use token read from its local setup AP."""
+    setup_token = req.setup_token.strip()
+    if not _DEVICE_ID_RE.fullmatch(req.device_id) or len(setup_token) < 24:
+        return JSONResponse(status_code=400, content={"error": "设备自动绑定信息无效"})
+
+    devices_data = _devices()
+    device = devices_data.get(req.device_id)
+    if not device:
+        return JSONResponse(status_code=404, content={"error": "设备尚未联网，请完成 Wi-Fi 配置后重试"})
+    if time.time() - float(device.get("last_seen", 0)) > 300:
+        return JSONResponse(status_code=409, content={"error": "设备已离线，请重新连接设备热点后重试"})
+    expected_digest = str(device.get("setup_token_digest", ""))
+    expires_at = float(device.get("setup_token_expires_at", 0))
+    supplied_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+    if not expected_digest or time.time() > expires_at or not hmac.compare_digest(expected_digest, supplied_digest):
+        return JSONResponse(status_code=403, content={"error": "自动绑定已过期，请重新开始设备配网"})
+
+    if not device.get("account_token"):
+        device["account_token"] = secrets.token_urlsafe(32)
+    device["claimed"] = True
+    device["name"] = req.name.strip()[:40] or "客厅照片墙"
+    device.pop("setup_token_digest", None)
+    device.pop("setup_token_expires_at", None)
+    devices_data[req.device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+
+
+@app.get("/api/devices")
+def device_list(x_account_token: str = Header(default="")) -> Response:
+    devices_data = _devices()
+    visible = [_public_device(d) for d in devices_data.values() if _account_auth(d, x_account_token)]
+    return JSONResponse({"devices": visible})
+
+
+@app.post("/api/devices/{device_id}/reprovision")
+def device_reprovision(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Keep the binding but make the display re-enter BLE Wi-Fi setup."""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    _queue_reprovision(device, preserve_binding=True)
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse(
+        status_code=202,
+        content={"device": _public_device(device), "reprovision_required": True},
+    )
+
+
+@app.delete("/api/devices/{device_id}")
+def device_delete(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Revoke the App binding and ask the display to erase its setup."""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    _queue_reprovision(device, preserve_binding=False)
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse(
+        status_code=202,
+        content={"device_id": device_id, "removed": True, "reprovision_required": True},
+    )
+
+
+@app.post("/api/devices/{device_id}/publish")
+async def device_publish(
+    device_id: str,
+    file: UploadFile,
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """App 上传照片，云端转换为 PWE6 并设置为设备下一待显示版本。"""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        preview, panel_codes = eink_push.prepare_image(
+            image_bytes, dither=dither, fit=fit, rotation=rotation, enhancement=enhancement)
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别或转换该图片"})
+
+    revision = str(time.time_ns())
+    device_dir = os.path.join(DEVICE_FRAMES_DIR, device_id)
+    os.makedirs(device_dir, exist_ok=True)
+    frame_path = os.path.join(device_dir, f"{revision}.pwe6")
+    preview_path = os.path.join(device_dir, f"{revision}.png")
+    frame_data = eink_push.build_panel_frame(panel_codes)
+    with open(frame_path, "wb") as output:
+        output.write(frame_data)
+    preview.save(preview_path, format="PNG", optimize=True)
+
+    device.update({
+        "revision": revision,
+        "frame_path": frame_path,
+        "preview_url": f"/output/device_frames/{device_id}/{revision}.png",
+        "published_at": time.time(),
+        "state": "queued",
+        "progress": 0.0,
+        "error": "",
+    })
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "revision": revision})
+
+
+@app.post("/api/devices/{device_id}/publish-last-wall")
+def device_publish_last_wall(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Queue the most recently generated cloud template after App confirmation."""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    scope = _account_scope(str(device.get("account_token", "")))
+    wall = store.load(_scoped_store_name("last_wall", scope), {})
+    image_url = str(wall.get("image_url", ""))
+    if not image_url.startswith("/output/"):
+        return JSONResponse(status_code=404, content={"error": "没有可发布的模板预览，请先生成画面"})
+    image_path = os.path.join(OUTPUT_DIR, os.path.basename(image_url))
+    if not os.path.isfile(image_path):
+        return JSONResponse(status_code=404, content={"error": "模板预览已过期，请重新生成"})
+    with open(image_path, "rb") as image_file:
+        revision, _ = _queue_device_image(device, image_file.read())
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "revision": revision, "wall": wall})
+
+
+@app.post("/api/devices/{device_id}/calendar/july-2026/publish")
+async def device_publish_july_calendar(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Generate a QA-approved July 2026 calendar from the synced album and queue it.
+
+    Only photos genuinely captured in July 2026 are eligible. This prevents an
+    attractive but misleading calendar assembled from unrelated dates.
+    """
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+
+    scope = _account_scope(str(device.get("account_token", "")))
+    photos_key = _scoped_store_name("photos", scope)
+    photos = store.load(photos_key, [])
+    photos, _ = dedup.deduplicate(photos)
+    preference_model = trainer.load_model(_scoped_store_name("model", scope))
+    plan, selected_count = _july_calendar_plan(photos, model=preference_model)
+    if not selected_count:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "没有已同步的 2026 年 7 月相机照片，暂时无法生成七月日历"},
+        )
+
+    from calendar_engine import GenerationError, generate_july_calendar
+
+    run_id = f"july-2026-{time.time_ns()}"
+    run_dir = os.path.join(OUTPUT_DIR, "calendar_runs", device_id, run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    plan_path = os.path.join(run_dir, "treatment_plan.json")
+
+    try:
+        _materialize_calendar_sources(plan, run_dir)
+        with open(plan_path, "w", encoding="utf-8") as output:
+            json.dump(plan, output, ensure_ascii=False, indent=2)
+        result = generate_july_calendar(run_dir, final_name="calendar.png", preview_name="preview.jpg")
+        image_bytes = result.calendar_path.read_bytes()
+        revision, _ = _queue_device_image(device, image_bytes)
+    except (GenerationError, OSError, ValueError) as exc:
+        return JSONResponse(status_code=500, content={"error": f"七月日历生成失败：{exc}"})
+
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({
+        "device": _public_device(device),
+        "revision": revision,
+        "calendar": {
+            "year": 2026,
+            "month": 7,
+            "selected_day_count": selected_count,
+            "qa": result.qa_report.get("status"),
+        },
+    })
+
+
+@app.get("/api/devices/{device_id}/next")
+def device_next(device_id: str, revision: str = "", token: str = "") -> Response:
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _device_auth(device, token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    pending = device.get("pending_command")
+    device["last_seen"] = time.time()
+    if not isinstance(pending, dict):
+        device["state"] = "online" if not device.get("revision") else device.get("state", "online")
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    if isinstance(pending, dict) and pending.get("type") == "reprovision":
+        return JSONResponse({
+            "command": "reprovision",
+            "preserve_binding": bool(pending.get("preserve_binding")),
+        })
+    target = str(device.get("revision", ""))
+    if not target or target == revision:
+        return Response(status_code=204)
+    return JSONResponse({
+        "revision": target,
+        "size": eink_push.FRAME_HEADER.size + (eink_push.WIDTH * eink_push.HEIGHT // 2),
+        "frame_url": f"/api/devices/{device_id}/frame/{target}?token={token}",
+    })
+
+
+@app.get("/api/devices/{device_id}/frame/{revision}")
+def device_frame(device_id: str, revision: str, token: str = "") -> Response:
+    device = _devices().get(device_id)
+    if not device or not _device_auth(device, token) or str(device.get("revision")) != revision:
+        return JSONResponse(status_code=401, content={"error": "画面授权无效"})
+    frame_path = str(device.get("frame_path", ""))
+    if not frame_path or not os.path.isfile(frame_path):
+        return JSONResponse(status_code=404, content={"error": "画面文件不存在"})
+    return FileResponse(frame_path, media_type="application/vnd.photowall.pwe6", filename="display.pwe6")
+
+
+@app.post("/api/devices/{device_id}/status")
+def device_status(device_id: str, req: DeviceStatusReq, token: str = "") -> Response:
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _device_auth(device, token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    pending = device.get("pending_command")
+    if req.state == "unbound":
+        if not isinstance(pending, dict) or pending.get("type") != "reprovision" or pending.get("preserve_binding"):
+            return JSONResponse(status_code=409, content={"error": "设备没有待执行的删除命令"})
+        devices_data.pop(device_id, None)
+        store.save("eink_devices", devices_data)
+        return JSONResponse({"ok": True, "removed": True})
+    if req.state == "reprovisioning":
+        if not isinstance(pending, dict) or pending.get("type") != "reprovision" or not pending.get("preserve_binding"):
+            return JSONResponse(status_code=409, content={"error": "设备没有待执行的重新配网命令"})
+        device.pop("pending_command", None)
+    device.update({
+        "state": req.state[:24],
+        "progress": max(0.0, min(float(req.progress), 100.0)),
+        "error": req.error[:240],
+        "last_seen": time.time(),
+        "ip": req.ip or device.get("ip", ""),
+    })
+    if req.state == "displayed" and req.revision == str(device.get("revision", "")):
+        device["displayed_revision"] = req.revision
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/photos/{name}")
 def serve_photo(name: str) -> FileResponse:
     return FileResponse(os.path.join(PHOTOS_DIR, name))
@@ -826,9 +1625,23 @@ def thumb(name: str, s: int = 160) -> Response:
 app.include_router(content.router)
 
 
+app.mount("/eink", StaticFiles(directory=EINK_UI_DIR, html=True), name="eink")
 app.mount("/studio", StaticFiles(directory=os.path.join(_ROOT, "studio"), html=True), name="studio")
 app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="app")
 app.mount("/screen", StaticFiles(directory=DISPLAY_DIR, html=True), name="screen")
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    storage_ready = all(
+        os.path.isdir(directory) and os.access(directory, os.R_OK | os.W_OK)
+        for directory in (PHOTOS_DIR, OUTPUT_DIR, store._BASE)
+    )
+    payload = {
+        "status": "ok" if storage_ready else "degraded",
+        "storage_ready": storage_ready,
+    }
+    return JSONResponse(content=payload, status_code=200 if storage_ready else 503)
 
 
 @app.get("/")

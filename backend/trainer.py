@@ -22,12 +22,17 @@ def _default_model() -> dict:
     return {"weights": {}, "bias": 0.5, "trained_samples": 0, "epochs": 0}
 
 
-def load_model() -> dict:
-    return store.load(_MODEL_KEY, _default_model())
+def load_model(storage_key: str = _MODEL_KEY) -> dict:
+    """Load one preference model.
+
+    ``storage_key`` lets authenticated callers keep a model per account while
+    preserving the legacy unscoped model for the original local workflow.
+    """
+    return store.load(storage_key, _default_model())
 
 
-def save_model(model: dict) -> None:
-    store.save(_MODEL_KEY, model)
+def save_model(model: dict, storage_key: str = _MODEL_KEY) -> None:
+    store.save(storage_key, model)
 
 
 def score_tags(tags: list[str], model: dict | None = None) -> float:
@@ -41,12 +46,13 @@ def score_tags(tags: list[str], model: dict | None = None) -> float:
     return sum(vals) / len(vals)
 
 
-def train(samples: list[dict], epochs: int = 200, lr: float = 0.1, l2: float = 0.01) -> dict:
+def train(samples: list[dict], epochs: int = 200, lr: float = 0.1, l2: float = 0.01,
+          storage_key: str = _MODEL_KEY) -> dict:
     """
     samples: [{"tag": "food", "score": 0.0~1.0}, ...]
     对每个维度做梯度下降，拟合其平均目标分。返回更新后的模型。
     """
-    model = load_model()
+    model = load_model(storage_key)
     weights = dict(model["weights"])
 
     # 收集每个 tag 的目标样本
@@ -65,5 +71,5 @@ def train(samples: list[dict], epochs: int = 200, lr: float = 0.1, l2: float = 0
     model["weights"] = weights
     model["trained_samples"] = model.get("trained_samples", 0) + len(samples)
     model["epochs"] = model.get("epochs", 0) + epochs
-    save_model(model)
+    save_model(model, storage_key)
     return model

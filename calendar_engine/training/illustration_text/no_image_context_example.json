@@ -1,0 +1,17 @@
+{
+  "date": "2026-07-08",
+  "eligible_photo_count": 0,
+  "text_candidates": [
+    {
+      "source": "ocr_note",
+      "text": "今天也有好好吃饭",
+      "confidence": 0.99
+    }
+  ],
+  "layout_balance_needed": false,
+  "consecutive_blank_run_length": 0,
+  "layout_context": {
+    "neighboring_cells_are_dense": false,
+    "decoration_needed": false
+  }
+}

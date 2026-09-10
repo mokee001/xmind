@@ -9,6 +9,12 @@
 - 时间字段 `date` 是字符串，空串表示"由后端用今天"。
 - 标签（tags/filters）是英文小写词，如 `warm`、`food`、`person_1`。
 
+**GET `/healthz`** — 生产健康检查，不依赖照片、设备或账号状态。
+```json
+{ "status": "ok", "storage_ready": true }
+```
+当运行时照片、输出或存储目录不可读写时返回 `503`，并将 `status` 设为 `degraded`。
+
 ---
 
 ## 一、归属划分
@@ -19,7 +25,9 @@
 | `/api/generate` `/api/suggest_filters` | A | `backend/server.py` |
 | `/api/cluster_people` `/api/people` `/api/retag` `/api/smart_albums` | A | `backend/server.py` |
 | `/api/label` `/api/train` `/api/model` | A | `backend/server.py` |
-| `/ws/display` `/output/{name}` `/api/frame.jpg` `/api/thumb/{name}` `/photos/{name}` | A | `backend/server.py` |
+| `/api/devices/bootstrap` `/api/devices/auto-claim` `/api/devices/*` | A | `backend/server.py` |
+| `/ws/display` `/output/{name}` `/api/thumb/{name}` `/photos/{name}` | A | `backend/server.py` |
+| `/api/frame_id` `/api/frame.jpg` | Legacy LCD only | `backend/server.py` |
 | `/api/stickers` `/api/upload_sticker` `/api/sticker.png/{name}` | B | `backend/routers/content.py` |
 | `/api/templates` `/api/upload_template` `/api/delete_template` `/api/template_preview/{tid}.png` | B | `backend/routers/content.py` |
 | `/api/studio/preview` | B | `backend/routers/content.py` |
@@ -28,7 +36,41 @@
 
 ## 二、核心链路
 
+### 0. BLE 首次绑定与重新配网（A）
+
+设备没有网络配置时广播 `PhotoWall-XXXX` BLE 服务。App 连接后要求用户按住设备
+BOOT 键确认，通过 BLE 读取一次性 `setup_token`，让设备扫描附近 Wi-Fi，并将所选
+SSID、密码和固定云端地址发送给设备。设备联网后向云端 bootstrap；App 使用下列
+接口自动绑定，不需要输入配对码。临时热点网页保留为兼容恢复路径，不是 App 主流程。
+
+**POST `/api/devices/auto-claim`** — Body：
+```json
+{ "device_id": "pwe6-90E5B1D6E300", "setup_token": "<32-char token>", "name": "客厅照片墙" }
+```
+令牌仅在设备 bootstrap 后有效 10 分钟，只能使用一次。成功返回 `device` 和
+`account_token`。原 `POST /api/devices/claim` 继续保留，作为手动恢复路径。
+
+**POST `/api/devices/{device_id}/reprovision`** — Header：
+`X-Account-Token: <account_token>`。保留设备绑定和相册账户，下发重新配网命令。
+设备下一次轮询收到：
+```json
+{ "command": "reprovision", "preserve_binding": true }
+```
+设备清除原 Wi-Fi、重启并重新广播 BLE；新 Wi-Fi 配置成功后继续使用原设备与账户凭据。
+
+**DELETE `/api/devices/{device_id}`** — Header：
+`X-Account-Token: <account_token>`。立即撤销 App 绑定，并让设备清除 Wi-Fi 和设备凭据。
+设备下一次轮询收到：
+```json
+{ "command": "reprovision", "preserve_binding": false }
+```
+设备确认后从服务端设备表移除，再次添加必须完整执行 BLE 配网和自动绑定。
+
 ### 1. 相册授权 / 上传（A）
+
+App 调用本节以及“画面生成 / 人物”接口时统一携带
+`X-Account-Token: <account_token>`。服务端按账户隔离照片、已识别文件名、人物和智能相簿；
+不带 Header 的调用只进入旧版 `legacy` 调试空间。
 
 **POST `/api/authorize`** — 扫描服务器 `photos/` 目录并全部打标（调试用）。
 返回：
@@ -63,8 +105,17 @@ Body：`files`（可多张）。
 
 **POST `/api/generate`** — Body（JSON）：
 ```json
-{ "template": "daily_polaroid", "title": "我的一天", "date": "", "filters": ["warm","food"] }
+{
+  "template": "daily_polaroid",
+  "title": "我的一天",
+  "date": "",
+  "filters": ["warm", "food"],
+  "exclude_filters": ["person_2"]
+}
 ```
+
+`exclude_filters` 用于“不展示”人物或主题；命中任一排除标签的照片都不会进入候选，
+优先级高于 `filters` ，也不会因为主题回退而重新入选。
 返回 `Wall`；相册为空返回 `400 {"error": "..."}`。
 
 **GET `/api/suggest_filters`** — "更懂你的相册"，返回真实存在且占比够高的可选筛选：
@@ -84,20 +135,27 @@ Body：`files`（可多张）。
 
 - **POST `/api/cluster_people`** → 聚类人脸，给照片打 `person_1/person_2…`。人脸库没装时 `{"available": false, ...}`。
 - **GET `/api/people`** → `{ "people": [...], "available": bool }`
+- **GET `/api/smart_albums`** → 返回该账户真实照片生成的人物、宠物、主题、情绪、色彩和精选相簿。
 - **POST `/api/retag`** → 用最新规则重打库里已有照片。
 
-### 4. 双端互联（A）
+### 4. 网页展示端（A）
 
 - **WS `/ws/display`** — 展示屏订阅。生成新画面时后端 broadcast：`{ "type": "wall", ...Wall }`。
 - **GET `/output/{name}`** — 取生成的 PNG。
-- **GET `/api/frame.jpg`** — 当前画面（给 ESP32 屏拉取）。
 - **GET `/api/thumb/{name}`** / **GET `/photos/{name}`** — 缩略图 / 原图。
+
+历史兼容接口（仅供 `firmware/legacy/display_esp32`，不属于当前设备流或墨水屏测试）：
+
+- **GET `/api/frame_id`** — 早期液晶固件轮询画面版本。
+- **GET `/api/frame.jpg`** — 早期液晶固件拉取 800×480 JPEG。
 
 ### 5. 模型训练（A）
 
-- **POST `/api/label`** — Body：`{ "wall_id": "", "samples": [ {"tag":"warm","score":1.0} ] }`（score 0=差 1=好）。
-- **POST `/api/train`** — 触发训练。
-- **GET `/api/model`** — 模型状态。
+三个接口均接受 `X-Account-Token`，标签和模型会按家庭账户隔离；不带 Header 时仅访问历史兼容的本地模型。
+
+- **POST `/api/label`** — Body：`{ "wall_id": "", "samples": [ {"tag":"warm","score":1.0} ] }`（score 0=差 1=好），立即更新当前账户模型。
+- **POST `/api/train`** — 用当前账户累计标签重新训练。
+- **GET `/api/model`** — 返回当前账户模型；App 在设备绑定/配网成功后自动读取。
 
 ---
 

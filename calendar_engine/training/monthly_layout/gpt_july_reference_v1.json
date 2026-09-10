@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "reference_id": "gpt_vision_july_2026_confirmed_style",
+  "source_policy": "只保存设计决策，不保存原始照片或参考成图",
+  "confirmed_by_user": true,
+  "purpose": "作为全月艺术指导和回归测试的黄金案例",
+  "days": [
+    {"day": 1, "semantic": "人物户外活动", "treatment": "proportional_full_image"},
+    {"day": 2, "semantic": "第三方猫咪聊天且无个人情绪", "treatment": "blank"},
+    {"day": 3, "semantic": "手持纸质卡片", "treatment": "irregular_cutout", "placement_profile": "handheld_cutout"},
+    {"day": 4, "semantic": "人物近景", "treatment": "irregular_cutout", "placement_profile": "portrait_cutout"},
+    {"day": 5, "semantic": "手持 Kindle", "treatment": "irregular_cutout", "placement_profile": "handheld_cutout"},
+    {"day": 7, "semantic": "攀岩活动", "treatment": "proportional_full_image"},
+    {"day": 8, "semantic": "个人文化事件感想", "treatment": "text_only"},
+    {"day": 10, "semantic": "多盘聚餐食物", "treatment": "irregular_cutout", "placement_profile": "food_cutout"},
+    {"day": 11, "semantic": "电影海报", "treatment": "non_cell_ratio_image"},
+    {"day": 12, "semantic": "自然风景", "treatment": "proportional_full_image"},
+    {"day": 13, "semantic": "旅行人物近景", "treatment": "irregular_cutout", "placement_profile": "portrait_cutout"},
+    {"day": 14, "semantic": "手持玩偶", "treatment": "irregular_cutout", "placement_profile": "handheld_cutout"},
+    {"day": 15, "semantic": "电影海报", "treatment": "non_cell_ratio_image"},
+    {"day": 16, "semantic": "个人周末期待", "treatment": "text_only"},
+    {"day": 18, "semantic": "拉花咖啡", "treatment": "circle_image"},
+    {"day": 19, "semantic": "个人身体状态", "treatment": "illustration_with_text"},
+    {"day": 20, "semantic": "城市晚霞", "treatment": "proportional_full_image"},
+    {"day": 21, "semantic": "刺身与多盘料理", "treatment": "irregular_cutout", "placement_profile": "food_cutout"},
+    {"day": 22, "semantic": "趣味封面图", "treatment": "non_cell_ratio_image"},
+    {"day": 23, "semantic": "旅行纪念品平铺", "treatment": "proportional_full_image"},
+    {"day": 24, "semantic": "市场购物组合", "treatment": "oval_image_with_cutout"},
+    {"day": 25, "semantic": "现场音乐演出", "treatment": "proportional_full_image"},
+    {"day": 27, "semantic": "两只猫的关系", "treatment": "irregular_cutout", "placement_profile": "pet_cutout"},
+    {"day": 28, "semantic": "手持饮品", "treatment": "irregular_cutout", "placement_profile": "handheld_cutout"},
+    {"day": 29, "semantic": "盘中蛋饼", "treatment": "irregular_cutout", "placement_profile": "food_cutout"},
+    {"day": 30, "semantic": "猫咪趣味特写", "treatment": "irregular_cutout", "placement_profile": "pet_cutout"}
+  ],
+  "blank_days": [2, 6, 9, 17, 26, 31],
+  "monthly_checks": {
+    "maximum_consecutive_rectangular_cells": 2,
+    "consecutive_blank_pairs": 0,
+    "large_cutouts_are_allowed": true,
+    "large_cutouts_have_no_white_outline_or_shadow": true
+  }
+}

@@ -17,7 +17,8 @@
 ## 二、三人之间的接口契约（只有这几个，改动前必须先说一声）
 
 - **C → A**：`POST /api/upload`、`GET /api/known_photos`、`POST /api/generate`、`GET /api/smart_albums`
-- **A → 展示端**：`GET /api/frame_id`、`GET /api/frame.jpg?w=800&h=480`、`WS /ws/display`
+- **A → 当前网页展示端**：`WS /ws/display`
+- **Legacy LCD only**：`GET /api/frame_id`、`GET /api/frame.jpg?w=800&h=480`；仅供 `firmware/legacy/display_esp32`，不得用于新设备流或墨水屏测试
 - **C/前端 → B**：`GET /api/templates`、`POST /api/upload_template`、`POST /api/upload_sticker`、`GET /api/stickers`、`POST /api/studio/preview`
 - **A ↔ B 代码契约**：`engine.render(template, photos, context, badges, stickers)` 的函数签名。**谁要改它，两人一起确认。**
 

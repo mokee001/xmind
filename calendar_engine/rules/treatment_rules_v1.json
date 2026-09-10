@@ -1,0 +1,509 @@
+{
+  "version": "2.0",
+  "source": "calendar_template_v1/rules/、纯文字/插画案例、静态/动态装饰层规范及 GPT Vision 2026 年 7 月确认正例",
+  "units": "figma_design_units",
+  "global_rules": {
+    "preferred_images_per_day": 1,
+    "maximum_images_per_day": 3,
+    "blank_day_allowed": true,
+    "maximum_consecutive_blank_days": 1,
+    "consecutive_blank_days_must_be_interrupted": true,
+    "illustration_on_blank_day_allowed": true,
+    "crop_for_subject_and_aesthetics_allowed": true,
+    "maximum_absolute_rotation_degrees": 10,
+    "primary_priority": "aesthetic_quality",
+    "cutout_white_outline_allowed": false,
+    "cutout_shadow_allowed": false,
+    "maximum_dynamic_visual_stickers_per_cell": 2,
+    "maximum_dynamic_decorated_cells_per_month": 8
+  },
+  "monthly_art_direction_policy": {
+    "enabled": true,
+    "runs_after_daily_ai_decision": true,
+    "runs_before_asset_execution": true,
+    "rules_file": "monthly_art_direction_rules_v1.json",
+    "calibration_file": "../training/monthly_layout/gpt_july_reference_v1.json",
+    "daily_ai_result_is_candidate_not_final": true,
+    "can_override_treatment_mode": true,
+    "can_keep_a_day_blank": true,
+    "cannot_change_selected_source": true,
+    "cannot_change_date_ownership": true,
+    "hard_checks": [
+      "同一行不得连续出现三个完整矩形照片",
+      "留白日期不得连续出现",
+      "大抠图的主体中心必须留在所属日期格",
+      "不得使用动态贴纸弥补连续方图造成的僵硬版式",
+      "抠图不得添加白色描边和阴影"
+    ]
+  },
+  "decoration_layer_policy": {
+    "layer_order": [
+      "base",
+      "content",
+      "date",
+      "overlay_sticker_static",
+      "overlay_sticker_dynamic"
+    ],
+    "static_layer": {
+      "mode": "template_fixed",
+      "changes_with_calendar_content": false,
+      "examples": [
+        "模板固定猫头",
+        "模板固定星星",
+        "模板固定播放器"
+      ]
+    },
+    "dynamic_layer": {
+      "mode": "semantic_selection_then_rule_layout",
+      "changes_with_calendar_content": true,
+      "maximum_visual_stickers_per_cell": 2,
+      "maximum_decorated_cells_per_month": 8,
+      "maximum_opaque_coverage_ratio_per_cell": 0.25,
+      "date_number_overlap_allowed": false,
+      "cross_cell_allowed": true,
+      "must_not_confuse_date_ownership": true,
+      "maximum_absolute_rotation_degrees": 10,
+      "semantic_mapping": {
+        "paper": [
+          "图钉",
+          "别针",
+          "胶带",
+          "小贴纸"
+        ],
+        "people_and_animals": [
+          "爱心",
+          "吻",
+          "亲密关系符号"
+        ],
+        "scenery": [
+          "相机",
+          "星星",
+          "彩虹"
+        ],
+        "music_and_film": [
+          "音量",
+          "喇叭",
+          "音响",
+          "唱片",
+          "音符"
+        ],
+        "abstract": [
+          "轮廓星星",
+          "小闪光",
+          "抽象符号"
+        ]
+      },
+      "placement_rules": [
+        "优先放在主体视线之外、画面留白处或图片边缘",
+        "不得遮挡日期数字、人物与动物面部、重要文字和票据信息",
+        "可轻微跨格，但视觉中心仍需归属于关联日期",
+        "装饰只强化已有内容，不新增事实、事件或人物关系",
+        "空白处只能使用没有具体事件指向的抽象贴纸"
+      ]
+    }
+  },
+  "no_image_content_policy": {
+    "scope": [
+      "当天没有合格照片",
+      "只有不适合原样展示的文字截图",
+      "用户主动提供了当日文字记录"
+    ],
+    "evidence_order": [
+      "user_caption",
+      "manual_annotation",
+      "ocr_note",
+      "ocr_chat",
+      "ocr_system_screenshot",
+      "ocr_web_content",
+      "reliable_event_metadata",
+      "model_summary"
+    ],
+    "decision_order": [
+      "有合格照片时优先继续使用图片处理类型",
+      "没有合格照片时检查是否存在有意义且可验证的文字证据",
+      "文字本身是记忆主体、内容抽象或无法安全插画时使用 text_only",
+      "文字很短且包含可被简单插画表达的具体场景时使用 illustration_with_text",
+      "没有可靠内容证据时默认 blank",
+      "只有在整月出现连续空白日期时，才允许使用与当天事件无关的装饰性 illustration_only"
+    ],
+    "must_not_invent": [
+      "用户没有表达过的情绪",
+      "没有证据支持的活动或人物关系",
+      "伪造的第一人称引语",
+      "具体地点、金额、时间和人物身份"
+    ],
+    "blank_is_default_without_evidence": true,
+    "blank_run_resolution": "连续空白达到 2 天时，至少选择其中一个日期使用中性 illustration_only 或合规的 illustration_with_text 打断；不得虚构用户事件",
+    "decorative_illustration_requires_layout_need": true,
+    "decorative_illustration_requires_consecutive_blank_run": true,
+    "minimum_consecutive_blank_run_length": 2
+  },
+  "text_evidence_policy": {
+    "allowed_sources": [
+      "user_caption",
+      "manual_annotation",
+      "ocr_note",
+      "ocr_chat",
+      "ocr_system_screenshot",
+      "ocr_web_content",
+      "reliable_event_metadata",
+      "model_summary"
+    ],
+    "forbidden_sources": [
+      "advertisement_copy",
+      "spam_message",
+      "qr_or_payment_content",
+      "delivery_private_information",
+      "unverified_model_inference"
+    ],
+    "direct_quote_allowed_sources": [
+      "user_caption",
+      "manual_annotation",
+      "ocr_note",
+      "ocr_chat",
+      "ocr_system_screenshot",
+      "ocr_web_content"
+    ],
+    "model_summary_rules": [
+      "不得使用引号伪装成用户原话",
+      "不得使用没有证据支持的第一人称情绪",
+      "必须保留原始事件事实，不增加人物、地点或原因"
+    ],
+    "sensitive_content_rules": [
+      "移除手机号、地址、订单号、付款码和二维码",
+      "聊天记录只保留与当天记忆直接相关的短句",
+      "不展示第三方隐私信息"
+    ],
+    "web_content_rules": [
+      "网页截图原图不进入日历格",
+      "内容与用户明确表达的重要事件、个人感想或身体状态相关时可以提炼文字",
+      "普通资讯、教程、广告和无个人关联的网页内容不得进入日历",
+      "提炼结果必须忠于页面与用户上下文，不得增加个人经历"
+    ],
+    "mode_text_limits": {
+      "text_only": {
+        "maximum_chinese_characters": 24,
+        "recommended_lines": "3-6"
+      },
+      "illustration_with_text": {
+        "maximum_chinese_characters": 14,
+        "recommended_lines": "1-2"
+      },
+      "irregular_cutout_with_text": {
+        "maximum_chinese_characters": 14,
+        "recommended_lines": "1-2"
+      }
+    }
+  },
+  "illustration_style_profiles": {
+    "journal_line_doodle_v1": {
+      "name": "手帐线描涂鸦",
+      "asset_strategy": "designer_library_first",
+      "generation_fallback_allowed": false,
+      "background": "transparent",
+      "line_color": "#202020",
+      "line_style": [
+        "单色线描",
+        "自然且略不均匀的手绘线条",
+        "轮廓优先",
+        "低细节",
+        "允许少量实心黑色块作为手绘强调",
+        "保留明显留白"
+      ],
+      "composition": {
+        "primary_subject_limit": 1,
+        "tiny_accessory_limit": 1,
+        "minimum_whitespace_ratio": 0.35,
+        "subject_must_read_at_small_cell_size": true,
+        "framing": "close_up_or_single_focus",
+        "human_full_body_allowed": false,
+        "human_allowed_framing": [
+          "头像或面部特写",
+          "头肩或上半身",
+          "手、脚、耳朵等动作相关局部",
+          "能代表事件的单一人物细节"
+        ],
+        "object_scene_policy": "突出一个核心物件或动作关键部位，不绘制完整环境场景"
+      },
+      "allowed_subject_roles": [
+        "明确生活物件",
+        "可验证的简单活动",
+        "用户明确表达的情绪状态",
+        "不暗示具体事件的中性装饰"
+      ],
+      "forbidden_visuals": [
+        "写实照片风格",
+        "3D 或黏土风格",
+        "复杂彩色填充",
+        "渐变",
+        "阴影",
+        "高密度场景",
+        "人物全身构图",
+        "完整环境叙事场景",
+        "品牌 Logo",
+        "二维码或条形码"
+      ],
+      "incidental_handwritten_labels_allowed": true,
+      "important_calendar_text_must_remain_in_text_region": true
+    }
+  },
+  "shared_irregular_geometry": {
+    "safe_zone": {
+      "width": 72,
+      "height": 80
+    },
+    "maximum_zone": {
+      "width": 78,
+      "height": 86
+    },
+    "must_not_exceed_maximum_zone": true
+  },
+  "modes": [
+    {
+      "id": "proportional_full_image",
+      "name": "比例内完整图片",
+      "geometry": {
+        "width": 54,
+        "height": 63,
+        "cell_padding": 1
+      },
+      "asset_limit": 1,
+      "keep_background": true,
+      "use_when": [
+        "风景",
+        "普通海报",
+        "人物全身",
+        "演出照片",
+        "背景或完整构图有保留价值"
+      ]
+    },
+    {
+      "id": "illustration_only",
+      "name": "无图片插画",
+      "geometry": {
+        "width": 54,
+        "height": 63,
+        "cell_padding": 1
+      },
+      "asset_limit": 0,
+      "illustration_style_id": "journal_line_doodle_v1",
+      "text_may_be_used_as_hidden_brief": false,
+      "use_when": [
+        "当天没有合格照片",
+        "整月出现至少 2 个连续空白日期格",
+        "为了打断连续空白而使用装饰性插画",
+        "插画可以是与当天事件无关的日常物件、天气、普通人物动作或动物"
+      ],
+      "do_not_use_when": [
+        "存在应当展示的有意义文字",
+        "已有合格照片",
+        "没有连续空白日期",
+        "插画会被误认为当天真实事件"
+      ]
+    },
+    {
+      "id": "illustration_with_text",
+      "name": "无图片插画+文字",
+      "geometry": {
+        "illustration_width": 54,
+        "illustration_height": 50,
+        "text_width": 52,
+        "text_height": 14
+      },
+      "asset_limit": 0,
+      "illustration_style_id": "journal_line_doodle_v1",
+      "text_style": {
+        "font": "momozhuanji",
+        "font_size": 8,
+        "font_weight": 600,
+        "maximum_chinese_characters": 14,
+        "recommended_lines": "1-2"
+      },
+      "use_when": [
+        "当天没有合格照片",
+        "只有纯文字图片且文字有意义",
+        "短文字保留用户语气，插画补充可视线索",
+        "文字中存在适合简单线描的具体物件、动作、人物或动物",
+        "插画和文字互相补充而不是重复",
+        "网页或聊天内容可以安全提炼为一个具体场景"
+      ],
+      "do_not_use_when": [
+        "文字超过 14 个汉字且无法安全压缩",
+        "文字本身已经完整且不需要视觉补充",
+        "无法从证据中确定一个安全的插画主体"
+      ]
+    },
+    {
+      "id": "text_only",
+      "name": "纯文字",
+      "geometry": {
+        "width": 52,
+        "height": 62,
+        "cell_padding": 2
+      },
+      "asset_limit": 0,
+      "text_style": {
+        "font": "momozhuanji",
+        "font_size": 10,
+        "font_weight": 600,
+        "maximum_chinese_characters": 24,
+        "recommended_lines": "3-6"
+      },
+      "use_when": [
+        "当天没有合格照片",
+        "纯文字截图的内容有明确生活或心情意义",
+        "文字措辞本身是这一天的主要记忆",
+        "内容细腻或抽象，不适合压缩成单一插画",
+        "网页内容与重要事件、个人感想或身体状态相关，但没有适合的简单插画场景"
+      ],
+      "do_not_use_when": [
+        "文字来自广告、垃圾信息或系统噪声",
+        "内容含有未移除的隐私信息",
+        "只有无上下文的短词或语气词"
+      ]
+    },
+    {
+      "id": "non_cell_ratio_image",
+      "name": "非日历格子比例图",
+      "geometry": {
+        "width": 46,
+        "height": 63,
+        "padding_left": 9,
+        "padding_right": 1
+      },
+      "asset_limit": 1,
+      "keep_background": true,
+      "use_when": [
+        "电影海报",
+        "游戏海报",
+        "专辑封面",
+        "需要保留原始窄幅比例的画面",
+        "纵向或横向构图本身具有明显设计感",
+        "主体与书架、植物、建筑或室内陈设共同构成有生活意义的环境叙事"
+      ],
+      "do_not_use_when": [
+        "仅因为照片是人物或宠物就保留特殊比例",
+        "背景杂乱且不承载生活信息",
+        "主体在保持原比例后会小到无法辨认"
+      ]
+    },
+    {
+      "id": "multi_irregular_cutout",
+      "name": "多张异形抠图",
+      "geometry_ref": "shared_irregular_geometry",
+      "asset_limit": 3,
+      "keep_background": false,
+      "overlap_allowed": true,
+      "use_when": [
+        "同一日期重复场景中的不同物品",
+        "桌面上多个可分别展示的食物",
+        "多个主体分别抠出后堆叠更美观"
+      ]
+    },
+    {
+      "id": "circle_image",
+      "name": "圆形图片",
+      "geometry": {
+        "width": 63,
+        "height": 63,
+        "may_overflow_current_cell": true,
+        "center_must_remain_in_owner_cell": true
+      },
+      "asset_limit": 1,
+      "crop_to_emphasize_subject": true,
+      "use_when": [
+        "穿搭局部",
+        "动物",
+        "主体适合集中在圆形区域",
+        "局部画面特别出彩"
+      ],
+      "do_not_use_when": [
+        "仅因为主体是动物就默认使用圆形",
+        "人物与宠物、宠物与宠物之间的动作或关系是画面重点",
+        "书架、植物、床品、建筑或活动环境属于照片意义的一部分",
+        "圆形会切掉耳朵、手、前爪、道具或关键动作",
+        "照片原始纵横比例和完整构图比头像特写更有辨识度"
+      ]
+    },
+    {
+      "id": "oval_image_with_cutout",
+      "name": "椭圆图片+抠图",
+      "geometry": {
+        "oval_width": 54,
+        "oval_height": 63,
+        "safe_zone_ref": "shared_irregular_geometry.safe_zone",
+        "maximum_zone_ref": "shared_irregular_geometry.maximum_zone"
+      },
+      "asset_limit": 2,
+      "crop_to_emphasize_subject": true,
+      "use_when": [
+        "当天有主要活动和次要物料",
+        "购物物品为主、票据为辅",
+        "主图适合椭圆裁切且辅助素材适合抠图",
+        "单张主体集中、背景氛围值得保留，但边缘杂物需要柔化",
+        "椭圆比圆形更适合保留卧姿、餐盘、床品或横向主体"
+      ],
+      "do_not_use_when": [
+        "完整环境和边缘信息都不可裁切",
+        "主体轮廓抠图后比椭圆裁切更有表现力",
+        "椭圆会破坏多人或多主体之间的关系"
+      ]
+    },
+    {
+      "id": "irregular_cutout_with_text",
+      "name": "异形抠图+文字",
+      "geometry_ref": "shared_irregular_geometry",
+      "asset_limit": 1,
+      "keep_background": false,
+      "text_style": {
+        "font": "momozhuanji",
+        "font_size": 6,
+        "font_weight": 600,
+        "layout": "interleaved",
+        "maximum_chinese_characters": 14,
+        "recommended_lines": "1-2"
+      },
+      "use_when": [
+        "物品展示且物品清晰",
+        "物品具有明确生活意义",
+        "短文字能补充事件但不应取代主体"
+      ]
+    },
+    {
+      "id": "irregular_cutout",
+      "name": "异形抠图",
+      "geometry_ref": "shared_irregular_geometry",
+      "asset_limit": 1,
+      "keep_background": false,
+      "maximum_absolute_rotation_degrees": 10,
+      "crop_to_emphasize_subject": true,
+      "use_when": [
+        "人物半身",
+        "玩偶",
+        "动物",
+        "卡片",
+        "手办",
+        "手拿物品展示",
+        "人物与宠物互动且双方动作需要作为一个透明主体保留",
+        "宠物与手、玩具或道具的关系比背景更重要",
+        "桌上多个食物无法分别抠出但可整体抠图",
+        "多个物品堆叠且能整体抠图"
+      ],
+      "do_not_use_when": [
+        "毛发、透明物或复杂边缘无法可靠分割",
+        "背景承载地点、活动或亲密氛围",
+        "抠图会切断主体之间的重要关系"
+      ]
+    },
+    {
+      "id": "blank",
+      "name": "留白",
+      "asset_limit": 0,
+      "use_when": [
+        "当天没有合格照片",
+        "插画或文字也没有足够意义",
+        "为整月版面保留呼吸感更美观"
+      ]
+    }
+  ]
+}

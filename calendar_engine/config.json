@@ -1,0 +1,21 @@
+{
+  "decision_backend": "qwen",
+  "decision_mode": "shadow",
+  "api_enabled": false,
+  "qwen_decision_model": "qwen3.8-max",
+  "qwen_decision_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "openai_decision_model": "",
+  "decision_validation_attempts": 2,
+  "api_timeout_seconds": 180,
+  "reasoning_effort": "low",
+  "image_detail": "high",
+  "qwen_image_enabled": false,
+  "qwen_image_model": "qwen-image-3.0-pro",
+  "qwen_image_endpoint": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+  "qwen_image_size": "1024*1024",
+  "image_api_timeout_seconds": 300,
+  "photo_folder": "",
+  "template_preview": "calendar_engine/templates/calendar_template_v1/base.png",
+  "output_folder": "outputs",
+  "low_confidence_threshold": 0.68
+}

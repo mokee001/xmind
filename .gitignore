@@ -8,6 +8,14 @@
 photos/
 output/
 backend/data/
+calendar_runs/
+runs/
+outputs/
+release/
+originals/
+proxies/
+contact_sheets/
+api_decisions/
 *.jpg
 *.jpeg
 *.heic
@@ -22,6 +30,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+.pio/
 
 # --- 依赖包（各自 install，不入库）---
 node_modules/
@@ -38,6 +47,14 @@ web-build/
 .venv/
 venv/
 env/
+.env
+.env.*
+*.key
+*.secret
+credentials.json
+firmware/eink_esp32_s3_13in3e6/src/demo_wifi_config.h
+firmware/eink_esp32_s3_13in3e6/src/demo_wifi_config.h.*
+firmware/legacy/display_esp32/local_config.h
 
 # --- 编辑器 / 系统 ---
 .idea/
