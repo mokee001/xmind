@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Echooo 首次照片墙体验：授权、连接、整理中的轻量设置、整墙预览。仅本机演示。">
+  <title>Echooo · 第一面照片墙</title>
+  <link rel="stylesheet" href="/onboarding.css">
+  <link rel="stylesheet" href="/onboarding-flow.css">
+  <link rel="stylesheet" href="/v2.css">
+</head>
+<body>
+  <aside class="demo-guide">
+    <a class="wordmark" href="/">echooo<span>●</span></a>
+    <p class="eyebrow">首次体验 · DEMO 02.2</p>
+    <h1>四步，<br>开启你的照片墙。</h1>
+    <p>默认不自动更新。<br>范围先确认，上墙再确认。</p>
+    <ol id="journey"><li>授权相册</li><li>连接照片墙</li><li>展示设置</li><li>预览上墙</li></ol>
+    <div class="guide-foot"><p>照片自动整理，不用逐张挑选。<br>设置好范围，预览后再上墙。</p><button class="text-button" id="restart">重新体验</button><details class="demo-controls"><summary>体验其他情况</summary><label for="scenario">重新开始时生效</label><select id="scenario"><option value="normal">正常整理</option><option value="fast">照片先准备好</option><option value="slow">设置先完成</option><option value="processing-error">整理失败后重试</option><option value="connection-error">设备连接失败后重试</option></select><button class="secondary" id="apply-scenario">按此情况重新体验</button></details><p class="build-note">仅本机模拟 · 不上传 · 不操作真实设备</p></div>
+  </aside>
+  <main class="phone" aria-label="Echooo 首次体验演示">
+    <header class="app-header"><button class="back" id="back" aria-label="返回上一步">‹</button><span class="wordmark">echooo<span>●</span></span><button class="demo-pill" id="demo-info">演示说明</button></header>
+    <div class="step-line" aria-hidden="true"><span id="step-progress"></span></div>
+    <div id="screen" class="screen">
+      <section class="welcome v2-welcome"><p class="eyebrow">1 / 4 · 授权相册</p><h2>让回忆，<br>自然回到生活里。</h2><p class="intro">允许访问相册，自动搭配照片墙。<br>不用逐张挑选，展示前先给你看。</p><div class="wall-scene"><img src="/sample-wall" alt="本地精选照片组成的完整照片墙样本" class="hero-wall"><span class="photo-caption">已保存的照片墙样本</span></div><p class="permission-summary">相册授权 ≠ 立即上墙。你确认后才展示。</p><button class="primary" data-action="start">开始并授权相册</button><noscript><p>请启用 JavaScript 体验完整流程。</p></noscript></section>
+    </div>
+  </main>
+  <dialog id="dialog" aria-labelledby="dialog-title"></dialog>
+  <script src="/v2-state.js"></script><script src="/v2.js"></script>
+</body>
+</html>
