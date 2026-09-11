@@ -12,6 +12,10 @@
     },
     "production": {
       "autoIncrement": true
+    },
+    "production-local": {
+      "extends": "production",
+      "autoIncrement": false
     }
   },
   "submit": {

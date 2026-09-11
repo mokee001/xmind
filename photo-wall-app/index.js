@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 
-const RELEASE_LABEL = '1.3.5 (27)';
+const RELEASE_LABEL = '1.3.5 (28)';
 
 function StartupShell() {
   const [LoadedApp, setLoadedApp] = useState(null);

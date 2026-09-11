@@ -10,7 +10,7 @@
     "ios": {
       "bundleIdentifier": "cn.mokeedesign.photowall",
       "deploymentTarget": "17.0",
-      "buildNumber": "27",
+      "buildNumber": "28",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "用于读取你已授权的照片并整理照片墙候选；不会因授权而立即展示。",
