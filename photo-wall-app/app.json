@@ -2,17 +2,18 @@
   "expo": {
     "name": "手帐照片墙",
     "slug": "photo-wall-app",
-    "version": "1.3.3",
+    "version": "1.3.5",
     "scheme": "photowall",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "bundleIdentifier": "cn.mokeedesign.photowall",
-      "buildNumber": "23",
+      "deploymentTarget": "17.0",
+      "buildNumber": "27",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "用于在本机自动发现人物、主题和高质量照片。完整相册不会因授权而上传。",
+        "NSPhotoLibraryUsageDescription": "用于读取你已授权的照片并整理照片墙候选；不会因授权而立即展示。",
         "NSLocalNetworkUsageDescription": "需要在家庭局域网中发现并连接你的墨水屏。",
         "NSBonjourServices": [
           "_photowall._tcp",
@@ -52,7 +53,7 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "用于在本机自动发现人物、主题和高质量照片。完整相册不会因授权而上传。",
+          "photosPermission": "用于读取你已授权的照片并整理照片墙候选；不会因授权而立即展示。",
           "savePhotosPermission": "需要访问相册以读取照片。",
           "isAccessMediaLocationEnabled": true
         }

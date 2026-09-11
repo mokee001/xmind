@@ -1,3 +1,4 @@
+import { requireCurrentWall } from './templateCatalog';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
@@ -317,8 +318,8 @@ async function readAssetsFromSelectedAlbums({ album, knownNames = null, limit = 
   return { assets: [...assetsById.values()], scanned };
 }
 
-function localFallback(reason, assets, preserveAll = false) {
-  const fallbackAssets = preserveAll ? assets : assets.slice(0, LOCAL_CANDIDATE_LIMIT);
+function localFallback(reason, assets, { preserveAll = false, candidateLimit = LOCAL_CANDIDATE_LIMIT } = {}) {
+  const fallbackAssets = preserveAll ? assets : assets.slice(0, candidateLimit);
   return {
     assets: fallbackAssets,
     local: {
@@ -331,11 +332,17 @@ function localFallback(reason, assets, preserveAll = false) {
   };
 }
 
-async function selectUploadCandidatesLocally(assets, onProgress) {
-  if (PHOTO_PIPELINE === 'cloud_legacy') return localFallback('legacy_mode', assets, true);
+async function selectUploadCandidatesLocally(assets, onProgress, {
+  initialAnalysisLimit = LOCAL_INITIAL_ANALYSIS_LIMIT,
+  candidateLimit = LOCAL_CANDIDATE_LIMIT,
+  allowLegacyAll = true,
+} = {}) {
+  if (PHOTO_PIPELINE === 'cloud_legacy') {
+    return localFallback('legacy_mode', assets, { preserveAll: allowLegacyAll, candidateLimit });
+  }
   if (!isLocalPhotoCurationAvailable()) {
     if (PHOTO_PIPELINE === 'local_only') throw new Error('设备端识别模块不可用，且本地专用模式禁止云端兜底');
-    return localFallback('native_module_unavailable', assets);
+    return localFallback('native_module_unavailable', assets, { candidateLimit });
   }
 
   onProgress?.({
@@ -347,10 +354,10 @@ async function selectUploadCandidatesLocally(assets, onProgress) {
   try {
     // Assets arrive newest-first. The first pass is deliberately bounded so a
     // large library can show value before the persistent background index is ready.
-    const initialAssets = assets.slice(0, LOCAL_INITIAL_ANALYSIS_LIMIT);
+    const initialAssets = assets.slice(0, initialAnalysisLimit);
     const result = await curateLocalPhotos(
       initialAssets.map(asset => asset.id).filter(Boolean),
-      { maximumCandidates: LOCAL_CANDIDATE_LIMIT },
+      { maximumCandidates: candidateLimit },
     );
     const byID = new Map(initialAssets.map(asset => [asset.id, asset]));
     const candidates = (result.candidates || []).map(item => byID.get(item.id)).filter(Boolean);
@@ -358,7 +365,7 @@ async function selectUploadCandidatesLocally(assets, onProgress) {
       if (PHOTO_PIPELINE === 'local_only') {
         throw new Error(`本机只找到 ${candidates.length} 张候选照片，低于安全下限`);
       }
-      return localFallback('insufficient_local_candidates', assets);
+      return localFallback('insufficient_local_candidates', assets, { candidateLimit });
     }
     onProgress?.({
       stage: 'local_analysis',
@@ -379,11 +386,20 @@ async function selectUploadCandidatesLocally(assets, onProgress) {
     };
   } catch (error) {
     if (PHOTO_PIPELINE === 'local_only') throw error;
-    return localFallback(`local_analysis_failed:${error.message}`, assets);
+    return localFallback(`local_analysis_failed:${error.message}`, assets, { candidateLimit });
   }
 }
 
-export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken, album, onProgress }) {
+export async function syncPhotoAlbum({
+  apiBase = DEFAULT_API_BASE,
+  accountToken,
+  album,
+  onProgress,
+  initialAssetLimit = Infinity,
+  initialAnalysisLimit = LOCAL_INITIAL_ANALYSIS_LIMIT,
+  candidateLimit = LOCAL_CANDIDATE_LIMIT,
+  allowLegacyAll = true,
+}) {
   if (Platform.OS === 'web') {
     throw new Error('网页预览无法读取系统相册，请在已安装的手机 App 中同步照片');
   }
@@ -396,13 +412,18 @@ export async function syncPhotoAlbum({ apiBase = DEFAULT_API_BASE, accountToken,
   const { assets: discoveredAssets } = await readAssetsFromSelectedAlbums({
     album,
     knownNames: known,
+    limit: initialAssetLimit,
     onProgress,
   });
 
   if (!discoveredAssets.length) {
     return { scanned: 0, synced: 0, unchanged: true, local: null };
   }
-  const selection = await selectUploadCandidatesLocally(discoveredAssets, onProgress);
+  const selection = await selectUploadCandidatesLocally(discoveredAssets, onProgress, {
+    initialAnalysisLimit,
+    candidateLimit,
+    allowLegacyAll,
+  });
   const assets = selection.assets;
   let synced = 0;
   for (let index = 0; index < assets.length; index += PHOTO_UPLOAD_BATCH_SIZE) {
@@ -488,15 +509,75 @@ export async function listWallTemplates({ apiBase = DEFAULT_API_BASE } = {}) {
 export async function generateWall({
   apiBase = DEFAULT_API_BASE,
   accountToken,
-  template = 'template_1',
+  template = 'auto',
   title = '我的一天',
   filters = [],
   excludeFilters = [],
+  deviceId = '',
+  preferenceRevisionId = '',
 }) {
   const response = await fetch(`${baseUrl(apiBase)}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
-    body: JSON.stringify({ template, title, filters, exclude_filters: excludeFilters }),
+    body: JSON.stringify({
+      template,
+      title,
+      filters,
+      exclude_filters: excludeFilters,
+      device_id: deviceId,
+      preference_revision_id: preferenceRevisionId,
+    }),
+  });
+  return responseJson(response);
+}
+
+export async function readDevicePreferenceProfile({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/preferences?device_id=${encodeURIComponent(deviceId)}`,
+    { headers: accountToken ? { 'X-Account-Token': accountToken } : {} },
+  );
+  return responseJson(response);
+}
+
+export async function readDeviceDisplayHistory({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
+  const response = await fetch(
+    `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/display-history`,
+    { headers: accountToken ? { 'X-Account-Token': accountToken } : {} },
+  );
+  return responseJson(response);
+}
+
+export async function createDevicePreferenceRevision({
+  apiBase = DEFAULT_API_BASE,
+  deviceId,
+  accountToken,
+  snapshot,
+  parentId = '',
+  source = 'preferences',
+}) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/preferences/revisions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
+    body: JSON.stringify({
+      device_id: deviceId,
+      snapshot,
+      parent_id: parentId,
+      source,
+    }),
+  });
+  return responseJson(response);
+}
+
+export async function activateDevicePreferenceRevision({
+  apiBase = DEFAULT_API_BASE,
+  deviceId,
+  accountToken,
+  revisionId,
+}) {
+  const response = await fetch(`${baseUrl(apiBase)}/api/preferences/activate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
+    body: JSON.stringify({ device_id: deviceId, revision_id: revisionId }),
   });
   return responseJson(response);
 }

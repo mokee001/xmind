@@ -132,6 +132,8 @@ export default function DeviceSetupFlow({
   const requestSequenceRef = useRef(0);
   const wifiScanRequestRef = useRef(0);
   const deviceConnectionRef = useRef(false);
+  const provisionRequestRef = useRef(false);
+  const finishingRef = useRef(false);
   const initialDeviceHandledRef = useRef('');
 
   const transition = nextStage => {
@@ -192,8 +194,10 @@ export default function DeviceSetupFlow({
   }, []);
 
   const discoverDevices = async () => {
+    const generation = flowGenerationRef.current;
     if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
     await discoveryStopRef.current?.();
+    if (flowGenerationRef.current !== generation) return;
     discoveryStopRef.current = null;
     setBusy(true);
     setError('');
@@ -202,6 +206,7 @@ export default function DeviceSetupFlow({
     try {
       if (previewMode) {
         await wait(650);
+        if (flowGenerationRef.current !== generation) return;
         setDevices(PREVIEW_DEVICES);
         return;
       }
@@ -209,6 +214,7 @@ export default function DeviceSetupFlow({
         throw new Error('蓝牙连接能力正在接入，请等待固件接口完成后使用真机测试。');
       }
       const stop = await adapter.startDeviceDiscovery(device => {
+        if (flowGenerationRef.current !== generation) return;
         if (!device?.deviceId) return;
         setDevices(current => {
           const next = current.filter(item => item.deviceId !== device.deviceId);
@@ -216,13 +222,18 @@ export default function DeviceSetupFlow({
         });
         setBusy(false);
       });
+      if (flowGenerationRef.current !== generation) {
+        if (typeof stop === 'function') await stop();
+        return;
+      }
       discoveryStopRef.current = typeof stop === 'function' ? stop : adapter.stopDeviceDiscovery;
       discoveryTimeoutRef.current = setTimeout(() => setBusy(false), 20000);
       scanContinues = true;
     } catch (caught) {
+      if (flowGenerationRef.current !== generation) return;
       setError(caught.message || '没有发现附近的照片墙');
     } finally {
-      if (!scanContinues) setBusy(false);
+      if (flowGenerationRef.current === generation && !scanContinues) setBusy(false);
     }
   };
 
@@ -272,9 +283,11 @@ export default function DeviceSetupFlow({
 
   const chooseDevice = async device => {
     if (deviceConnectionRef.current) return;
+    const generation = flowGenerationRef.current;
     deviceConnectionRef.current = true;
     if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
     await discoveryStopRef.current?.();
+    if (flowGenerationRef.current !== generation) return;
     discoveryStopRef.current = null;
     setSelectedDevice(device);
     setBusy(true);
@@ -283,11 +296,13 @@ export default function DeviceSetupFlow({
     try {
       if (previewMode) {
         await wait(650);
+        if (flowGenerationRef.current !== generation) return;
         setNetworks(PREVIEW_NETWORKS);
         transition('wifi');
         return;
       }
       const connected = await adapter.connectProvisioningDevice(device.deviceId);
+      if (flowGenerationRef.current !== generation) return;
       const expectedDeviceId = existingSession?.device?.device_id;
       if (expectedDeviceId && connected.deviceId !== expectedDeviceId) {
         await adapter?.cancelProvisioning?.();
@@ -297,10 +312,13 @@ export default function DeviceSetupFlow({
       transition('wifi');
       await scanConnectedNetworks();
     } catch (caught) {
+      if (flowGenerationRef.current !== generation) return;
       setError(caught.message || '无法读取附近的 Wi-Fi');
     } finally {
-      deviceConnectionRef.current = false;
-      setBusy(false);
+      if (flowGenerationRef.current === generation) {
+        deviceConnectionRef.current = false;
+        setBusy(false);
+      }
     }
   };
 
@@ -313,13 +331,15 @@ export default function DeviceSetupFlow({
   }, [visible, session, initialDevice?.deviceId]);
 
   const restartDeviceConnection = async () => {
-    flowGenerationRef.current += 1;
+    const generation = ++flowGenerationRef.current;
     wifiScanRequestRef.current = 0;
     deviceConnectionRef.current = false;
+    provisionRequestRef.current = false;
     setBusy(true);
     setError('');
     setStatusText('正在释放旧连接并等待设备重新出现…');
     try { await adapter?.cancelProvisioning?.(); } catch {}
+    if (flowGenerationRef.current !== generation) return;
     setNetworks([]);
     setSelectedDevice(null);
     setSelectedNetwork(null);
@@ -335,7 +355,7 @@ export default function DeviceSetupFlow({
     transition('password');
   };
 
-  const finishPreviewConnection = async () => {
+  const finishPreviewConnection = async generation => {
     const messages = [
       [18, '正在安全发送网络信息'],
       [48, `照片墙正在加入“${selectedNetwork.ssid}”`],
@@ -343,10 +363,12 @@ export default function DeviceSetupFlow({
       [100, '连接完成'],
     ];
     for (const [nextProgress, message] of messages) {
+      if (flowGenerationRef.current !== generation) return;
       setProgress(nextProgress);
       setStatusText(message);
       await wait(520);
     }
+    if (flowGenerationRef.current !== generation) return;
     if (password === '00000000') {
       throw new Error('Wi-Fi 密码不正确，请重新输入');
     }
@@ -360,7 +382,9 @@ export default function DeviceSetupFlow({
   };
 
   const connectWifi = async () => {
-    if (!selectedNetwork || (selectedNetwork.secure && !password)) return;
+    if (provisionRequestRef.current || !selectedNetwork || (selectedNetwork.secure && !password)) return;
+    const generation = flowGenerationRef.current;
+    provisionRequestRef.current = true;
     setBusy(true);
     setError('');
     setProgress(6);
@@ -368,7 +392,7 @@ export default function DeviceSetupFlow({
     transition('connecting');
     try {
       if (previewMode) {
-        await finishPreviewConnection();
+        await finishPreviewConnection(generation);
         return;
       }
       if (!adapter?.provisionWifi) throw new Error('蓝牙配网接口尚未接入');
@@ -378,15 +402,20 @@ export default function DeviceSetupFlow({
         device: selectedDevice,
         existingSession,
       });
+      if (flowGenerationRef.current !== generation) return;
       setProgress(100);
       setStatusText('连接完成');
       setResult(provisioned);
       transition('success');
     } catch (caught) {
+      if (flowGenerationRef.current !== generation) return;
       setError(caught.message || '连接失败，请重试');
       transition('error');
     } finally {
-      setBusy(false);
+      if (flowGenerationRef.current === generation) {
+        provisionRequestRef.current = false;
+        setBusy(false);
+      }
     }
   };
 
@@ -398,11 +427,28 @@ export default function DeviceSetupFlow({
   };
 
   const finish = async () => {
-    if (result) await onConnected(result);
-    onClose();
+    if (!result || finishingRef.current) return;
+    finishingRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await onConnected(result);
+      onClose();
+    } catch (caught) {
+      setError(caught.message || '无法保存设备连接，请重试');
+    } finally {
+      finishingRef.current = false;
+      setBusy(false);
+    }
   };
 
   const close = () => {
+    // Once connected, closing must save the same session as “开始使用”.
+    if (!session && stage === 'success') return finish();
+    flowGenerationRef.current += 1;
+    wifiScanRequestRef.current = 0;
+    deviceConnectionRef.current = false;
+    provisionRequestRef.current = false;
     if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
     discoveryStopRef.current?.();
     discoveryStopRef.current = null;
@@ -586,7 +632,8 @@ export default function DeviceSetupFlow({
             <View style={styles.summaryDivider} />
             <View style={styles.summaryRow}><Text style={styles.summaryLabel}>网络</Text><Text style={styles.summaryValue}>{selectedNetwork?.ssid}</Text></View>
           </View>
-          <PrimaryButton onPress={finish}>开始使用</PrimaryButton>
+          {error ? <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View> : null}
+          <PrimaryButton disabled={busy} onPress={finish}>{busy ? '正在完成连接…' : '开始使用'}</PrimaryButton>
         </View>
       );
     }
@@ -606,7 +653,7 @@ export default function DeviceSetupFlow({
   const header = (
     <View style={styles.sheetHeader}>
       {!session && stage !== 'success' ? <ProgressHeader stage={stage} /> : <View style={styles.flex} />}
-      {!embedded ? <Pressable onPress={close} style={styles.closeButton}><Text style={styles.closeText}>×</Text></Pressable> : null}
+      {!embedded ? <Pressable accessibilityRole="button" accessibilityLabel={stage === 'success' ? '完成连接并关闭' : '关闭连接流程'} disabled={stage === 'success' && busy} onPress={close} style={styles.closeButton}><Text style={styles.closeText}>×</Text></Pressable> : null}
     </View>
   );
   const body = (
