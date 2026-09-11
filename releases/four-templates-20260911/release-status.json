@@ -1,0 +1,70 @@
+{
+  "app": "cn.mokeedesign.photowall",
+  "version": "1.3.4",
+  "buildNumber": "23",
+  "state": "available_for_internal_testing",
+  "sourceCommit": "75e6c7366e716322e9421526de0962b9cd265895",
+  "sourceManifest": "source-manifest.json",
+  "artifact": "photo-wall-four-templates.ipa",
+  "expectedTestingGroup": {
+    "id": "1469f7eb-4dfa-4907-92e1-5aa09e307277",
+    "name": "Team (Expo)"
+  },
+  "backendDeployed": false,
+  "backendBlocker": "Production SSH timed out; public catalog still has 16 retired templates",
+  "template3RealCutoutVerified": false,
+  "targetedTests": 17,
+  "deviceLifecycle": "passed with synthetic photos, PWE6 960045 bytes",
+  "failedBuildNumbers": [
+    "21",
+    "22"
+  ],
+  "updatedAt": "2026-09-11T07:22:40.367434+00:00",
+  "backendPackage": "backend-final-four.tar.gz",
+  "backendPatchVerified": true,
+  "baseline": {
+    "codeDifferences": "six pre-existing differences; no baseline file changed by this task",
+    "models": "five existing model files verified",
+    "inferenceRun": false
+  },
+  "verifiedAt": "2026-09-11T07:17:05.301165+00:00",
+  "verifiedVersion": "1.3.4 (23)",
+  "minimumOSVersion": "17.0",
+  "signatureVerified": true,
+  "nativeModulesPresentInBinary": true,
+  "nativeModuleRuntimeClasses": {
+    "LocalPhotoCuration": "_TtC18LocalPhotoCuration24LocalPhotoCurationModule",
+    "PetCutout": "_TtC9PetCutout15PetCutoutModule"
+  },
+  "confirmedBundleText": [
+    "不想看到谁？",
+    "管理偏好",
+    "不展示",
+    "日常拼贴",
+    "圣诞手帐",
+    "分层抠图拼贴",
+    "宠物牛仔拼贴"
+  ],
+  "artifactSHA256": "91025ead4ec69f6a849a035489ee1057a235aa32bbed72b2ca426b4e02ef4ef3",
+  "artifactBytes": 12051363,
+  "doctorWarning": "Expo 57.0.19 and expo-image-picker 57.0.15 are behind recommended patches 57.0.21 / 57.0.16; retained verified dependency lockfile.",
+  "temporarySigningCredentialsCleaned": true,
+  "submissionId": "a23191c0-dca6-410b-92b2-b024ba9dbfc6",
+  "submissionURL": "https://expo.dev/accounts/mokeee/projects/photo-wall-app/submissions/a23191c0-dca6-410b-92b2-b024ba9dbfc6",
+  "uploadCompletedAt": "2026-09-11T07:20:03.476Z",
+  "distributionVerifiedAt": "2026-09-11T07:22:20.382Z",
+  "appleProcessingState": "VALID",
+  "appleInternalState": "IN_BETA_TESTING",
+  "appleExternalState": "READY_FOR_BETA_SUBMISSION",
+  "appleUploadedDate": "2026-09-11T00:20:49-07:00",
+  "distribution": {
+    "id": "1469f7eb-4dfa-4907-92e1-5aa09e307277",
+    "name": "Team (Expo)",
+    "isInternalGroup": true,
+    "hasAccessToAllBuilds": true,
+    "buildId": "e78584b9-da8e-4c31-b974-72a5b871babf",
+    "buildNumber": "23",
+    "groupContainsBuild": true
+  },
+  "appStoreConnectURL": "https://appstoreconnect.apple.com/apps/6808087330/testflight/ios"
+}

@@ -1,3 +1,5 @@
+> **当前模板：仅保留 [已确认的四款](docs/current-template-catalog.md)。** 白底画廊及其他旧款均已退出当前目录。
+
 # 手帐照片墙 · 排版引擎原型 (阶段0 核心验证)
 
 > 👥 **团队协作看这里** → [CONTRIBUTING.md](CONTRIBUTING.md)（分工、目录归属、每周 Git 流程、踩坑清单）

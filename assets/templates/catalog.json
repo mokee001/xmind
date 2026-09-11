@@ -1,0 +1,62 @@
+{
+  "version": "2026-09-11.final",
+  "confirmed": true,
+  "count": 4,
+  "allowUnlistedTemplates": false,
+  "templates": [
+    {
+      "id": "template_1",
+      "name": "日常拼贴",
+      "photos": 8,
+      "config": "assets/templates/template_1/template.json",
+      "configSha256": "e0dc2ce4924e68d1d00723193c350e32b873e3295b878230243a898585700622",
+      "preview": "assets/template-previews/template_1.png",
+      "previewKind": "layout_placeholder"
+    },
+    {
+      "id": "template_2",
+      "name": "圣诞手帐",
+      "photos": 8,
+      "config": "assets/templates/template_2/template.json",
+      "configSha256": "c0a018e56b2e98f07dbb42470fc83af8a2c39e1453b82800effa9990777a25ad",
+      "preview": "assets/template-previews/template_2.png",
+      "previewKind": "layout_placeholder"
+    },
+    {
+      "id": "template_3",
+      "name": "分层抠图拼贴",
+      "photos": 15,
+      "config": "assets/templates/template_3/template.json",
+      "configSha256": "acbf162f8242c08fff132e333818c74af100b013cbac92dd2043bda98ab15be3",
+      "preview": "assets/template-previews/template_3.png",
+      "previewKind": "repository_reference"
+    },
+    {
+      "id": "denim_pet",
+      "name": "宠物牛仔拼贴",
+      "photos": 5,
+      "config": "assets/templates/denim/template.json",
+      "configSha256": "d0cfe03f876e74683b75cef16861a0e652e9147757dfbb0d568a31f392c73f91",
+      "preview": "assets/template-previews/denim_pet.png",
+      "previewKind": "layout_placeholder"
+    }
+  ],
+  "retired": [
+    "daily_polaroid",
+    "editorial_magazine",
+    "minimal_gallery",
+    "july_dumps",
+    "travel_grid",
+    "collage_pop",
+    "corkboard_recap",
+    "film_strip",
+    "grid_5",
+    "monthly_collage",
+    "scrapbook_echoes",
+    "grid_10",
+    "grid_15",
+    "grid_20",
+    "grid_24",
+    "eink_portrait_gallery"
+  ]
+}

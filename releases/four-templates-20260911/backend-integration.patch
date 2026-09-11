@@ -1,0 +1,520 @@
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -35,11 +35,12 @@
+ from typing import Any, Optional
+ 
+ from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+-from fastapi import Header
++from fastapi import Header, HTTPException
+ from fastapi.middleware.cors import CORSMiddleware
+ from fastapi.responses import FileResponse, JSONResponse, Response
+ from fastapi.staticfiles import StaticFiles
+ from PIL import Image
++from . import template_catalog
+ from pydantic import BaseModel, Field
+ 
+ # 让 backend 能导入上级目录的 engine.py
+@@ -168,23 +169,26 @@
+     return directory
+ 
+ 
++def _require_standard_template(template_id: str) -> None:
++    if template_id == "denim_pet":
++        raise HTTPException(status_code=409, detail="宠物牛仔拼贴需通过宠物分析与抠图流程生成")
++    if template_id not in (*template_catalog.STANDARD_IDS, "auto"):
++        raise HTTPException(status_code=410, detail="模板已停用或不存在，请刷新现行四款模板清单")
++
++
+ def _slot_count(template_id: str) -> int:
++    _require_standard_template(template_id)
+     if template_packages.is_package(template_id):
+         return template_packages.required_photo_count(template_id)
+     tpl = engine.load_template(os.path.join(TEMPLATES_DIR, f"{template_id}.json"))
+     return len(tpl.get("slots", []))
+ 
+ 
+-# 按「命中照片数」挑一个刚好装得下的模板（槽位数 <= 命中数里最大的那个）。
+-# 这样选了照片很少的相簿（比如某个人只有 4 张）时，会缩到 4 槽模板只放这 4 张，
+-# 而不是硬套 10 槽再用无关照片凑满——避免「人物相簿里混进车/传单」。
++# 自动适配仅能使用现行普通照片模板；宠物拼贴走独立抠图流程。
+ _FIT_TEMPLATES = [
+-    (24, "grid_24"), (20, "grid_20"), (15, "grid_15"),
+-    (10, "grid_10"), (5, "grid_5"), (4, "travel_grid"), (3, "daily_polaroid"),
++    (8, "template_1"),
+ ]
+-_PORTRAIT_FIT_TEMPLATES = [
+-    (6, "scrapbook_echoes"), (5, "eink_portrait_gallery"), (4, "july_dumps"),
+-]
++_PORTRAIT_FIT_TEMPLATES = _FIT_TEMPLATES
+ 
+ 
+ def _fit_template(count: int, portrait: bool = False) -> str:
+@@ -192,9 +196,7 @@
+     for slots, name in templates:
+         if slots <= count:
+             return name
+-    if portrait:
+-        return "july_dumps"
+-    return "daily_polaroid"  # 不足 3 张也用最小模板（渲染几张放几张）
++    raise HTTPException(status_code=422, detail="现行照片模板至少需要 8 张合格照片，请增加照片后重试")
+ 
+ 
+ def _auto_layout_template(photos: list[dict], filters: list[str] | None = None) -> str:
+@@ -205,16 +207,7 @@
+     the account's trained preference model further down the pipeline; this
+     function only picks a conservative canvas/slot count before rendering.
+     """
+-    count = len(photos)
+-    focused = bool(filters)
+-    if count <= 5:
+-        return "eink_portrait_gallery"
+-    if focused and count <= 8:
+-        return "eink_portrait_gallery"
+-    # Keep a compact daily layout for broad model-selected memories.  The
+-    # normal fit fallback will shrink it later if hard exclusions leave fewer
+-    # candidates than its slot count.
+-    return "template_1"
++    return _fit_template(len(photos), portrait=True)
+ 
+ 
+ # ---------- API 模型 ----------
+@@ -305,7 +298,7 @@
+ async def upload(
+     files: list[UploadFile],
+     auto: int = 0,
+-    template: str = "daily_polaroid",
++    template: str = "auto",
+     title: str = "我的一天",
+     date: str = "",
+     filters: str = "",
+@@ -314,6 +307,8 @@
+     """专属 App：上传照片到相册目录。auto=1 时上传后自动识别→筛选→套模板→上屏。
+     照片会累积进整个相册库（跨批次），精选从整库里挑最好看的，不再只看本批。
+     filters：逗号分隔的筛选维度标签（如 "warm,food"），按用户吩咐的维度优先选图。"""
++    if auto:
++        _require_standard_template(template)
+     scope = _account_scope(x_account_token)
+     photo_dir = _scoped_photos_dir(scope)
+     saved_paths: list[str] = []
+@@ -453,6 +448,11 @@
+     不传则用相册库全部。相册为空返回 None。
+     filters：用户吩咐的筛选维度（色彩/主题/情绪标签），优先只从命中的照片里选；
+     exclude_filters：用户关闭的人物/主题，命中任一项就严格排除，不会回退。"""
++    _require_standard_template(template_id)
++    if template_id == "template_3":
++        reason = template_packages.cutout_unavailable_reason()
++        if reason:
++            raise HTTPException(status_code=503, detail=reason)
+     if photos is None:
+         photos = store.load(_scoped_store_name("photos", scope), [])
+         # Only the legacy, unscoped API may scan the shared root photo folder.
+@@ -503,11 +503,15 @@
+         matched = selector.filter_photos(photos, applied_filters)
+         if matched:
+             photos = matched
+-            if len(matched) < slot_n and template_id != "eink_portrait_gallery":
++            if len(matched) < slot_n and template_id != "template_1":
+                 template_id = _fit_template(len(matched), portrait=portrait_template)
+                 slot_n = _slot_count(template_id)
+         else:
+             filter_fallback = True
++
++    if template_packages.is_package(template_id) and len(photos) < slot_n:
++        template_id = _fit_template(len(photos), portrait=True)
++        slot_n = _slot_count(template_id)
+ 
+     # 轮换序号：同一「模板+筛选」组合每生成一次自增，用于旋转子分类叉乘的取图，
+     # 让同一主题反复刷新每次都出不同照片组合，避免时间久了同质化。
+@@ -805,27 +809,27 @@
+ 
+ # 每个相簿分组默认绑定的模板（点相簿即用最合适的排版，用户仍可在下拉框改）。
+ _GROUP_TEMPLATE = {
+-    "精选": "grid_15",
+-    "人物": "daily_polaroid",
+-    "宠物": "grid_5",
+-    "情绪": "monthly_collage",
+-    "色彩": "travel_grid",
++    "精选": "template_1",
++    "人物": "template_1",
++    "宠物": "template_1",
++    "情绪": "template_1",
++    "色彩": "template_1",
+ }
+ # 主题里按具体标签细分模板
+ _SUBJECT_TEMPLATE = {
+-    "food": "grid_10",
+-    "city": "travel_grid",
+-    "nature": "travel_grid",
+-    "travel": "travel_grid",
+-    "sport": "grid_10",
+-    "indoor": "grid_5",
++    "food": "template_1",
++    "city": "template_1",
++    "nature": "template_1",
++    "travel": "template_1",
++    "sport": "template_1",
++    "indoor": "template_1",
+ }
+ 
+ 
+ def _album_template(group: str, tag: str | None = None) -> str:
+     if group == "主题" and tag in _SUBJECT_TEMPLATE:
+         return _SUBJECT_TEMPLATE[tag]
+-    return _GROUP_TEMPLATE.get(group, "grid_10")
++    return _GROUP_TEMPLATE.get(group, "template_1")
+ 
+ 
+ @app.get("/api/smart_albums")
+--- a/backend/routers/content.py
++++ b/backend/routers/content.py
+@@ -11,8 +11,6 @@
+ from __future__ import annotations
+ 
+ import datetime
+-import io
+-import json
+ import os
+ import random
+ import sys
+@@ -20,7 +18,7 @@
+ from typing import Optional
+ 
+ from fastapi import APIRouter, UploadFile
+-from fastapi.responses import FileResponse, JSONResponse, Response
++from fastapi.responses import FileResponse, JSONResponse
+ from pydantic import BaseModel
+ 
+ # engine.py 在项目根目录，保证能被导入
+@@ -29,9 +27,9 @@
+     sys.path.insert(0, _ROOT)
+ import engine  # noqa: E402
+ 
+-from .. import stickers, store, templates_mgr  # noqa: E402
++from .. import stickers, store, template_catalog, template_packages, templates_mgr  # noqa: E402
+ 
+-OUTPUT_DIR = os.path.join(_ROOT, "output")
++OUTPUT_DIR = os.path.join(os.environ.get("PHOTOWALL_DATA_DIR", _ROOT), "output")
+ 
+ router = APIRouter()
+ 
+@@ -112,8 +110,8 @@
+ 
+ @router.get("/api/templates")
+ def list_templates() -> dict:
+-    """列出所有模板（内置 + 上传）及其达标状态、槽位数等元数据。"""
+-    entries = templates_mgr.list_templates()
++    """仅列出用户确认的四款现行模板及资源状态。"""
++    entries = template_catalog.list_templates()
+     return {
+         "count": len(entries),
+         "qualified": len([t for t in entries if t.get("qualified")]),
+@@ -122,71 +120,52 @@
+ 
+ 
+ @router.post("/api/upload_template")
+-async def upload_template(files: list[UploadFile]) -> dict:
+-    """上传模板 JSON 文件并达标校验（可一次传多个）。达标者写入 templates/ 目录。"""
+-    results: list[dict] = []
+-    for f in files:
+-        raw = await f.read()
+-        try:
+-            data = json.loads(raw.decode("utf-8"))
+-        except Exception as e:
+-            results.append({"filename": f.filename, "qualified": False,
+-                            "reason": f"不是合法 JSON：{e}"})
+-            continue
+-        entry = templates_mgr.save_uploaded(data)
+-        entry["filename"] = f.filename
+-        results.append(entry)
+-    ok = [r for r in results if r.get("qualified")]
+-    bad = [{"filename": r.get("filename"), "reason": r.get("reason")}
+-           for r in results if not r.get("qualified")]
+-    return {"added": len(results), "qualified": len(ok), "rejected": bad,
+-            "templates": templates_mgr.list_templates()}
++async def upload_template(files: list[UploadFile]):
++    """Production templates change through a reviewed catalog version."""
++    return JSONResponse({"error": "现行清单固定为四款模板，上传不会新增或替换可用模板",
++                         "templates": template_catalog.list_templates()}, status_code=409)
+ 
+ 
+ @router.post("/api/delete_template")
+-def delete_template(req: dict) -> dict:
+-    tid = str(req.get("id", ""))
+-    ok = templates_mgr.delete_template(tid)
+-    return {"deleted": ok, "templates": templates_mgr.list_templates()}
++def delete_template(req: dict):
++    return JSONResponse({"deleted": False, "error": "现行四款模板受版本管理，旧模板已退出可用清单",
++                         "templates": template_catalog.list_templates()}, status_code=409)
+ 
+ 
+ @router.get("/api/template_preview/{tid}.png")
+ def template_preview(tid: str):
+-    """渲染某个模板的缩略预览（用占位图/样片填充，不贴贴纸），给平台的模板卡片当封面。"""
+-    tpl = templates_mgr.load_template(tid)
+-    if not tpl:
+-        return JSONResponse({"error": "not found"}, status_code=404)
+-    n = len(tpl.get("slots", []))
+-    photos = templates_mgr.placeholder_photos(n)
+-    try:
+-        img = engine.render(tpl, photos, {"title": tpl.get("name", "预览"),
+-                                          "date": "2026-01-01"})
+-    except Exception as e:
+-        return JSONResponse({"error": f"render failed: {e}"}, status_code=500)
+-    buf = io.BytesIO()
+-    img.save(buf, format="PNG")
+-    return Response(content=buf.getvalue(), media_type="image/png")
++    """Serve packaged layout previews without writing into the application checkout."""
++    if tid not in template_catalog.ACTIVE_IDS:
++        return JSONResponse({"error": "模板已停用或不存在"}, status_code=404)
++    path = template_catalog.PREVIEW_ROOT / f"{tid}.png"
++    if not path.is_file():
++        return JSONResponse({"error": "模板布局预览资源未部署"}, status_code=503)
++    return FileResponse(path, media_type="image/png", headers={"X-Preview-Kind": "repository-reference" if tid == "template_3" else "layout-placeholder"})
+ 
+ 
+ @router.post("/api/studio/preview")
+ def studio_preview(req: StudioPreviewReq) -> dict:
+     """创作平台的核心预览：自动挑模板 + 自动匹配贴纸 + 用相册样片渲染，
+     生成一张「多样有惊喜感」的照片墙效果图。不推屏、不覆盖正式画面（纯预览）。"""
+-    tpls = [t for t in templates_mgr.list_templates() if t.get("qualified")]
++    tpls = [t for t in template_catalog.list_templates()
++            if t.get("qualified") and t["id"] in template_catalog.STANDARD_IDS]
+     if not tpls:
+         return {"error": "没有达标的模板"}
+ 
+     if req.template:
+-        tpl = templates_mgr.load_template(req.template)
+-        if not tpl:
+-            return {"error": f"模板 {req.template} 不存在"}
++        if req.template == "denim_pet":
++            return JSONResponse({"error": "宠物牛仔拼贴需通过宠物分析与抠图流程生成"}, status_code=409)
++        if req.template not in template_catalog.STANDARD_IDS:
++            return JSONResponse({"error": "模板已停用或不存在"}, status_code=410)
++        if not any(t["id"] == req.template for t in tpls):
++            return JSONResponse({"error": "模板资源不完整"}, status_code=503)
+         tid = req.template
+     else:
+-        choice = random.choice(tpls)          # 随机挑一个 -> 多样惊喜
+-        tpl = templates_mgr.load_template(choice["id"])
+-        tid = choice["id"]
++        tid = random.choice(tpls)["id"]
+ 
+-    slot_n = len(tpl.get("slots", []))
++    packaged = template_packages.is_package(tid)
++    tpl = template_packages.load_package(tid) if packaged else templates_mgr.load_template(tid)
++    slot_n = template_packages.required_photo_count(tid) if packaged else len(tpl.get("slots", []))
+     chosen = _studio_sample(slot_n)
+     photo_paths = [c["path"] for c in chosen]
+ 
+@@ -194,23 +173,25 @@
+     W, H = int(canvas.get("width", 1280)), int(canvas.get("height", 720))
+     # 自动匹配贴纸：预览里至少尝试贴 1 张，让用户直观看到「贴纸×模板」的组合
+     try:
+-        plan = stickers.plan_for_wall(tpl, chosen, [], W, H, min_count=1)
++        plan = [] if packaged else stickers.plan_for_wall(tpl, chosen, [], W, H, min_count=1)
+         matched_by_theme = bool(plan)
+-        if not plan:                       # 主题没匹配上也放 1 张做展示（正式成墙才严格按主题）
++        if not plan and not packaged:       # 固定装饰模板包不叠加随机贴纸
+             plan = stickers.plan_any(tpl, chosen, W, H, n=1)
+     except Exception:
+         plan = []
+         matched_by_theme = False
+ 
+     date = req.date or datetime.date.today().isoformat()
+-    img = engine.render(tpl, photo_paths, {"title": req.title, "date": date},
+-                        stickers=plan)
++    context = {"title": req.title, "date": date, "nickname": req.title}
++    img = (template_packages.render(tid, photo_paths, context) if packaged else
++           engine.render(tpl, photo_paths, context, stickers=plan))
+     out_name = f"_studio_{int(time.time() * 1000)}.png"
++    os.makedirs(OUTPUT_DIR, exist_ok=True)
+     img.save(os.path.join(OUTPUT_DIR, out_name))
+     return {
+         "image_url": f"/output/{out_name}",
+         "template": tid,
+-        "template_name": tpl.get("name", tid),
++        "template_name": template_catalog.NAMES[tid],
+         "slots": slot_n,
+         "stickers": [os.path.basename(p["path"]) for p in plan],
+         "stickers_by_theme": matched_by_theme,
+--- a/studio/app.js
++++ b/studio/app.js
+@@ -31,8 +31,8 @@
+     const cell = document.createElement("div");
+     cell.className = "cell";
+     const badge = s.qualified
+-      ? `<span class="badge ok">达标</span>`
+-      : `<span class="badge bad">未达标</span>`;
++      ? `<span class="badge ok">可生成</span>`
++      : `<span class="badge bad">暂不可生成</span>`;
+     const themes = (s.themes || []).join(" · ");
+     cell.innerHTML = `
+       ${badge}
+@@ -75,15 +75,15 @@
+   const grid = $("tplGrid");
+   grid.innerHTML = "";
+   const ok = list.filter((t) => t.qualified);
+-  $("tplCount").textContent = `共 ${list.length} 套，达标 ${ok.length} 套`;
++  $("tplCount").textContent = `共 ${list.length} 套，可生成 ${ok.length} 套`;
+   list.forEach((t) => {
+     const cell = document.createElement("div");
+     cell.className = "cell";
+     const badge = t.qualified
+-      ? `<span class="badge ok">达标</span>`
+-      : `<span class="badge bad">未达标</span>`;
++      ? `<span class="badge ok">可生成</span>`
++      : `<span class="badge bad">暂不可生成</span>`;
+     const del = t.builtin ? "" : `<div class="del" data-id="${t.id}" title="删除">×</div>`;
+-    const cover = t.qualified
++    const cover = t.preview_available || t.qualified
+       ? `<img src="/api/template_preview/${t.id}.png?t=${Date.now()}" alt="" />`
+       : `<div class="sticker-thumb" style="height:110px">无法预览</div>`;
+     cell.innerHTML = `
+@@ -102,7 +102,7 @@
+   const sel = $("previewTpl");
+   const cur = sel.value;
+   sel.innerHTML = `<option value="">🎲 随机模板（推荐）</option>` +
+-    ok.map((t) => `<option value="${t.id}">${t.name || t.id}</option>`).join("");
++    ok.filter((t) => t.generation_mode !== "pet_cutout").map((t) => `<option value="${t.id}">${t.name || t.id}</option>`).join("");
+   sel.value = cur;
+ }
+ 
+--- a/webapp/index.html
++++ b/webapp/index.html
+@@ -30,21 +30,10 @@
+     <div id="junkHint" class="junk"></div>
+     <div class="row">
+       <select id="template">
+-        <option value="daily_polaroid">每日拍立得</option>
+-        <option value="editorial_magazine">杂志编辑风 ✨</option>
+-        <option value="minimal_gallery">美术馆三联 ✨</option>
+-        <option value="film_strip">胶片胶卷 ✨</option>
+-        <option value="collage_pop">撞色拼贴 ✨</option>
+-        <option value="scrapbook_echoes">手帐拼贴·城市回响 ✨</option>
+-        <option value="corkboard_recap">软木板手帐·月度回顾 ✨</option>
+-        <option value="july_dumps">深海拼贴·本周随记 ✨</option>
+-        <option value="travel_grid">旅行方格</option>
+-        <option value="monthly_collage">月度手帐</option>
+-        <option value="grid_5">网格 · 5 张</option>
+-        <option value="grid_10">网格 · 10 张</option>
+-        <option value="grid_15">网格 · 15 张</option>
+-        <option value="grid_20">网格 · 20 张</option>
+-        <option value="grid_24">网格 · 24 张</option>
++        <option value="template_1">日常拼贴</option>
++        <option value="template_2">圣诞手帐</option>
++        <option value="template_3">分层抠图拼贴</option>
++        <option value="denim_pet" disabled>宠物牛仔拼贴（在 App 中完成抠图）</option>
+       </select>
+       <input id="title" placeholder="标题" value="我的一天" />
+       <input id="date" placeholder="日期 2026-07-19" />
+--- a/tests/test_device_flow.py
++++ b/tests/test_device_flow.py
+@@ -9,6 +9,7 @@
+ import hashlib
+ import json
+ import os
++import random
+ import struct
+ import tempfile
+ import time
+@@ -97,14 +98,19 @@
+ 
+ def test_library_photos() -> list[Path]:
+     paths: list[Path] = []
+-    for index, color in enumerate(("#5e8ab6", "#b66e5e", "#629668"), start=1):
++    for index, color in enumerate(("#5e8ab6", "#b66e5e", "#629668", "#bcaa51", "#8f66ae", "#6fbcb6", "#bb638e", "#7189bb"), start=1):
+         path = Path(tempfile.gettempdir()) / f"photowall-template-{RUN_ID}-{index}.jpg"
+         texture = Image.effect_noise((960, 720), 72 + index * 18).convert("RGB")
+         image = Image.blend(texture, Image.new("RGB", (960, 720), color), 0.45)
+         draw = ImageDraw.Draw(image)
+-        for stripe in range(0, 960, 32):
+-            draw.line((stripe, 0, 960 - stripe // 2, 720), fill=(255, 255, 255), width=2)
+-        draw.rectangle((140 + index * 30, 120, 760, 620), outline="white", width=14)
++        # Each fixture has a distinct large-scale pattern so perceptual dedup
++        # does not collapse the eight images into near-duplicate samples.
++        rng = random.Random(index * 941)
++        for row in range(4):
++            for col in range(5):
++                fill = tuple(rng.randint(30, 225) for _ in range(3))
++                draw.rectangle((col * 192 + 10, row * 180 + 10,
++                                col * 192 + 180, row * 180 + 168), fill=fill)
+         draw.text((360, 350), f"Photo {index}", fill="white", stroke_width=2, stroke_fill="#24344d")
+         exif = image.getexif()
+         exif[271] = "Apple"
+@@ -130,7 +136,7 @@
+         request(
+             "/api/generate",
+             "POST",
+-            {"template": "daily_polaroid", "title": "不应跨账户取图"},
++            {"template": "template_1", "title": "不应跨账户取图"},
+             headers=isolated_headers,
+         )
+         raise AssertionError("空账户不应从旧公共图库生成照片墙")
+@@ -389,7 +395,7 @@
+         "/api/generate",
+         "POST",
+         {
+-            "template": "daily_polaroid",
++            "template": "template_1",
+             "title": "集成测试模板",
+             "exclude_filters": ["__never__"],
+         },
+--- a/backend/template_packages.py
++++ b/backend/template_packages.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import hashlib
++import importlib.util
+ import io
+ import json
+ import os
+@@ -13,8 +14,17 @@
+ 
+ ROOT = Path(__file__).resolve().parent.parent
+ ASSET_ROOT = ROOT / "assets" / "templates"
+-CUTOUT_CACHE = ROOT / "output" / "template_cutouts"
+-PACKAGE_IDS = ("template_1", "template_2")
++CUTOUT_CACHE = Path(os.getenv("PHOTOWALL_DATA_DIR", ROOT)) / "output" / "template_cutouts"
++PACKAGE_IDS = ("template_1", "template_2", "template_3")
++
++
++def cutout_unavailable_reason() -> str:
++    if importlib.util.find_spec("rembg") is None or importlib.util.find_spec("onnxruntime") is None:
++        return "分层抠图拼贴所需的 rembg / onnxruntime 尚未部署"
++    model_home = Path(os.getenv("PHOTO_WALL_REMBG_HOME", os.getenv("U2NET_HOME", str(ROOT / ".cache/rembg"))))
++    if not (model_home / "isnet-general-use.onnx").is_file():
++        return "分层抠图拼贴所需的 isnet-general-use 模型尚未部署"
++    return ""
+ 
+ _session_lock = threading.Lock()
+ _rembg_session: Any = None
+@@ -197,6 +207,9 @@
+ 
+ 
+ def _cutout(path: str) -> Image.Image:
++    reason = cutout_unavailable_reason()
++    if reason:
++        raise RuntimeError(reason)
+     source = Path(path)
+     identity = f"{source.resolve()}:{source.stat().st_size}:{source.stat().st_mtime_ns}"
+     cache_path = CUTOUT_CACHE / f"{hashlib.sha256(identity.encode()).hexdigest()}.png"
+@@ -211,9 +224,8 @@
+                 from rembg import new_session, remove
+             except ImportError as exc:
+                 raise RuntimeError("template_3 requires rembg and onnxruntime") from exc
+-            model_home = Path(os.getenv("PHOTO_WALL_REMBG_HOME", ROOT / ".cache" / "rembg"))
+-            model_home.mkdir(parents=True, exist_ok=True)
+-            os.environ.setdefault("U2NET_HOME", str(model_home))
++            model_home = Path(os.getenv("PHOTO_WALL_REMBG_HOME", os.getenv("U2NET_HOME", str(ROOT / ".cache/rembg"))))
++            os.environ["U2NET_HOME"] = str(model_home)
+             _rembg_session = new_session("isnet-general-use", providers=["CPUExecutionProvider"])
+             _rembg_remove = remove
+         with source.open("rb") as image_file:
+@@ -256,4 +268,4 @@
+             scale_x=float(layer.get("scaleX", 1)),
+             scale_y=float(layer.get("scaleY", 1)),
+         )
+-    return canvas.convert("RGB")
+\ No newline at end of file
++    return canvas.convert("RGB")

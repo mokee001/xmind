@@ -1,0 +1,2 @@
+# Install in the existing backend test environment.
+httpx>=0.28,<0.29

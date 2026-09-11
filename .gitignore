@@ -51,3 +51,7 @@ env/
 #    stickers/*.png             <- B 的贴纸种子素材（如太大可改为忽略）
 #    photo-wall-app/  webapp/  studio/  display/  firmware/  README.md
 # ============================================================
+
+# Confirmed template backgrounds are product assets, not user photos.
+!assets/templates/template_2/bg.jpg
+!assets/templates/template_2/assets/background.jpg
