@@ -24,4 +24,4 @@
 ## 发布记录
 
 构建前 App 源码归档：`outputs/calendar-native-20260916/app-before.tar.gz`。
-目标营销版本：1.3.6。具体构建号、IPA、签名、Apple 处理和既有 Team (Expo) 组可用状态以同目录 `release-status.json` 为准。
+发布版本：1.3.6（29），Apple 已处理为 VALID / IN_BETA_TESTING，已核对分配给原 Team (Expo) 组。代码提交 `fd9a863`，回退标签 `app-calendar-v1.3.6-build29`。IPA、签名、源码和组关联证据保存在同目录 `release-status.json`。
