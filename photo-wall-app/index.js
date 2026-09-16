@@ -10,7 +10,8 @@ import {
   View,
 } from 'react-native';
 
-const RELEASE_LABEL = '1.3.5 (28)';
+const appConfig = require('./app.json');
+const RELEASE_LABEL = `${appConfig.expo.version} (${appConfig.expo.ios.buildNumber})`;
 
 function StartupShell() {
   const [LoadedApp, setLoadedApp] = useState(null);
@@ -91,7 +92,7 @@ function StartupShell() {
 registerRootComponent(StartupShell);
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F7F7F7' },
+  safe: { flex: 1, backgroundColor: '#FAF9F6' },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
   logo: { minWidth: 126, height: 56, paddingHorizontal: 16, borderRadius: 16, backgroundColor: '#111111', alignItems: 'center', justifyContent: 'center' },
   logoText: { color: '#F7F7F7', fontSize: 32, lineHeight: 38, fontWeight: '900', letterSpacing: -1.4 },

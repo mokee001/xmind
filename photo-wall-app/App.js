@@ -1,5 +1,6 @@
 import { WALL_TEMPLATES, PET_COLLAGE_TEMPLATE, currentTemplateId } from './src/templateCatalog';
 import WallExperience from './src/WallExperience';
+import MemoryCalendar from './src/MemoryCalendar';
 import { publicationFromResponse, hasDisplayReceipt, nativeWallPresentation, isCurrentWallRequest } from './src/wallExperienceState.cjs';
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -90,15 +91,16 @@ import {
 } from './src/testDeviceApi';
 
 const C = {
-  canvas: '#F7F7F7', paper: '#FFFFFF', ink: '#222222', muted: '#717171',
-  line: '#EBEBEB', green: '#222222', greenSoft: '#F2F2F2', orange: '#222222',
+  canvas: '#FAF9F6', paper: '#FFFFFF', ink: '#262725', muted: '#85857E',
+  line: '#E8E6DF', green: '#222222', greenSoft: '#F2F2F2', orange: '#222222',
   orangeSoft: '#F2F2F2', red: '#C13515', redSoft: '#FFF4F1', white: '#FFFFFF',
 };
 
 const TABS = [
-  { id: 'current', label: '当前展示', icon: '▧' },
+  { id: 'calendar', label: '回忆日历', icon: '▦' },
+  { id: 'current', label: '照片墙管理', icon: '▧' },
   { id: 'preferences', label: '偏好', icon: '◉' },
-  { id: 'manage', label: '我的', icon: '○' },
+  { id: 'manage', label: '设置', icon: '○' },
 ];
 
 const FALLBACK_WALL_TEMPLATES = WALL_TEMPLATES;
@@ -831,10 +833,8 @@ function ModelPreferenceGroup({
 
 function OnboardingProgress({ step }) {
   const steps = [
-    ['permissions', '授权准备'],
-    ['device', '连接设备'],
-    ['preferences', '选择偏好'],
-    ['schedule', '设置更新'],
+    ['welcome', '授权照片'],
+    ['device', '连接照片墙'],
   ];
   const activeIndex = Math.max(0, steps.findIndex(([id]) => id === step));
   return (
@@ -1208,7 +1208,7 @@ function PetCollageFlow({ stage }) {
 }
 
 function PhotoWallApp() {
-  const [activeTab, setActiveTab] = useState('current');
+  const [activeTab, setActiveTab] = useState(DIRECT_WALL_PREVIEW ? 'current' : 'calendar');
   const [session, setSession] = useState(null);
   const [deviceSessions, setDeviceSessions] = useState([]);
   const [reconfigurationSession, setReconfigurationSession] = useState(null);
@@ -1275,10 +1275,15 @@ function PhotoWallApp() {
   const [displayHistory, setDisplayHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [historyBinding, setHistoryBinding] = useState('');
+  const [statusClock, setStatusClock] = useState(Date.now());
+  const pageScrollRef = useRef(null);
   const onboardingPreparationRef = useRef('');
   const preferenceSaveInFlightRef = useRef(false);
   const preferenceRequestEpochRef = useRef(0);
   const [hydratedPreferenceDeviceId, setHydratedPreferenceDeviceId] = useState('');
+  const [hydratedPreferenceBinding, setHydratedPreferenceBinding] = useState('');
   const onboardingDiscoveryStopRef = useRef(null);
 
   const effectiveSession = IS_WEB_PREVIEW && webConnected ? WEB_PREVIEW_SESSION : session;
@@ -1302,6 +1307,16 @@ function PhotoWallApp() {
   }, [wallBindingKey]);
   const photoAllowed = IS_WEB_PREVIEW ? webPhotoAuthorized : permission?.status === 'granted';
   const connected = IS_WEB_PREVIEW ? webConnected : Boolean(session?.device?.device_id);
+  const lastSeen = Number(effectiveSession?.device?.last_seen) || 0;
+  const deviceFault = Boolean(effectiveSession?.device?.error) || ['error', 'failed'].includes(effectiveSession?.device?.state);
+  const deviceOnline = connected && (IS_WEB_PREVIEW || (!deviceFault && lastSeen > 0 && statusClock / 1000 - lastSeen <= 90));
+  const connectionLabel = !connected ? '连接照片墙' : IS_WEB_PREVIEW ? '演示连接' : deviceFault ? '设备异常' : deviceOnline ? '已连接' : lastSeen ? '暂时离线' : '确认连接中';
+
+  useEffect(() => {
+    const timer = setInterval(() => setStatusClock(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => { pageScrollRef.current?.scrollTo({ y: 0, animated: false }); }, [activeTab, onboardingStep]);
   const managedDeviceSessions = IS_WEB_PREVIEW && webConnected ? [WEB_PREVIEW_SESSION] : deviceSessions;
   const canPublish = IS_WEB_PREVIEW || effectiveSession?.device?.can_publish !== false;
   const canManageDevice = IS_WEB_PREVIEW || effectiveSession?.device?.can_manage !== false;
@@ -1363,7 +1378,7 @@ function PhotoWallApp() {
   );
   const needsOnboarding = preferenceProfileLoaded && ((!preferenceProfile?.onboardingCompleted && !DIRECT_WALL_PREVIEW) || firstRunPreview);
   const editingPreferences = !needsOnboarding && managedPreferenceDraft?.deviceKey === preferenceDeviceKey;
-  const preferenceProfileReady = IS_WEB_PREVIEW || (Boolean(preferenceDeviceKey) && hydratedPreferenceDeviceId === preferenceDeviceKey);
+  const preferenceProfileReady = IS_WEB_PREVIEW || (Boolean(preferenceDeviceKey) && hydratedPreferenceDeviceId === preferenceDeviceKey && hydratedPreferenceBinding === wallBindingKey);
   const canEditModelPreferences = (IS_WEB_PREVIEW || contentMode === 'live') && !savingPreferenceRevision;
   const visiblePreferenceRules = editingPreferences ? managedPreferenceDraft.rules : preferenceRules;
 
@@ -1450,6 +1465,8 @@ function PhotoWallApp() {
   const savePreferenceAsRevision = async (source = 'preferences', snapshot = preferenceSnapshot) => {
     if (preferenceSaveInFlightRef.current) return null;
     const savingDeviceKey = preferenceDeviceKey;
+    const savingBindingEpoch = wallRequestScopeRef.current.bindingEpoch;
+    const currentSavingBinding = () => preferenceDeviceKeyRef.current === savingDeviceKey && wallRequestScopeRef.current.bindingEpoch === savingBindingEpoch;
     preferenceSaveInFlightRef.current = true;
     preferenceRequestEpochRef.current += 1;
     setSavingPreferenceRevision(true);
@@ -1467,7 +1484,7 @@ function PhotoWallApp() {
             parentId: preferenceProfile?.activeRevisionId || '',
             source,
           });
-          if (preferenceDeviceKeyRef.current !== savingDeviceKey) return null;
+          if (!currentSavingBinding()) return null;
           await cachePreferenceProfile(next);
         } catch (remoteError) {
           if ([401, 403, 409].includes(Number(remoteError?.status))) throw remoteError;
@@ -1478,14 +1495,14 @@ function PhotoWallApp() {
         }
       }
       if (!next) {
-        if (preferenceDeviceKeyRef.current !== savingDeviceKey) return null;
+        if (!currentSavingBinding()) return null;
         next = await savePreferenceRevision({
           profile: preferenceProfile,
           snapshot,
           source,
         });
       }
-      if (preferenceDeviceKeyRef.current !== savingDeviceKey) return null;
+      if (!currentSavingBinding()) return null;
       setPreferenceProfile(next);
       setNotice(source === 'onboarding'
         ? (localOnly ? '默认偏好已保存在本机，尚未同步到设备。' : '默认偏好已保存。之后可以随时调整。')
@@ -1494,7 +1511,7 @@ function PhotoWallApp() {
           : '偏好已保存。');
       return next;
     } catch (caught) {
-      if (preferenceDeviceKeyRef.current === savingDeviceKey) setError(`无法保存偏好版本：${caught.message}`);
+      if (currentSavingBinding()) setError(`无法保存偏好版本：${caught.message}`);
       return null;
     } finally {
       preferenceSaveInFlightRef.current = false;
@@ -1717,7 +1734,7 @@ function PhotoWallApp() {
     if (!allowed) return;
     setError('');
     setNearbyDevicePrompt(null);
-    setOnboardingDeviceConnectedNow(false);
+    setOnboardingDeviceConnectedNow(connected);
     setOnboardingDiscovery(current => ({
       state: 'searching',
       message: '正在搜索附近已通电的照片墙…',
@@ -1935,6 +1952,7 @@ function PhotoWallApp() {
     const requestEpoch = preferenceRequestEpochRef.current;
     const deviceId = session.device.device_id;
     setHydratedPreferenceDeviceId('');
+    setHydratedPreferenceBinding('');
     readDevicePreferenceProfile({
       apiBase: DEFAULT_API_BASE,
       deviceId: session.device.device_id,
@@ -1949,7 +1967,7 @@ function PhotoWallApp() {
     }).catch(() => {
       // Keep the encrypted local cache while a production node is rolling out
       // the device-level preference API.
-    }).finally(() => { if (active) setHydratedPreferenceDeviceId(deviceId); });
+    }).finally(() => { if (active) { setHydratedPreferenceDeviceId(deviceId); setHydratedPreferenceBinding(wallBindingKey); } });
     return () => { active = false; };
   }, [session?.device?.device_id, session?.accountToken, preferenceProfileLoaded]);
 
@@ -2194,6 +2212,7 @@ function PhotoWallApp() {
   } = {}) => {
     if (!selectedAlbums.length) return;
     const wallRequest = { ...wallRequestScopeRef.current };
+    const currentBinding = () => wallRequest.bindingEpoch === wallRequestScopeRef.current.bindingEpoch && wallRequest.deviceId === wallRequestScopeRef.current.deviceId;
     setAlbumModal(false);
     const selectedSources = selectedAlbums.map(album => ({
       id: album.id,
@@ -2230,6 +2249,7 @@ function PhotoWallApp() {
         candidateLimit,
         allowLegacyAll,
         onProgress: update => {
+          if (!currentBinding()) return;
           setOperation({
             state: update.stage === 'scanning' || update.stage === 'local_analysis' ? 'scanning' : 'uploading',
             progress: update.progress || 0,
@@ -2242,13 +2262,16 @@ function PhotoWallApp() {
           onProgress?.(update);
         },
       });
+      if (!currentBinding()) return { ok: false, stale: true };
       await savePhotoSyncPreference(selectedAlbum);
+      if (!currentBinding()) return { ok: false, stale: true };
       setOperation({ state: 'generating', progress: 100, message: '照片已同步，正在读取云端识别结果' });
       try {
         const recognition = await refreshRecognizedContent({
           apiBase: DEFAULT_API_BASE,
           accountToken: session?.accountToken,
         });
+        if (!currentBinding()) return { ok: false, stale: true };
         setRecognitionSnapshot(recognition);
         let wall = null;
         if (generatePreview) {
@@ -2258,7 +2281,7 @@ function PhotoWallApp() {
             setGeneratedWall({ ...wall, requestContext: { deviceId: wallRequest.deviceId, bindingEpoch: wallRequest.bindingEpoch } });
           }
         }
-        setActiveTab('preferences');
+        if (!background) setActiveTab('preferences');
         setOperation({ state: 'idle', progress: 100, message: generatePreview ? '照片同步和投屏预览已完成' : '照片同步和偏好整理已完成' });
         const recognizedCount = recognition.albums?.length || 0;
         const localSummary = synced.local?.used
@@ -2281,6 +2304,7 @@ function PhotoWallApp() {
         });
         return { ok: true, ...synced, recognition, wall };
       } catch (recognitionError) {
+        if (!currentBinding()) return { ok: false, stale: true };
         setOperation({ state: 'idle', progress: 100, message: '照片已同步，识别结果可稍后重试读取' });
         setNotice(`照片同步已完成，但云端识别结果暂时无法读取：${recognitionError.message}`);
         onProgress?.({
@@ -2295,12 +2319,13 @@ function PhotoWallApp() {
         return { ok: true, ...synced, recognition: null, recognitionError };
       }
     } catch (caught) {
+      if (!currentBinding()) return { ok: false, stale: true };
       setOperation({ state: 'failed', progress: 0, message: caught.message });
       setError(`相簿同步失败：${caught.message}`);
       onProgress?.({ stage: 'failed', progress: 0, error: caught });
       return { ok: false, error: caught };
     } finally {
-      if (!background) setPublishing(false);
+      if (!background && currentBinding()) setPublishing(false);
     }
   };
 
@@ -2323,14 +2348,14 @@ function PhotoWallApp() {
     const allowed = photoAllowed || await requestPhotoPermission();
     if (!allowed) return;
 
-    const preparationKey = `${effectiveSession?.device?.device_id || 'preview'}:${firstRunPreview}`;
+    const preparationScope = { ...wallRequestScopeRef.current };
+    const currentPreparation = () => preparationScope.bindingEpoch === wallRequestScopeRef.current.bindingEpoch;
+    const preparationKey = `${effectiveSession?.device?.device_id || 'preview'}:${preparationScope.bindingEpoch}`;
     if (onboardingPreparationRef.current === preparationKey) {
-      setOnboardingStep('preferences');
       return;
     }
     onboardingPreparationRef.current = preparationKey;
     setError('');
-    setOnboardingStep('preferences');
     setInitialPreferencePreparation({
       state: 'working',
       progress: 0,
@@ -2354,6 +2379,7 @@ function PhotoWallApp() {
       generatePreview: false,
       background: true,
       onProgress: update => {
+        if (!currentPreparation()) return;
         const stage = update.stage || 'working';
         const message = stage === 'scanning'
           ? `正在检查最近照片 · 已读取 ${update.scanned || 0}/${INITIAL_ONBOARDING_ASSET_LIMIT} 张`
@@ -2376,6 +2402,7 @@ function PhotoWallApp() {
       },
     });
 
+    if (!currentPreparation()) return;
     if (!result?.ok) {
       setInitialPreferencePreparation(current => ({
         ...current,
@@ -2384,27 +2411,6 @@ function PhotoWallApp() {
       }));
     }
   };
-
-  useEffect(() => {
-    if (
-      !onboardingDeviceConnectedNow
-      || !needsOnboarding
-      || onboardingStep !== 'device'
-      || !connected
-      || !photoAllowed
-      || addingDevice
-      || reconfigurationSession
-    ) return;
-    setOnboardingDeviceConnectedNow(false);
-    startInitialPreferencePreparation().catch(caught => {
-      setInitialPreferencePreparation(current => ({
-        ...current,
-        state: 'failed',
-        message: caught?.message || '初始整理暂未完成；你仍可使用默认偏好。',
-      }));
-      setOnboardingStep('preferences');
-    });
-  }, [onboardingDeviceConnectedNow, needsOnboarding, onboardingStep, connected, photoAllowed, addingDevice, reconfigurationSession, effectiveSession?.device?.device_id, firstRunPreview]);
 
   const modelFilters = () => {
     const people = (recognizedContent.people || [])
@@ -2589,7 +2595,7 @@ function PhotoWallApp() {
         setOnboardingStep('device');
         setOnboardingDeviceConnectedNow(true);
       }
-      setActiveTab(wasAdding || wasReconfiguring ? 'manage' : 'preferences');
+      setActiveTab(wasAdding || wasReconfiguring ? 'manage' : 'calendar');
       return;
     }
     const wasAdding = addingDevice;
@@ -2619,7 +2625,7 @@ function PhotoWallApp() {
       setOnboardingStep('device');
       setOnboardingDeviceConnectedNow(true);
     }
-    setActiveTab(wasAdding || wasReconfiguring ? 'manage' : 'preferences');
+    setActiveTab(wasAdding || wasReconfiguring ? 'manage' : 'calendar');
     if (wasAdding) setNotice(`已添加“${normalized.device.name || '照片墙'}”，共 ${sessions.length} 台设备。`);
     if (wasReconfiguring) setNotice(`“${normalized.device.name || '照片墙'}”已连接新网络，设备列表保持 ${sessions.length} 台。`);
   };
@@ -2954,19 +2960,40 @@ function PhotoWallApp() {
   };
 
   const completeFirstRun = async () => {
-    if (!IS_WEB_PREVIEW && hydratedPreferenceDeviceId !== effectiveSession?.device?.device_id) return;
-    const saved = await savePreferenceAsRevision('onboarding');
-    if (!saved) return;
+    if (!connected || !photoAllowed || !preferenceProfileReady || preferenceSaveInFlightRef.current) return;
+    const completionBindingEpoch = wallRequestScopeRef.current.bindingEpoch;
+    // Retain the saved version on re-entry; a new device gets neutral defaults.
+    const snapshot = activePreferenceRevision?.snapshot || extendPreferenceSnapshot({}, {
+      schedule: { frequency: '每天', time: '20:00', plan: '每日精选' },
+      rules: {}, selectionMode: 'platform-model', photoScope: 'system-authorized-library',
+      photoRange: { mode: 'all', since: '' }, temporalPreference: 'balanced',
+    });
+    const saved = await savePreferenceAsRevision('onboarding', snapshot);
+    if (!saved || wallRequestScopeRef.current.bindingEpoch !== completionBindingEpoch) return;
+    hydratePreferenceSnapshot(snapshot);
     setFirstRunPreview(false);
     setOnboardingStep('complete');
-    if (IS_WEB_PREVIEW) setWallFirstPreview(true);
-    setActiveTab('current');
+    setActiveTab('calendar');
+    // Preserve the bounded first-run analysis, but it must not block entry or
+    // navigate away from the calendar when it eventually finishes.
+    if (!preferenceProfile?.onboardingCompleted) {
+      startInitialPreferencePreparation().catch(() => {});
+    }
   };
 
   useEffect(() => {
-    if (!historyVisible) return undefined;
+    if (!onboardingDeviceConnectedNow || !needsOnboarding || onboardingStep !== 'device'
+      || !connected || !photoAllowed || !preferenceProfileReady || addingDevice || reconfigurationSession) return;
+    setOnboardingDeviceConnectedNow(false);
+    completeFirstRun();
+  }, [onboardingDeviceConnectedNow, needsOnboarding, onboardingStep, connected, photoAllowed,
+    preferenceProfileReady, addingDevice, reconfigurationSession, effectiveSession?.device?.device_id]);
+
+  useEffect(() => {
+    if (!historyVisible && (activeTab !== 'calendar' || needsOnboarding)) return undefined;
     let active = true;
     setDisplayHistory([]);
+    setHistoryBinding('');
     setHistoryError('');
     if (IS_WEB_PREVIEW || !effectiveSession?.device?.device_id || !session?.accountToken) {
       setHistoryLoading(false);
@@ -2978,14 +3005,14 @@ function PhotoWallApp() {
       deviceId: effectiveSession.device.device_id,
       accountToken: session.accountToken,
     }).then(result => {
-      if (active) setDisplayHistory(Array.isArray(result.records) ? result.records : []);
+      if (active) { setDisplayHistory(Array.isArray(result.records) ? result.records : []); setHistoryBinding(wallBindingKey); }
     }).catch(caught => {
       if (active) setHistoryError(Number(caught.status) === 404
         ? '当前服务尚未提供展示记录。'
         : `暂时无法读取展示记录：${caught.message}`);
     }).finally(() => { if (active) setHistoryLoading(false); });
     return () => { active = false; };
-  }, [historyVisible, effectiveSession?.device?.device_id, session?.accountToken]);
+  }, [historyVisible, activeTab, needsOnboarding, historyRefresh, effectiveSession?.device?.device_id, session?.accountToken, nativeWall.confirmedImage, operation.state === 'done']);
 
   const restartFirstRun = () => {
     if (preferenceSaveInFlightRef.current) return;
@@ -3046,38 +3073,31 @@ function PhotoWallApp() {
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" />
-      <View style={[styles.topBar, styles.preferenceTopBar]}>
-        <View style={styles.preferenceTitleRow}>
-          <Text style={[styles.topBarTitle, styles.flex]}>{needsOnboarding ? '开始使用' : (TABS.find(tab => tab.id === activeTab)?.label || '偏好')}</Text>
-          <View style={styles.preferenceTitleActions}>
-            {!needsOnboarding && preferenceProfileLoaded && activeTab === 'preferences' ? (
-              <MotionPressable
-                onPress={editingPreferences ? saveManagedPreferences : beginPreferenceManagement}
-                disabled={savingPreferenceRevision || (!editingPreferences && (!preferenceProfileReady || !canEditModelPreferences))}
-                accessibilityLabel={savingPreferenceRevision ? '正在保存偏好' : editingPreferences ? '保存' : '管理偏好'}
-                contentStyle={[styles.preferenceManageButton, editingPreferences && styles.preferenceSaveButton]}
-              >
-                {savingPreferenceRevision ? <ActivityIndicator size="small" color={editingPreferences ? C.white : C.ink} /> : null}
-                <Text style={[styles.preferenceManageText, editingPreferences && styles.preferenceSaveText]}>{savingPreferenceRevision ? '保存中' : editingPreferences ? '保存' : '管理偏好'}</Text>
-              </MotionPressable>
-            ) : null}
-            <MotionPressable onPress={manageDevice} disabled={savingPreferenceRevision} contentStyle={styles.connectionStatus} scaleTo={0.94}>
-              <View style={[styles.onlineDot, !connected && styles.offlineDot]} />
-              <Text style={styles.connectionStatusText}>{connected ? '已连接' : '连接设备'}</Text>
-            </MotionPressable>
-          </View>
-        </View>
-          <Text style={styles.topBarSubtitle}>{needsOnboarding
-            ? '授权、连接与偏好设置后，确认第一面照片墙'
-            : activeTab === 'preferences'
-              ? editingPreferences ? '正在管理偏好，调整后点击保存' : '当前偏好 · 点击管理偏好后可调整'
-              : activeTab === 'current' ? '整面照片墙，由你轻轻安排' : '设备、账户、更新计划与版本记录'}</Text>
-        {!needsOnboarding && activeTab === 'preferences' && error ? <Text accessibilityRole="alert" style={styles.preferenceSaveError}>{error}</Text> : null}
+      <View style={styles.calendarHeader}>
+        {needsOnboarding ? (
+          onboardingStep === 'device' ? <MotionPressable onPress={() => { setNearbyDevicePrompt(null); setOnboardingDeviceConnectedNow(false); setOnboardingStep('welcome'); }} disabled={savingPreferenceRevision} accessibilityLabel="返回上一步" contentStyle={styles.headerLink}><Text style={styles.headerLinkText}>‹ 上一步</Text></MotionPressable>
+            : <Text style={styles.brand}>echooo<Text style={styles.brandMark}> ®</Text></Text>
+        ) : <MotionPressable onPress={manageDevice} disabled={savingPreferenceRevision} contentStyle={styles.calendarConnection} accessibilityLabel={`照片墙${connectionLabel}，管理设备`}>
+          <View style={[styles.calendarConnectionDot, !deviceOnline && styles.offlineDot]} />
+          <Text style={styles.calendarConnectionText}>{connectionLabel}</Text>
+        </MotionPressable>}
+        {!needsOnboarding && activeTab === 'calendar' ? <View style={styles.headerEntries}>
+          <MotionPressable onPress={() => setActiveTab('preferences')} contentStyle={styles.headerLink}><Text style={styles.headerLinkText}>偏好</Text></MotionPressable>
+          <MotionPressable onPress={() => setActiveTab('manage')} contentStyle={styles.headerLink} accessibilityLabel="设置"><Text style={styles.headerLinkText}>设置</Text></MotionPressable>
+        </View> : !needsOnboarding ? <MotionPressable onPress={() => setActiveTab(activeTab === 'current' ? 'manage' : 'calendar')} disabled={savingPreferenceRevision || editingPreferences} contentStyle={styles.headerLink}><Text style={[styles.headerLinkText, editingPreferences && styles.disabled]}>‹ {activeTab === 'current' ? '返回设置' : '返回日历'}</Text></MotionPressable> : null}
       </View>
-
-      <WebPreviewBar connected={connected} onToggleConnection={manageDevice} onRestartFirstRun={restartFirstRun} />
-
-      <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
+      {!needsOnboarding && activeTab !== 'calendar' ? <View style={styles.panelHeader}>
+        <View style={styles.flex}><Text style={styles.panelTitle}>{TABS.find(tab => tab.id === activeTab)?.label || '设置'}</Text>
+        <Text style={styles.panelSubtitle}>{activeTab === 'preferences' ? editingPreferences ? '调整后保存，再回到日历。' : '自然安排，也可以更合你心意。' : activeTab === 'manage' ? '照片墙和日常安排，都在这里。' : '管理整面照片墙的展示。'}</Text></View>
+        {activeTab === 'preferences' && preferenceProfileLoaded ? <MotionPressable onPress={editingPreferences ? saveManagedPreferences : beginPreferenceManagement} disabled={savingPreferenceRevision || (!editingPreferences && (!preferenceProfileReady || !canEditModelPreferences))} accessibilityLabel={savingPreferenceRevision ? '正在保存偏好' : editingPreferences ? '保存' : '管理偏好'} contentStyle={[styles.preferenceManageButton, editingPreferences && styles.preferenceSaveButton]}>
+          {savingPreferenceRevision ? <ActivityIndicator size="small" color={editingPreferences ? C.white : C.ink} /> : null}
+          <Text style={[styles.preferenceManageText, editingPreferences && styles.preferenceSaveText]}>{savingPreferenceRevision ? '保存中' : editingPreferences ? '保存' : '管理偏好'}</Text>
+        </MotionPressable> : null}
+      </View> : null}
+      {!needsOnboarding && preferenceProfileLoaded && activeTab === 'calendar' ? (
+        <MemoryCalendar key={wallBindingKey} records={historyBinding === wallBindingKey ? displayHistory : []} loading={historyLoading} error={historyError} onRetry={() => setHistoryRefresh(value => value + 1)} />
+      ) : (
+      <ScrollView ref={pageScrollRef} contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <Animated.View style={{
           opacity: screenMotion,
           transform: [
@@ -3092,150 +3112,32 @@ function PhotoWallApp() {
             </View>
           ) : needsOnboarding ? (
             <>
-              {['device', 'permissions', 'preferences', 'schedule'].includes(onboardingStep) ? (
-                <>
-                  <MotionPressable
-                    onPress={() => setOnboardingStep({
-                      permissions: 'welcome',
-                      device: 'permissions',
-                      preferences: 'device',
-                      schedule: 'preferences',
-                    }[onboardingStep] || 'welcome')}
-                    disabled={savingPreferenceRevision}
-                    accessibilityLabel="返回上一步"
-                    contentStyle={styles.onboardingBackTop}
-                    scaleTo={0.96}
-                  >
-                    <Text style={styles.onboardingBackText}>‹ 上一步</Text>
-                  </MotionPressable>
-                  <OnboardingProgress step={onboardingStep} />
-                  <Text style={styles.onboardingOptionalHint}>偏好和更新时间可在进入后调整。</Text>
-                </>
-              ) : null}
+              <OnboardingProgress step={onboardingStep} />
               {onboardingStep === 'welcome' ? (
-                <>
-                  <View style={styles.welcomeHero}>
-                    <View style={styles.welcomeArtwork}><Text style={styles.welcomeArtworkText}>▧</Text></View>
-                    <Text style={styles.welcomeEyebrow}>欢迎使用 Echooo</Text>
-                    <Text style={styles.welcomeTitle}>让回忆自然出现</Text>
-                    <Text style={styles.welcomeDescription}>连接照片墙并授权照片后，即可开始使用。偏好与更新时间都已有默认值，之后可以随时调整。</Text>
+                <View style={styles.landingContent}>
+                  <View style={styles.calendarArtwork} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+                    <View style={styles.calendarPaperBack} />
+                    <View style={styles.calendarPaper}><Text style={styles.calendarPaperLabel}>EVERY DAY</Text><Text style={styles.calendarPaperDay}>{new Date().getDate()}</Text><View style={styles.calendarPaperRule} /></View>
                   </View>
-                  <View style={styles.welcomeCard}>
-                    <Text style={styles.welcomeCardTitle}>连接前请确认</Text>
-                    <Text style={styles.welcomeCardText}>1. 照片墙已通电，并放在手机附近</Text>
-                    <Text style={styles.welcomeCardText}>2. iPhone 已开启蓝牙和本地网络权限</Text>
-                    <Text style={styles.welcomeCardText}>3. 已准备好要让照片墙接入的家庭 Wi‑Fi</Text>
-                  </View>
-                  <ActionButton onPress={() => setOnboardingStep('permissions')}>我知道了</ActionButton>
-                </>
-              ) : null}
-              {onboardingStep === 'device' ? (
+                  <Text style={styles.landingTitle}>让平常的日子，{'\n'}有值得期待的回忆。</Text>
+                  <Text style={styles.landingLead}>授权照片，连接照片墙。{'\n'}不必一张张挑选，剩下的交给我们。</Text>
+                  <Text style={styles.landingNote}>{preferenceProfile?.onboardingCompleted ? '已保存的偏好和更新安排会继续保留。' : '先由我们自然安排，每天 20:00 更新。\n偏好与更新时间，之后随时可以调整。'}</Text>
+                  <View style={styles.landingPreparation}><Text style={styles.landingPreparationTitle}>连接前，准备好</Text><Text style={styles.landingNote}>已通电的照片墙 · 家中的 2.4 GHz Wi-Fi</Text></View>
+                  <ActionButton onPress={beginOnboardingAuthorization}>{photoAllowed ? '继续连接照片墙' : '授权照片，开始使用'}</ActionButton>
+                  <Text style={styles.landingFootnote}>{photoAllowed ? permissionDescription : '可允许全部或部分照片，随时在系统设置中调整。'}</Text>
+                </View>
+              ) : onboardingStep === 'device' ? (
                 <>
-                  <SectionHeading eyebrow="第二步" title="发现并连接照片墙" description="保持照片墙通电并靠近手机。搜索会自动开始，发现设备后会弹出确认连接。" />
+                  <Text style={styles.landingTitle}>连接你的{'\n'}照片墙。</Text>
+                  <Text style={styles.landingLead}>让手机靠近已通电的照片墙。{'\n'}连好后，就可以开始了。</Text>
                   <View style={styles.onboardingCard}>
                     <View style={styles.onboardingArtwork}><Text style={styles.onboardingArtworkText}>▧</Text></View>
-                    <Text style={styles.onboardingCardTitle}>{connected
-                      ? `${effectiveSession?.device?.name || '照片墙'} 已连接`
-                      : onboardingDiscovery.state === 'searching'
-                        ? '正在搜索附近照片墙'
-                        : onboardingDiscovery.state === 'connecting'
-                          ? '正在连接照片墙'
-                        : onboardingDiscovery.state === 'found'
-                          ? '已发现附近照片墙'
-                          : '暂未找到照片墙'}</Text>
-                    <Text style={styles.onboardingCardDescription}>{connected
-                      ? '设备已可用。如需调整连接，请从这里管理设备。'
-                      : onboardingDiscovery.state === 'searching'
-                        ? '请保持照片墙通电并靠近手机。发现后会自动弹出连接确认。'
-                        : onboardingDiscovery.state === 'connecting'
-                          ? '已确认设备，正在通过蓝牙建立连接。'
-                        : onboardingDiscovery.state === 'found'
-                          ? '已弹出连接确认，请确认是否连接这台设备。'
-                          : onboardingDiscovery.message || '请确认设备已通电后重新搜索。'}</Text>
-                    {connected ? (
-                      <ActionButton onPress={manageDevice}>管理设备</ActionButton>
-                    ) : onboardingDiscovery.state === 'not_found' ? <ActionButton onPress={restartOnboardingDeviceDiscovery}>重新搜索</ActionButton> : null}
+                    <Text style={styles.onboardingCardTitle}>{connected ? '照片墙已连接' : onboardingDiscovery.state === 'searching' ? '正在寻找照片墙' : onboardingDiscovery.state === 'connecting' ? '正在连接照片墙' : onboardingDiscovery.state === 'found' ? '发现附近的照片墙' : '暂时没有发现设备'}</Text>
+                    <Text style={styles.onboardingCardDescription}>{connected ? savingPreferenceRevision ? '正在保存安排，随后进入回忆日历。' : !preferenceProfileReady ? '正在恢复已有设置，请稍等。' : '准备好了，即可进入回忆日历。' : onboardingDiscovery.message || '请确认照片墙已通电，并让手机靠近设备。'}</Text>
+                    {onboardingDiscovery.state === 'searching' && !connected ? <ActivityIndicator color={C.muted} style={{ marginTop: 16 }} /> : null}
+                    {connected ? <ActionButton onPress={completeFirstRun} loading={savingPreferenceRevision} disabled={!preferenceProfileReady || savingPreferenceRevision}>{error ? '重试保存' : '进入回忆日历'}</ActionButton> : onboardingDiscovery.state === 'not_found' ? <ActionButton onPress={restartOnboardingDeviceDiscovery}>重新搜索</ActionButton> : null}
                   </View>
-                </>
-              ) : null}
-
-              {onboardingStep === 'permissions' ? (
-                <>
-                  <SectionHeading eyebrow="第一步" title="授权与准备" description={`先完成照片授权；进入下一步后会自动搜索照片墙，连接成功后再从最近 ${INITIAL_ONBOARDING_ASSET_LIMIT} 张照片中整理初始偏好。`} />
-                  <View style={styles.onboardingCard}>
-                    <View style={styles.permissionPreparationList}>
-                      <View style={styles.permissionPreparationRow}>
-                        <Text style={styles.permissionPreparationLabel}>蓝牙与附近设备</Text>
-                        <Text style={styles.permissionPreparationDetail}>连接照片墙时由 iOS 按需请求</Text>
-                      </View>
-                      <View style={styles.permissionPreparationRow}>
-                        <Text style={styles.permissionPreparationLabel}>本地网络</Text>
-                        <Text style={styles.permissionPreparationDetail}>设备接入家庭 Wi‑Fi 时由 iOS 按需请求</Text>
-                      </View>
-                      <View style={styles.permissionPreparationRow}>
-                        <Text style={styles.permissionPreparationLabel}>照片访问</Text>
-                        <Text style={styles.permissionPreparationDetail}>{photoAllowed ? '已允许，可开始整理近期照片' : `允许后自动整理近期 ${INITIAL_ONBOARDING_ASSET_LIMIT} 张照片`}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.settingLabel}>照片访问</Text>
-                    <Text style={styles.onboardingCardTitle}>{photoAllowed ? '已允许访问照片' : '允许访问照片'}</Text>
-                    <Text style={styles.onboardingCardDescription}>照片只会在设备连接后开始整理。蓝牙与本地网络权限会在连接过程按需由 iOS 请求。</Text>
-                    <ActionButton onPress={beginOnboardingAuthorization}>
-                      {photoAllowed ? '开始自动搜索设备' : '允许并开始搜索设备'}
-                    </ActionButton>
-                  </View>
-                </>
-              ) : null}
-
-              {onboardingStep === 'preferences' ? (
-                <>
-                  <SectionHeading eyebrow="YOUR PREFERENCES" title="按你的喜好，慢慢发现。" description="不设置也会自动选片；这里仅调整长期偏好。" />
-                  {initialPreferencePreparation.state === 'working' ? (
-                    <View style={styles.initialPreparationCard}>
-                      <View style={styles.initialPreparationHeader}>
-                        <ActivityIndicator color={C.ink} size="small" />
-                        <View style={styles.flex}>
-                          <Text style={styles.initialPreparationTitle}>正在准备你的初始偏好</Text>
-                          <Text style={styles.initialPreparationDescription}>{initialPreferencePreparation.message}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.initialPreparationTrack}>
-                        <View style={[styles.initialPreparationFill, { width: `${Math.max(8, Math.min(100, initialPreferencePreparation.progress || 8))}%` }]} />
-                      </View>
-                      <Text style={styles.initialPreparationMeta}>已读取 {initialPreferencePreparation.scanned || 0} 张 · 已整理 {initialPreferencePreparation.selected || 0} 张候选</Text>
-                    </View>
-                  ) : null}
-                  {initialPreferencePreparation.state === 'ready' ? (
-                    <ContextCard title="初始偏好已准备" description="人物和回忆主题会根据最近照片持续补充；现在可以直接选择，或先使用默认安排。" />
-                  ) : null}
-                  {initialPreferencePreparation.state === 'failed' ? (
-                    <ContextCard title="初始整理稍后继续" description={initialPreferencePreparation.message} />
-                  ) : null}
-                  <ModelPreferenceGroup kind="people" title="想多看到谁？" description="来自已识别的人物与宠物。点头像增加出现机会，再点取消；未点选内容仍由模型自然安排。" items={preferencePeople} rules={preferenceRules} onChange={setModelPreference} sample={selectionIsSample} peopleExpanded={preferencePeopleExpanded} onTogglePeopleExpanded={() => setPreferencePeopleExpanded(current => !current)} />
-                  {!preferencePeople.length ? <ContextCard title={initialPreferencePreparation.state === 'working' ? '正在识别人物与宠物' : '人物会在整理后出现'} description="不必等待全部完成；默认偏好可以先开始使用。" /> : null}
-                  <ModelPreferenceGroup kind="themes" title="想多看到哪些照片？" description="点选后，模型会适度增加这类回忆出现的机会；不需要手动筛选照片。" items={preferencePlacesAndTopics} rules={preferenceRules} onChange={setModelPreference} sample={selectionIsSample} />
-                  {!preferencePlacesAndTopics.length ? <ContextCard title="正在整理回忆主题" description="照片整理完成后，会自动补充旅行、日常、风景等回忆主题。" /> : null}
-                  <ActionButton onPress={() => setOnboardingStep('schedule')}>继续</ActionButton>
-                </>
-              ) : null}
-
-              {onboardingStep === 'schedule' ? (
-                <>
-                  <SectionHeading eyebrow="第四步" title="设置更新时间" description="默认每天晚上更新一次。以后修改会保存为新版本，不会覆盖现有设置。" />
-                  <View style={styles.settingCard}>
-                    <ChoiceRow label="更新频次" options={['每天', '每周', '关闭']} value={updateFrequency} onChange={setUpdateFrequency} />
-                    <ChoiceRow label="更新时间" options={['08:00', '12:00', '20:00']} value={updateTime} onChange={setUpdateTime} disabled={updateFrequency === '关闭'} />
-                    <Text style={styles.settingHint}>{nextUpdateLabel}</Text>
-                  </View>
-                  <ActionButton loading={savingPreferenceRevision} disabled={savingPreferenceRevision} onPress={completeFirstRun}>预览第一面照片墙</ActionButton>
-                  <View style={styles.onboardingFooterActions}>
-                    <MotionPressable onPress={() => setOnboardingStep('preferences')} contentStyle={styles.onboardingFooterSecondary} style={styles.onboardingFooterActionMotion} scaleTo={0.96}>
-                      <Text style={styles.onboardingFooterSecondaryText}>返回偏好</Text>
-                    </MotionPressable>
-                    <MotionPressable onPress={resetOnboardingDraft} contentStyle={styles.onboardingFooterSecondary} style={styles.onboardingFooterActionMotion} scaleTo={0.96}>
-                      <Text style={styles.onboardingFooterSecondaryText}>重新设置</Text>
-                    </MotionPressable>
-                  </View>
+                  <Text style={styles.landingNote}>蓝牙与本地网络权限，会在连接时按需请求。{'\n'}偏好与更新时间，都可以之后再调整。</Text>
                 </>
               ) : null}
 
@@ -3258,15 +3160,19 @@ function PhotoWallApp() {
             />
           ) : activeTab === 'preferences' ? (
             <>
-              <SectionHeading eyebrow="YOUR PREFERENCES" title="按你的喜好，慢慢发现。" description="不设置也会自动选片；这里仅调整长期偏好。" />
+
               <ModelPreferenceGroup kind="people" title="想多看到谁？" description="来自已识别的人物与宠物。点头像增加出现机会，再点取消；未点选内容仍由模型自然安排。" items={preferencePeople} rules={visiblePreferenceRules} onChange={setModelPreference} sample={selectionIsSample} readOnly={!editingPreferences} disabled={!canEditModelPreferences} peopleExpanded={preferencePeopleExpanded} onTogglePeopleExpanded={() => setPreferencePeopleExpanded(current => !current)} />
+              {initialPreferencePreparation.state === 'working' ? <Text style={styles.settingHint}>正在整理已授权照片，你可以先回到日历。</Text> : null}
+              {initialPreferencePreparation.state === 'failed' ? <ContextCard title="照片稍后继续整理" description="当前连接和已保存的偏好不受影响。" actionLabel="重新整理" onAction={() => { onboardingPreparationRef.current = ''; startInitialPreferencePreparation(); }} /> : null}
               {!preferencePeople.length ? <ContextCard title="正在补充人物与宠物" description="人物分组准备好后会出现在这里；不需要手动筛选照片。" /> : null}
               <ModelPreferenceGroup kind="themes" title="想多看到哪些照片？" description="选中的主题会增加出现机会；不选择也会自动安排。" items={preferencePlacesAndTopics} rules={visiblePreferenceRules} onChange={setModelPreference} sample={selectionIsSample} readOnly={!editingPreferences} disabled={!canEditModelPreferences} />
               {!preferencePlacesAndTopics.length ? <ContextCard title="正在整理回忆主题" description="旅行、日常、风景等主题会在照片整理后自动出现。" /> : null}
             </>
           ) : (
             <>
-              <SectionHeading title="我的" description="管理照片墙、共同使用者、自动更新与可回退的偏好版本。" />
+              <MotionPressable onPress={() => setActiveTab('current')} contentStyle={styles.preferenceDetailEntry} accessibilityRole="button">
+                <View style={styles.flex}><Text style={styles.settingValue}>照片墙管理</Text><Text style={styles.settingHint}>当前画面、生成与整墙更新</Text></View><Text style={styles.moreChevron}>›</Text>
+              </MotionPressable>
               <MotionPressable onPress={() => setHistoryVisible(true)} contentStyle={styles.preferenceDetailEntry} accessibilityRole="button">
                 <View style={styles.flex}><Text style={styles.settingValue}>展示记录</Text><Text style={styles.settingHint}>查看设备已确认展示的记录</Text></View><Text style={styles.moreChevron}>›</Text>
               </MotionPressable>
@@ -3313,16 +3219,16 @@ function PhotoWallApp() {
           )}
 
           {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
-          {error && (needsOnboarding || activeTab !== 'preferences') ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
+          {error ? <View accessibilityRole="alert" style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
           {!IS_WEB_PREVIEW ? <Text style={styles.footer}>照片仅在系统授权范围内参与模型筛选；可随时在 iPhone 设置中收回访问权限。</Text> : null}
         </Animated.View>
       </ScrollView>
+      )}
 
-      {!needsOnboarding && preferenceProfileLoaded ? <BottomNavigation activeTab={activeTab} onChange={setActiveTab} /> : null}
       <ContentPreferenceDetails section={editingPreferences && !savingPreferenceRevision ? preferenceDetails : null} photoRange={managedPreferenceDraft?.photoRange || photoRange} temporalPreference={managedPreferenceDraft?.temporalPreference || temporalPreference} onChangeRange={value => { if (editingPreferences && !preferenceSaveInFlightRef.current) setManagedPreferenceDraft(current => current && ({ ...current, photoRange: value })); }} onChangeTemporal={value => { if (editingPreferences && !preferenceSaveInFlightRef.current) setManagedPreferenceDraft(current => current && ({ ...current, temporalPreference: value })); }} onClose={() => setPreferenceDetails(null)} />
       <Modal visible={historyVisible} animationType="slide" onRequestClose={() => setHistoryVisible(false)}>
         <SafeAreaView style={styles.safe}>
-          <View style={styles.topBar}><Text style={styles.topBarTitle}>展示记录</Text><ActionButton secondary onPress={() => setHistoryVisible(false)}>返回我的</ActionButton></View>
+          <View style={styles.topBar}><Text style={styles.topBarTitle}>展示记录</Text><ActionButton secondary onPress={() => setHistoryVisible(false)}>返回设置</ActionButton></View>
           <ScrollView contentContainerStyle={styles.page}>
             {historyLoading ? <ActivityIndicator color={C.ink} /> : historyError ? <ContextCard title="暂时无法读取" description={historyError} /> : !displayHistory.length ? <ContextCard title="还没有展示记录" description={IS_WEB_PREVIEW ? '网页预览没有真实设备回执，不会把生成的画面计为已展示。' : '设备确认展示后会留下记录，无需逐张选择或确认。'} /> : displayHistory.map(record => (
               <View key={record.id} style={styles.settingCard}>
@@ -3391,6 +3297,7 @@ function PhotoWallApp() {
           existingSession={reconfigurationSession}
           initialDevice={initialSetupDevice}
           autoDiscover={false}
+          autoFinish={needsOnboarding && !addingDevice && !reconfigurationSession}
           previewMode={IS_WEB_PREVIEW}
           adapter={IS_WEB_PREVIEW ? null : REAL_DEVICE_SETUP_ADAPTER}
           onClose={closeDeviceSetup}
@@ -3804,6 +3711,31 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  calendarHeader: { width: '100%', maxWidth: 680, alignSelf: 'center', minHeight: 64, paddingHorizontal: 24, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  calendarConnection: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  calendarConnectionDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#879270' },
+  calendarConnectionText: { color: '#62695B', fontSize: 12 },
+  headerEntries: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  headerLink: { minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'center' },
+  headerLinkText: { color: C.ink, fontSize: 13 },
+  brand: { color: C.ink, fontSize: 24, letterSpacing: -1.2, fontWeight: '600' },
+  brandMark: { fontSize: 11 },
+  panelHeader: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 26, paddingTop: 9, paddingBottom: 22, flexDirection: 'row', gap: 14, alignItems: 'center' },
+  panelTitle: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Songti SC' : Platform.OS === 'web' ? 'Songti SC, STSong, serif' : SYSTEM_FONT, fontSize: 31, lineHeight: 43, fontWeight: '400' },
+  panelSubtitle: { color: C.muted, fontSize: 11, lineHeight: 19, marginTop: 6 },
+  landingContent: { paddingTop: 8 },
+  landingTitle: { color: C.ink, fontFamily: Platform.OS === 'ios' ? 'Songti SC' : Platform.OS === 'web' ? 'Songti SC, STSong, serif' : SYSTEM_FONT, fontSize: 30, lineHeight: 45, fontWeight: '400', marginTop: 12 },
+  landingLead: { color: C.muted, fontSize: 13, lineHeight: 24, marginTop: 17 },
+  landingNote: { color: C.muted, fontSize: 11, lineHeight: 21, marginTop: 15 },
+  landingPreparation: { borderTopWidth: 1, borderColor: C.line, paddingTop: 18, marginTop: 25, marginBottom: 17 },
+  landingPreparationTitle: { color: C.ink, fontSize: 12 },
+  landingFootnote: { color: C.muted, fontSize: 10, lineHeight: 18, textAlign: 'center', marginTop: 13 },
+  calendarArtwork: { height: 195, alignItems: 'center', justifyContent: 'center' },
+  calendarPaperBack: { position: 'absolute', width: 160, height: 146, borderRadius: 5, backgroundColor: '#E5E3D8', transform: [{ rotate: '-9deg' }, { translateX: -8 }, { translateY: 5 }] },
+  calendarPaper: { width: 166, height: 151, borderRadius: 5, backgroundColor: '#FFFEFB', borderWidth: 1, borderColor: '#D8D7CB', transform: [{ rotate: '4deg' }], alignItems: 'center' },
+  calendarPaperLabel: { width: '100%', textAlign: 'center', color: '#8B8F7B', fontSize: 9, letterSpacing: 4, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#E4E3D9' },
+  calendarPaperDay: { fontFamily: 'Georgia', color: '#697357', fontSize: 61, lineHeight: 80, marginTop: 6 },
+  calendarPaperRule: { width: 63, height: 1, backgroundColor: '#DCDED1', marginTop: 8 },
   systemFont: { fontFamily: SYSTEM_FONT },
   motionPressable: IS_WEB_PREVIEW ? { outlineStyle: 'none' } : {},
   switchTrack: { width: 48, height: 28, borderRadius: 14, padding: 2, backgroundColor: '#D6D6D6', justifyContent: 'center', ...(IS_WEB_PREVIEW ? { outlineStyle: 'none' } : {}) },
@@ -3811,7 +3743,7 @@ const styles = StyleSheet.create({
   switchThumb: { width: 24, height: 24, borderRadius: 12, backgroundColor: C.white, ...(IS_WEB_PREVIEW ? { boxShadow: '0 1px 4px rgba(0,0,0,.18)' } : { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.18, shadowRadius: 4, elevation: 2 }) },
   switchDisabled: { opacity: 0.42 },
   safe: { flex: 1, backgroundColor: C.canvas },
-  page: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 18, paddingTop: 4, paddingBottom: 112 },
+  page: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingHorizontal: 26, paddingTop: 8, paddingBottom: 40 },
   topBar: { minHeight: 88, paddingHorizontal: 20, paddingTop: 12, paddingBottom: 10, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', backgroundColor: C.canvas },
   topBarTitle: { color: C.ink, fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.8 },
   preferenceTopBar: { flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center' },
@@ -3849,14 +3781,14 @@ const styles = StyleSheet.create({
   contextActionText: { color: C.white, fontSize: 11, fontWeight: '700' },
   sectionHeading: { marginTop: 14, marginBottom: 12 },
   sectionEyebrow: { color: C.muted, fontSize: 12, fontWeight: '600', marginBottom: 4 },
-  sectionTitle: { color: C.ink, fontSize: 21, lineHeight: 27, fontWeight: '700', letterSpacing: -0.35 },
-  sectionDescription: { color: C.muted, fontSize: 14, lineHeight: 20, marginTop: 5 },
+  sectionTitle: { color: C.ink, fontSize: 19, lineHeight: 27, fontWeight: '500' },
+  sectionDescription: { color: C.muted, fontSize: 12, lineHeight: 21, marginTop: 5 },
   buttonMotion: { marginTop: 14 },
   button: { width: '100%', minHeight: 52, borderRadius: 16, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18 },
-  buttonSecondary: { backgroundColor: C.ink },
+  buttonSecondary: { backgroundColor: 'transparent', borderWidth: 1, borderColor: C.line },
   buttonContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   buttonText: { color: C.white, fontSize: 15, fontWeight: '700' },
-  buttonTextSecondary: { color: C.white },
+  buttonTextSecondary: { color: C.ink },
   disabled: { opacity: 0.35 },
   heroTitle: { color: C.ink, fontSize: 21, fontWeight: '700' },
   roomPreview: { height: 420, borderRadius: 24, borderWidth: 1, borderColor: C.line, overflow: 'hidden', backgroundColor: '#F0F0ED', alignItems: 'center', paddingTop: 54, position: 'relative' },

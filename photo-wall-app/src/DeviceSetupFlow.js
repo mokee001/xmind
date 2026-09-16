@@ -14,11 +14,11 @@ import {
 } from 'react-native';
 
 const COLORS = {
-  canvas: '#F7F7F7',
+  canvas: '#FAF9F6',
   paper: '#FFFFFF',
-  ink: '#222222',
-  muted: '#717171',
-  line: '#EBEBEB',
+  ink: '#262725',
+  muted: '#85857E',
+  line: '#E8E6DF',
   blue: '#222222',
   blueSoft: '#F2F2F2',
   green: '#222222',
@@ -109,6 +109,7 @@ export default function DeviceSetupFlow({
   adapter = null,
   embedded = false,
   autoDiscover = false,
+  autoFinish = false,
   initialDevice = null,
 }) {
   const [stage, setStage] = useState('device');
@@ -134,6 +135,7 @@ export default function DeviceSetupFlow({
   const deviceConnectionRef = useRef(false);
   const provisionRequestRef = useRef(false);
   const finishingRef = useRef(false);
+  const autoFinishedResultRef = useRef(null);
   const initialDeviceHandledRef = useRef('');
 
   const transition = nextStage => {
@@ -441,6 +443,15 @@ export default function DeviceSetupFlow({
       setBusy(false);
     }
   };
+
+  // Reuse the persisted-session path once per successful result. Storage
+  // failures retain the success screen's manual retry instead of looping.
+  useEffect(() => {
+    if (!visible || !autoFinish || stage !== 'success' || !result
+      || autoFinishedResultRef.current === result) return;
+    autoFinishedResultRef.current = result;
+    finish();
+  }, [visible, autoFinish, stage, result]);
 
   const close = () => {
     // Once connected, closing must save the same session as “开始使用”.

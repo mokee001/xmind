@@ -2,7 +2,7 @@
   "expo": {
     "name": "手帐照片墙",
     "slug": "photo-wall-app",
-    "version": "1.3.5",
+    "version": "1.3.6",
     "scheme": "photowall",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,7 +10,7 @@
     "ios": {
       "bundleIdentifier": "cn.mokeedesign.photowall",
       "deploymentTarget": "17.0",
-      "buildNumber": "28",
+      "buildNumber": "29",
       "supportsTablet": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "用于读取你已授权的照片并整理照片墙候选；不会因授权而立即展示。",
