@@ -11,7 +11,9 @@
 #include <esp_system.h>
 #include <mbedtls/sha256.h>
 
-#include "panel_13in3e6.h"
+#include "panel.h"
+#include "frame_format.h"
+#include "hardware_profile.h"
 #include "ble_provisioning.h"
 
 #if __has_include("demo_wifi_config.h")
@@ -21,20 +23,21 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.6";
-constexpr uint8_t kBootButton = 0;
+constexpr const char* kFirmwareVersion = photowall::kFirmwareVersion;
+constexpr uint8_t kBootButton = photowall::kConfirmationButton;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
 constexpr uint32_t kDefaultPollIntervalMs = 15000;
 constexpr uint32_t kMinimumPollIntervalMs = 5000;
 constexpr uint32_t kMaximumPollIntervalMs = 300000;
-constexpr size_t kFrameHeaderBytes = 45;
-constexpr size_t kFrameBytes = kFrameHeaderBytes + photowall::kPackedFrameBytes;
+constexpr size_t kFrameHeaderBytes = photowall::kPwe6HeaderBytes;
+constexpr size_t kFrameBytes = kFrameHeaderBytes + photowall::kMaxFramePayload;
 
 Preferences prefs;
 WebServer provisionServer(kProvisionPort);
 DNSServer dnsServer;
-photowall::Panel13in3E6 panel;
+photowall::DisplayPanel panel;
+photowall::FrameShape localFrameShape;
 String deviceId;
 String pairingCode;
 String apiBase;
@@ -56,16 +59,6 @@ String localFrameError;
 bool localTestPatternPending = false;
 uint32_t localDisplayQueuedAt = 0;
 
-uint16_t readBigEndian16(const uint8_t* value) {
-  return static_cast<uint16_t>((value[0] << 8) | value[1]);
-}
-
-uint32_t readBigEndian32(const uint8_t* value) {
-  return (static_cast<uint32_t>(value[0]) << 24) |
-         (static_cast<uint32_t>(value[1]) << 16) |
-         (static_cast<uint32_t>(value[2]) << 8) | value[3];
-}
-
 void releaseLocalFrame() {
   free(localFrame);
   localFrame = nullptr;
@@ -73,20 +66,22 @@ void releaseLocalFrame() {
 }
 
 bool validateLocalFrame() {
-  if (!localFrame || localFrameBytes != kFrameBytes) {
+  if (!localFrame || localFrameBytes < kFrameHeaderBytes) {
     localFrameError = "frame size mismatch";
     return false;
   }
-  if (memcmp(localFrame, "PWE6", 4) != 0 || localFrame[4] != 1 ||
-      readBigEndian16(localFrame + 5) != photowall::kPanelWidth ||
-      readBigEndian16(localFrame + 7) != photowall::kPanelHeight ||
-      readBigEndian32(localFrame + 9) != photowall::kPackedFrameBytes) {
-    localFrameError = "invalid PWE6 header";
+  if (!photowall::parseFrameHeader(localFrame, localFrameBytes, localFrameShape) ||
+      localFrameBytes != kFrameHeaderBytes + localFrameShape.bytes) {
+    localFrameError = "invalid PWE6 dimensions or size";
+    return false;
+  }
+  if (!photowall::validPanelCodes(localFrame + kFrameHeaderBytes, localFrameShape.bytes)) {
+    localFrameError = "invalid PWE6 color code";
     return false;
   }
 
   uint8_t digest[32];
-  mbedtls_sha256(localFrame + kFrameHeaderBytes, photowall::kPackedFrameBytes, digest, 0);
+  mbedtls_sha256(localFrame + kFrameHeaderBytes, localFrameShape.bytes, digest, 0);
   if (memcmp(digest, localFrame + 13, sizeof(digest)) != 0) {
     localFrameError = "PWE6 SHA-256 mismatch";
     return false;
@@ -132,7 +127,8 @@ void processLocalDisplayJob() {
       panelInitialized = true;
     }
     displayed = panel.drawPackedFrame(
-        localFrame + kFrameHeaderBytes, photowall::kPackedFrameBytes);
+        localFrame + kFrameHeaderBytes, localFrameShape.bytes,
+        localFrameShape.width, localFrameShape.height);
   }
   releaseLocalFrame();
   localFrameState = displayed ? "displayed" : "error";
@@ -306,7 +302,10 @@ void startDeviceServer(bool provisioning) {
     provisionServer.send(200, "application/json",
       "{\"state\":\"" + String(provisioning ? "provisioning" : "online") +
       "\",\"device_id\":\"" + jsonEscape(deviceId) +
-      "\",\"firmware_version\":\"" + kFirmwareVersion +
+      "\",\"model\":\"" + photowall::kHardwareModel +
+      "\",\"width\":" + String(photowall::kPanelWidth) +
+      ",\"height\":" + String(photowall::kPanelHeight) +
+      ",\"firmware_version\":\"" + kFirmwareVersion +
       "\",\"ip\":\"" + address +
       "\",\"frame_state\":\"" + jsonEscape(localFrameState) +
       "\",\"frame_error\":\"" + jsonEscape(localFrameError) +
@@ -386,7 +385,7 @@ void startDeviceServer(bool provisioning) {
         localFrameBytes += upload.currentSize;
       }
     } else if (upload.status == UPLOAD_FILE_END && localFrameState == "receiving") {
-      if (localFrameBytes == kFrameBytes) {
+      if (localFrameBytes >= kFrameHeaderBytes) {
         localFrameState = "received";
       } else {
         localFrameState = "error";
@@ -559,14 +558,15 @@ bool readExactly(WiFiClient* stream, uint8_t* target, size_t length, uint32_t ti
   return offset == length;
 }
 
-uint8_t* downloadFrame(const String& frameUrl) {
+uint8_t* downloadFrame(const String& frameUrl, photowall::FrameShape& shape) {
   HTTPClient http;
   WiFiClient plain;
   WiFiClientSecure secure;
   const String url = frameUrl.startsWith("http") ? frameUrl : apiBase + frameUrl;
   if (!beginHttp(http, plain, secure, url)) return nullptr;
   const int code = http.GET();
-  if (code != HTTP_CODE_OK || http.getSize() != static_cast<int>(kFrameHeaderBytes + photowall::kPackedFrameBytes)) {
+  if (code != HTTP_CODE_OK || http.getSize() < static_cast<int>(kFrameHeaderBytes) ||
+      http.getSize() > static_cast<int>(kFrameBytes)) {
     Serial.printf("Frame download rejected: HTTP %d size %d\n", code, http.getSize());
     http.end();
     return nullptr;
@@ -579,19 +579,17 @@ uint8_t* downloadFrame(const String& frameUrl) {
     http.end();
     return nullptr;
   }
-  if (memcmp(header, "PWE6", 4) != 0 || header[4] != 1 ||
-      readBigEndian16(header + 5) != photowall::kPanelWidth ||
-      readBigEndian16(header + 7) != photowall::kPanelHeight ||
-      readBigEndian32(header + 9) != photowall::kPackedFrameBytes) {
+  if (!photowall::parseFrameHeader(header, sizeof(header), shape) ||
+      http.getSize() != static_cast<int>(kFrameHeaderBytes + shape.bytes)) {
     Serial.println("Invalid PWE6 header");
     http.end();
     return nullptr;
   }
 
   uint8_t* payload = static_cast<uint8_t*>(heap_caps_malloc(
-      photowall::kPackedFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (!payload) payload = static_cast<uint8_t*>(malloc(photowall::kPackedFrameBytes));
-  if (!payload || !readExactly(stream, payload, photowall::kPackedFrameBytes, 30000)) {
+      shape.bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!payload) payload = static_cast<uint8_t*>(malloc(shape.bytes));
+  if (!payload || !readExactly(stream, payload, shape.bytes, 30000)) {
     Serial.println("PWE6 payload allocation/read failed");
     free(payload);
     http.end();
@@ -600,8 +598,9 @@ uint8_t* downloadFrame(const String& frameUrl) {
   http.end();
 
   uint8_t digest[32];
-  mbedtls_sha256(payload, photowall::kPackedFrameBytes, digest, 0);
-  if (memcmp(digest, header + 13, sizeof(digest)) != 0) {
+  mbedtls_sha256(payload, shape.bytes, digest, 0);
+  if (memcmp(digest, header + 13, sizeof(digest)) != 0 ||
+      !photowall::validPanelCodes(payload, shape.bytes)) {
     Serial.println("PWE6 SHA-256 mismatch");
     free(payload);
     return nullptr;
@@ -673,7 +672,8 @@ void pollForFrame() {
   if (revision.isEmpty() || frameUrl.isEmpty()) return;
 
   reportStatus("downloading", revision, 5);
-  uint8_t* payload = downloadFrame(frameUrl);
+  photowall::FrameShape shape;
+  uint8_t* payload = downloadFrame(frameUrl, shape);
   if (!payload) {
     reportStatus("error", revision, 0, "frame download or verification failed");
     return;
@@ -683,7 +683,7 @@ void pollForFrame() {
     panel.begin();
     panelInitialized = true;
   }
-  const bool displayed = panel.drawPackedFrame(payload, photowall::kPackedFrameBytes);
+  const bool displayed = panel.drawPackedFrame(payload, shape.bytes, shape.width, shape.height);
   free(payload);
   if (!displayed) {
     reportStatus("error", revision, 50, "panel refresh failed or timed out");
@@ -700,6 +700,8 @@ void setup() {
   Serial.begin(115200);
   delay(6000);
   Serial.println("PhotoWall startup diagnostics ready");
+  Serial.printf("Hardware %s, panel %ux%u, PSRAM %u bytes\n", photowall::kHardwareModel,
+                unsigned(photowall::kPanelWidth), unsigned(photowall::kPanelHeight), ESP.getPsramSize());
   deriveIdentity();
   clearConfigurationIfRequested();
   loadConfiguration();
@@ -716,6 +718,36 @@ void setup() {
 }
 
 void loop() {
+#ifdef PHOTOWALL_RETERMINAL_E1002
+  // USB UART maintenance command, deliberately never run automatically at boot.
+  static char diagnostic[32] = {};
+  static size_t diagnosticLength = 0;
+  while (Serial.available()) {
+    const char ch = Serial.read();
+    if (ch == '\n') {
+      diagnostic[diagnosticLength] = 0;
+      if (strcmp(diagnostic, "PHOTOWALL TEST") == 0 &&
+          localFrameState != "queued" && localFrameState != "refreshing" &&
+          localFrameState != "receiving") {
+        releaseLocalFrame();
+        localFrameError = "";
+        localFrameState = "queued";
+        localTestPatternPending = true;
+        localDisplayQueuedAt = millis();
+        Serial.println("E1002 diagnostic test queued");
+      }
+      if (strcmp(diagnostic, "PHOTOWALL STATUS") == 0) {
+        Serial.printf("E1002 state=%s, frame=%s, error=%s, PSRAM=%u, proof_button=%d\n",
+          provisioningMode ? "provisioning" : "online", localFrameState.c_str(),
+          localFrameError.c_str(), ESP.getPsramSize(), digitalRead(kBootButton));
+      }
+      diagnosticLength = 0;
+    } else if (ch != '\r') {
+      if (diagnosticLength < sizeof(diagnostic) - 1) diagnostic[diagnosticLength++] = ch;
+      else diagnosticLength = 0;
+    }
+  }
+#endif
   provisionServer.handleClient();
   photowall::bleProvisioning.loop();
   if (provisioningMode && photowall::bleProvisioning.cloudBootstrapPending()) {

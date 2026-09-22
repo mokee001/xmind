@@ -205,7 +205,8 @@ bool Panel13in3E6::refreshAndSleep() {
   return true;
 }
 
-bool Panel13in3E6::drawPackedFrame(const uint8_t* payload, size_t length) {
+bool Panel13in3E6::drawPackedFrame(const uint8_t* payload, size_t length, uint16_t width, uint16_t height) {
+  if (width != kPanelWidth || height != kPanelHeight) return false;
   if (payload == nullptr || length != kPackedFrameBytes || !initialize()) return false;
 
   // PWE6: low nibble = first pixel, high nibble = second pixel.

@@ -1,4 +1,5 @@
 #include "ble_provisioning.h"
+#include "hardware_profile.h"
 
 #include <ArduinoJson.h>
 #include <BLE2902.h>
@@ -23,7 +24,7 @@ constexpr uint32_t kRestartDelayMs = 5000;
 constexpr uint32_t kAdvertisingRestartDelayMs = 500;
 constexpr size_t kMaximumNetworks = 20;
 constexpr size_t kMaximumApiBaseBytes = 192;
-constexpr uint8_t kProofButton = 0;
+constexpr uint8_t kProofButton = kConfirmationButton;
 
 BleProvisioningService* activeService = nullptr;
 
@@ -214,7 +215,7 @@ void BleProvisioningService::handleClientConnected() {
   clientConnected_ = true;
   clientAuthorized_ = false;
   advertisingRestartAt_ = 0;
-  setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
+  setStatus("awaiting_confirmation", kConfirmationPrompt);
 }
 
 void BleProvisioningService::handleClientDisconnected() {
@@ -287,7 +288,7 @@ void BleProvisioningService::processCommand(const char* command) {
   const String operation = document["op"] | "";
   if (operation == "authorize") {
     if (digitalRead(kProofButton) != LOW) {
-      setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
+      setStatus("awaiting_confirmation", kConfirmationPrompt);
       return;
     }
     clientAuthorized_ = true;
