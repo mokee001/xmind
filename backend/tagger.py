@@ -6,9 +6,9 @@ AI 打标引擎：识别照片中的人物 / 宠物 / 场景元素 / 画质等�
 - 这些 tag 就是后续「打标评分 / 模型训练」的特征维度。
 - 本文件包含两部分：
     1) 真实图像信号（画质/亮度/色调）——用 Pillow 计算，是真的。
-    2) 语义标签（person/dog/food...）——MVP 用确定性占位实现，
-       生产环境把 detect_semantic() 换成真实模型即可（YOLOv8 / CLIP 零样本 / 云端视觉 API），
-       接口不变，闭环不用改。
+    2) 语义标签由真实 YOLO 生成，失败返回未识别状态。
+       只有显式 PHOTOWALL_TAGGER=mock 才能生成带 demo 标记的演示标签。
+
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _mood_tag(tset: set, m: dict) -> str | None:
     return None
 
 # 检测器选择：环境变量 PHOTOWALL_TAGGER = "yolo" | "mock" | "auto"（默认 auto）
-# auto: 装了 ultralytics 就用真实 YOLO，否则回退 mock。
+# auto: 真实 YOLO；不可用或失败时记录失败，不生成演示标签。
 _TAGGER_MODE = os.environ.get("PHOTOWALL_TAGGER", "auto").lower()
 
 
@@ -333,10 +333,12 @@ def _real_image_signals(img: Image.Image) -> tuple[list[str], dict]:
 # 废片原因 -> 中文说明（借鉴苹果 Photos 的 utility content filter：
 # 截图/文档/单据/严重模糊/极端曝光 这类图不进精选、不上墙）
 JUNK_REASONS = {
+    "decode": "无法读取或图片损坏",
     "downloaded": "截图/下载/非拍摄",
     "screenshot": "截图/录屏",
     "document": "文档/单据/翻拍",
     "collage": "拼图/社媒截图",
+    "semantic_non_photo": "截图/文档/广告/拼图",
     "blurry": "严重模糊",
     "exposure": "过曝或过暗",
 }
@@ -350,13 +352,8 @@ def _detect_junk(path: str, colorfulness: float, m: dict) -> str | None:
     w, ht = m["width"], m["height"]
     ar = (w / ht) if ht else 1.0
 
-    # 0) 非相机原生拍摄 —— 手机截图 / 下载保存 / 社媒接收（无相机 EXIF Make/Model）。
-    #    用户明确要求：上墙只要自己拍的，截图和下载/存到手机里的图片一律不上墙。
-    #    真机拍照(含 iPhone HEIC)都带相机 EXIF，此规则不会误伤自己拍的照片。
-    if not m.get("camera", True):
-        return "downloaded"
-
-    # 1) 文件名/录屏明确命中
+    # 0) 文件名/录屏明确命中。无 EXIF 不能单独作为拒绝依据：微信、社交平台和
+    #    修图软件经常剥离别人真实拍摄照片的 EXIF。
     if any(k in name for k in ("screenshot", "screen_shot", "截屏", "截图", "录屏")):
         return "screenshot"
 
@@ -384,24 +381,29 @@ def _detect_junk(path: str, colorfulness: float, m: dict) -> str | None:
 
 
 
+def semantic_result(path: str) -> dict:
+    """Explicit provenance distinguishes no detections, failure and a requested demo."""
+    base = {"schema_version": 2, "requested_mode": _TAGGER_MODE, "tags": []}
+    if _TAGGER_MODE == "mock":
+        return {**base, "status": "demo", "engine": "filename-demo",
+                "retryable": False, "tags": _detect_semantic_mock(path)}
+    if _TAGGER_MODE not in {"auto", "yolo"}:
+        return {**base, "status": "failed", "engine": None, "retryable": False,
+                "error": "unsupported_mode"}
+    try:
+        from . import real_tagger
+        base.update(engine="yolo", model=real_tagger._MODEL_NAME)
+        if not real_tagger.available():
+            return {**base, "status": "failed", "retryable": True, "error": "engine_unavailable"}
+        tags = real_tagger.detect(path)
+        return {**base, "status": "complete", "retryable": False, "tags": tags, **real_tagger.model_metadata()}
+    except Exception as error:
+        return {**base, "status": "failed", "retryable": True,
+                "error": type(error).__name__}
+
+
 def _detect_semantic(path: str) -> list[str]:
-    """
-    语义识别（人物/宠物/场景）。
-    根据 PHOTOWALL_TAGGER 选择真实 YOLO 检测或 mock：
-      - yolo/auto(且已安装): 真实目标检测（backend/real_tagger.py）
-      - mock/auto(未安装):   文件名 hash 确定性生成，保证可复现、开箱即跑
-    两种实现返回同样格式的 tag 列表，上层闭环不用改。
-    """
-    if _TAGGER_MODE in ("yolo", "auto"):
-        try:
-            from . import real_tagger
-            if real_tagger.available():
-                return real_tagger.detect(path)
-        except Exception:
-            pass  # 检测失败则回退 mock
-        if _TAGGER_MODE == "yolo":
-            return []  # 明确要求 yolo 但不可用时，不用假数据
-    return _detect_semantic_mock(path)
+    return semantic_result(path)["tags"]
 
 
 def _detect_semantic_mock(path: str) -> list[str]:
@@ -426,10 +428,19 @@ def tag_photo(path: str) -> dict:
     except Exception:
         # 任何无法读取/解码的图（不支持的格式、损坏等）直接跳过
         return {"path": path, "filename": os.path.basename(path), "tags": [], "quality": 0.0,
-                "aesthetic": 0.0, "colorfulness": 0.0, "phash": None, "csig": None}
+                "aesthetic": 0.0, "colorfulness": 0.0, "junk_reason": "decode",
+                "phash": None, "csig": None,
+                "semantic_recognition": {"schema_version": 2, "status": "failed", "engine": None,
+                                         "retryable": False, "error": "decode"}}
 
     signals = _real_image_signals(img)
-    semantic = _detect_semantic(path)
+    recognition = semantic_result(path)
+    with open(path, "rb") as stream:
+        fingerprint = hashlib.sha256()
+        for block in iter(lambda: stream.read(1024*1024), b""):
+            fingerprint.update(block)
+    recognition["input_sha256"] = fingerprint.hexdigest()
+    semantic = recognition["tags"]
     colorfulness = _colorfulness(img)
     signal_tags, metrics = signals
     tags = set(signal_tags + semantic)
@@ -447,6 +458,11 @@ def tag_photo(path: str) -> dict:
     if junk_reason:
         tags.add("junk")
         tags.add(f"junk_{junk_reason}")
+    elif metrics.get("camera"):
+        tags.add("source_camera")
+    else:
+        # 无 EXIF 但通过截图/文档/拼图等内容检查，按分享来的真实照片候选处理。
+        tags.add("source_shared")
 
     tags = sorted(tags)
     phash = _dhash(img)  # 感知哈希，供去重使用
@@ -484,8 +500,15 @@ def tag_photo(path: str) -> dict:
         aesthetic += 0.06
     aesthetic = round(min(max(aesthetic, 0.0), 1.0), 3)
 
+    non_photo_reasons = {"decode", "downloaded", "screenshot", "document", "collage"}
+    capture_source = (
+        "non_photo" if junk_reason in non_photo_reasons
+        else ("camera" if metrics.get("camera") else "shared")
+    )
     return {
         "path": path,
+        "semantic_recognition": recognition,
+        "sha256": recognition["input_sha256"],
         "filename": os.path.basename(path),
         "tags": tags,
         "quality": quality,
@@ -493,6 +516,9 @@ def tag_photo(path: str) -> dict:
         "composition": composition,
         "colorfulness": colorfulness,
         "camera_exif": bool(metrics.get("camera")),
+        "capture_source": capture_source,
+        "source_confidence": 1.0 if capture_source in {"camera", "non_photo"} else 0.6,
+        "junk_reason": junk_reason,
         "taken_at": _taken_at(img, path),
         "phash": phash,
         "csig": csig,

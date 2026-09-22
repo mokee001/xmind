@@ -1,0 +1,23 @@
+{
+  "version": "recollections-v2-immich-1",
+  "baseline_commit": "c1c5683eb00c232123832a47f25ddd0d5e3e6e56",
+  "face_engine": "Immich v3.1.0 / buffalo_l",
+  "selection": {
+    "minimum_photos": 12,
+    "maximum_photos": 24,
+    "complete_identity_index_separate": true
+  },
+  "files": {
+    "backend/dedup.py": "9fafe68962fe6e3ca4cf1915a7cb7364e693299a6de1e77009433714f423075b",
+    "backend/tagger.py": "04af8dfebdbdae489002c1bc4aac23b39da91ad437817e3979b5e0a46b1cfcd7",
+    "backend/real_tagger.py": "6d3b5ce0b46828b21628faa37fa9abfb08a6cfbff86a453236eca2523889f350",
+    "selection_lab/recollection_v2.py": "43e3d5dbe81ee0708083dd0570651b6a4a874532cfe44c554e528aa91d9919f5",
+    "selection_lab/server.py": "7f17ef2a888141a63196b18b9badd4c789b25c0804fb1d210874942c9e603c36",
+    "selection_lab/static/recollections-v2.html": "93d7dd70f408944671b3852f46e10845dd94770e162845c0a553a2542ecc53a0",
+    "selection_lab/static/recollections-v2.js": "708e6790bf28860a6f52f27a7834b4c9e02e0dd8919bfdab3bb4de15e9bcfccd",
+    "selection_lab/static/people-v2.html": "98225f8a7d35a6b98aa67957205a5b4ce977f7559734d607f89d1b37963dbf07",
+    "selection_lab/static/people-v2.js": "518e2df18863dec86980f676ff1e5d692cb55de53eafa0f786864062a3f3e2d6",
+    "tools/run_recollection_v2.py": "5133d2296b09bc9e289a7ad7495b4ab4b321838a97ce209e9e54de8d2c55460d",
+    "tests/test_immich_upgrade.py": "d6001c57120677921927c1cdb46c84dfd9cd6ff0fb7133036462e6d8c29dcbd3"
+  }
+}

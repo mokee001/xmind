@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>回忆 · 为你精选</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/recollections.css"><script src="/recollections.js" defer></script></head>
+<body>
+<header><a class="brand" href="/recollections">照片里的时光<span>MEMORIES</span></a><span class="local">本机生成 · 照片未上传</span></header>
+<main>
+  <div class="heading"><div><p class="eyebrow">FOR YOU</p><h1>值得再看一遍。</h1><p id="subtitle">正在整理你的回忆…</p></div><button id="refresh" class="quiet">更新推荐 <span aria-hidden="true">↻</span></button></div>
+  <p id="error" role="alert" hidden></p>
+  <section id="featured" class="memory-grid" aria-label="为你精选的回忆"></section>
+  <p id="message" role="status" aria-live="polite"></p>
+  <div id="hidden-albums" hidden></div>
+  <footer><p>把同一主题、同一段旅途中的照片，连成更完整的回忆。</p><div><a href="/memories">查看实验对照</a><details><summary>关于这些回忆</summary><p>主题回忆可以跨越不同日期。画面主题相近，不代表是同一个人或同一只宠物；旅行也由照片线索推测。素材不足的小片段暂不推荐。</p><p>喜欢的回忆可以收藏；“少推荐”可在列表下方撤回。已打开的回忆会影响下一次推荐。照片组合仍需你的反馈来改进。</p></details></div></footer>
+</main>
+<dialog id="player" aria-labelledby="player-title">
+  <div class="player-top"><div><p id="player-label"></p><h2 id="player-title"></h2><p id="player-subtitle"></p></div><button id="close" aria-label="关闭回忆">✕</button></div>
+  <div class="stage"><img id="main-photo" alt=""><button id="prev" class="arrow prev" aria-label="上一张">‹</button><button id="next" class="arrow next" aria-label="下一张">›</button></div>
+  <div class="player-controls"><button id="play">播放回忆</button><span id="counter" role="status"></span><div><button id="favorite">♡ 收藏</button><button id="hide">少推荐这段</button></div></div>
+  <div id="strip" class="strip" aria-label="回忆里的照片"></div>
+  <p id="player-notice" role="status"></p>
+</dialog>
+</body></html>

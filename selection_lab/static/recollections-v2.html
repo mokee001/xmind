@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>精选照片 · 展示偏好</title><link rel="stylesheet" href="/display-preferences.css"><script src="/recollections-v2.js" defer></script></head>
+<body><main><header><a href="/recollections-v2" class="brand">照片里的时光</a><span>本机处理</span></header>
+<section class="heading"><div><p class="eyebrow">FOR YOU</p><h1>精选照片</h1><p id="summary" role="status">正在读取精选…</p></div><button id="preferences-open" disabled>展示偏好</button></section>
+<p id="scope-note"></p><p id="error" role="alert" hidden></p><section id="display-photos" class="photo-grid" aria-label="偏好筛选后的照片"></section><p id="empty" hidden>当前范围内没有精选照片。可以调整人物选择；未入选照片不会被补进来。</p>
+<details><summary>查看第一层精选策略</summary><p>先按既有质量、主题与旅程策略精选，再由展示偏好限定范围。人物只用于选择偏好，不生成人物相簿。</p><p id="base-summary"></p><a href="/recollections">查看原始精选对照</a> · <a href="/people-v2">检查原始人物识别</a></details>
+</main>
+<dialog id="preferences" aria-labelledby="preferences-title"><div class="dialog-head"><div><p class="eyebrow">DISPLAY PREFERENCES</p><h2 id="preferences-title">展示偏好</h2></div><button id="preferences-close" aria-label="关闭偏好">✕</button></div>
+<p>人物选择只作用于已经入选的照片，多选时包含其中任意一人即可。</p>
+<div class="mode"><label><input type="radio" name="mode" value="all">全部精选</label><label><input type="radio" name="mode" value="include">仅展示选中人物</label></div>
+<div class="people-heading"><h3>精选中经常出现的人物</h3><button id="clear-people">清空选择</button></div><p class="hint">按第一层精选中的照片数排序，默认最多展示 6 人。同一张照片只计一次；多选不会改变排序。</p>
+<p id="people-selection" class="hint" role="status"></p><div id="people" class="people-grid"></div><button id="people-more" hidden aria-expanded="false" aria-controls="people">查看更多人物</button>
+<div class="dialog-footer"><p id="preference-count" role="status"></p><p id="preference-error" role="alert"></p><button id="preferences-save">保存展示范围</button></div></dialog>
+<dialog id="photo-viewer" aria-label="精选照片预览"><button id="photo-close" aria-label="关闭照片">✕</button><div class="stage"><button id="previous" aria-label="上一张">‹</button><img id="photo" alt="精选照片"><button id="next" aria-label="下一张">›</button></div><p id="photo-counter" role="status"></p></dialog>
+</body></html>

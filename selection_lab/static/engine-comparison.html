@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>人物相簿实测对照</title><link rel="stylesheet" href="/engine-comparison.css"><script src="/engine-comparison.js" defer></script></head>
+<body><main><a href="/#stories">← 返回主题时光</a><h1>人物相簿实测对照</h1>
+<p id="summary">读取本机结果…</p><p>先看每组的照片是否属于同一人物。检测框、自动分组数都不代表真实人数或识别准确率。</p>
+<p><a href="/recollections-v2">查看升级后的回忆精选 V2</a> · <a href="/people-v2">人物完整索引</a>。本页保留升级前的审计与对照快照。</p>
+<nav id="engines" aria-label="识别方案"></nav><p id="engine-note"></p>
+<div class="controls"><label><input id="singletons" type="checkbox"> 显示只有 1 张照片的小组</label><button id="reload">刷新测试结果</button></div>
+<p id="counts"></p><section id="groups" class="groups"></section>
+<details id="audit"><summary>现有能力检查与人物过滤样本</summary><div id="audit-content"></div><div id="filter-buttons" class="controls"></div><div id="filter-photos" class="photo-grid"></div></details>
+</main><dialog id="viewer"><header><h2 id="viewer-title"></h2><button id="close">关闭</button></header><div id="viewer-photos" class="photo-grid"></div></dialog></body></html>

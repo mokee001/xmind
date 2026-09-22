@@ -1,0 +1,11 @@
+{
+  "version": "selected-people-v2",
+  "scope": "Only first-layer matched people are selectable; portraits from selected photos; no selection-policy change",
+  "files": {
+    "selection_lab/display_preferences.py": "04c9e34878c32ad9628c3142b003db4c8ccd11c864f9fd263df0852e66de3f9f",
+    "selection_lab/static/recollections-v2.js": "8e32ca275aad73023a4a20e7167ef86d1c25f66e816b34fac70a508955293faf",
+    "selection_lab/static/recollections-v2.html": "d3ffcd599a8d9a2e4a43a23f1871f39931bf6e2871ac2449c69f5e7755a07151",
+    "selection_lab/server.py": "2cda9612a71e3541990038faf864df307ff34bc747e5c1f510b8cd29a8dd2561",
+    "tests/test_display_preferences.py": "b365a5f47a3b5074b6dc76e64774025256ceb9b8b67e229f90fedf2e4110ce16"
+  }
+}

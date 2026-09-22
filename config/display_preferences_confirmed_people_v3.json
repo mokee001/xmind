@@ -1,0 +1,11 @@
+{
+  "version": "confirmed-frequent-people-v3",
+  "scope": "Dataset-scoped user-confirmed identity merges; frequency among unique first-layer photos; at most six initial options; first-layer and raw index unchanged",
+  "files": {
+    "selection_lab/display_preferences.py": "7fd2f74f1f0b74b179c26402ee974687b2099ab7d11476c81ae19b04e60eb46f",
+    "selection_lab/recollection_v2.py": "3dfc563d45a83c15cdbb916fb37c36224eaab81aaca6c3f6095a6ababe047468",
+    "selection_lab/static/recollections-v2.js": "0e59bf942b9c21ca3cdb9017b1952b39c759c660ee7762d637f79896a388cf3e",
+    "selection_lab/static/recollections-v2.html": "132b3f86bc15ff7e94ac179f17aa33f3fd5a6bfca98dcefe9851a814f1428314",
+    "tests/test_display_preferences.py": "5982655758f8d85def7291f2177cad557e98448c98f8e01851201466c9e87c72"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "default_profile": "default",
+  "profiles": {
+    "default": {
+      "weights": {"quality": 0.25, "aesthetic": 0.20, "preference": 0.35, "memory": 0.20},
+      "semantic_diversity": 0.35,
+      "event_diversity": 0.12
+    },
+    "travel": {
+      "weights": {"quality": 0.20, "aesthetic": 0.20, "preference": 0.20, "memory": 0.40},
+      "semantic_diversity": 0.40,
+      "event_diversity": 0.08
+    },
+    "pet": {
+      "weights": {"quality": 0.22, "aesthetic": 0.23, "preference": 0.25, "memory": 0.30},
+      "semantic_diversity": 0.28,
+      "event_diversity": 0.08
+    },
+    "family": {
+      "weights": {"quality": 0.18, "aesthetic": 0.17, "preference": 0.25, "memory": 0.40},
+      "semantic_diversity": 0.30,
+      "event_diversity": 0.10
+    }
+  },
+  "template_bindings": {}
+}

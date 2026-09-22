@@ -1,0 +1,20 @@
+{
+  "version": "recollections-preferences-v1",
+  "baseline_commit": "c1c5683eb00c232123832a47f25ddd0d5e3e6e56",
+  "invariant": "display_ids is a subset of first-layer selected ids; no person albums",
+  "preference_modes": [
+    "all",
+    "include"
+  ],
+  "multi_person_match": "any",
+  "files": {
+    "selection_lab/recollection_v2.py": "51257e37c818a65c3c41093d7f882e98e4cbf30faf85b639c1d2d2d04aebd935",
+    "selection_lab/display_preferences.py": "947dfb328c551ce5de63c5a52d8dcbe34a63bf264bc57d14635980fa5d101417",
+    "selection_lab/server.py": "5bedb40d6ea14da6056b798100b43b7b6d1ffb4acc2b712f913a37361f6bb7fe",
+    "selection_lab/static/recollections-v2.html": "043ebb7a0645816a946ce11bf31a627b371591696658e51398b139d3b4207ee3",
+    "selection_lab/static/recollections-v2.js": "58131fb4dd0107897a64bfb140716833d54a6e463986615177a1a7bf550192b1",
+    "selection_lab/static/display-preferences.css": "e9570b4d1596fc5d568e1fc4b0519a7591392e34621f6f95ac0cd124ebd0c335",
+    "tests/test_display_preferences.py": "efeb671f12b19b5dcb65f57cb421ef4ebd4c1cc1ec680fc2576b4bcafdf61e04",
+    "tools/run_recollection_v2.py": "5133d2296b09bc9e289a7ad7495b4ab4b321838a97ce209e9e54de8d2c55460d"
+  }
+}

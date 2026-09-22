@@ -5,7 +5,7 @@
 接口与 mock 完全一致：detect(path) -> list[str]。
 
 首次运行会自动下载 yolov8n.pt（约 6MB，需联网）。
-若未安装 ultralytics，本模块的 available() 返回 False，上层自动回退到 mock。
+若未安装 ultralytics，本模块的 available() 返回 False，上层记录未识别状态。
 """
 
 from __future__ import annotations
@@ -25,6 +25,10 @@ _NATURE = {"potted plant"}
 _SPORT = {"sports ball", "skateboard", "surfboard", "tennis racket", "baseball bat", "frisbee", "skis", "snowboard", "kite"}
 
 import os
+import hashlib
+from functools import lru_cache
+from pathlib import Path
+from importlib.metadata import version
 
 _model = None
 # 模型可配：环境变量 PHOTOWALL_YOLO_MODEL（默认 yolov8s，比 nano 更准）。
@@ -44,11 +48,7 @@ def _get_model():
     global _model
     if _model is None:
         from ultralytics import YOLO
-        try:
-            _model = YOLO(_MODEL_NAME)
-        except Exception:
-            # 下载失败/不可用时回退到体积最小、已缓存的 nano
-            _model = YOLO("yolov8n.pt")
+        _model = YOLO(_MODEL_NAME)
     return _model
 
 
@@ -95,3 +95,22 @@ def detect(path: str) -> list[str]:
         tags.add("portrait")
 
     return sorted(tags)
+
+
+@lru_cache(maxsize=4)
+def _weight_hash(path, size, modified):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024*1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def model_metadata():
+    """Report the loaded weights without exposing an absolute filesystem path."""
+    weights = getattr(_model, "ckpt_path", None)
+    result = {"library_version": version("ultralytics"), "weight_sha256": None}
+    if weights and Path(weights).is_file():
+        p = Path(weights); stat = p.stat()
+        result.update(model=p.name, weight_sha256=_weight_hash(str(p), stat.st_size, stat.st_mtime_ns))
+    return result
