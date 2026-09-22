@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 const KEY = 'photowall-device-session-v1';
 const PENDING_SETUP_KEY = 'photowall-pending-setup-v1';
+const PHOTO_SYNC_KEY = 'photowall-photo-sync-v1';
 
 async function readValue(key) {
   const value = Platform.OS === 'web'
@@ -52,4 +53,16 @@ export async function clearPendingDeviceSetup() {
   } else {
     await SecureStore.deleteItemAsync(PENDING_SETUP_KEY);
   }
+}
+
+export async function loadPhotoSyncPreference() {
+  try {
+    return await readValue(PHOTO_SYNC_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export async function savePhotoSyncPreference(preference) {
+  await writeValue(PHOTO_SYNC_KEY, preference);
 }
