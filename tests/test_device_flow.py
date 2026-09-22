@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 import struct
 import tempfile
 import time
@@ -97,14 +98,19 @@ def test_photo() -> tuple[Path, bool]:
 
 def test_library_photos() -> list[Path]:
     paths: list[Path] = []
-    for index, color in enumerate(("#5e8ab6", "#b66e5e", "#629668"), start=1):
+    for index, color in enumerate(("#5e8ab6", "#b66e5e", "#629668", "#bcaa51", "#8f66ae", "#6fbcb6", "#bb638e", "#7189bb"), start=1):
         path = Path(tempfile.gettempdir()) / f"photowall-template-{RUN_ID}-{index}.jpg"
         texture = Image.effect_noise((960, 720), 72 + index * 18).convert("RGB")
         image = Image.blend(texture, Image.new("RGB", (960, 720), color), 0.45)
         draw = ImageDraw.Draw(image)
-        for stripe in range(0, 960, 32):
-            draw.line((stripe, 0, 960 - stripe // 2, 720), fill=(255, 255, 255), width=2)
-        draw.rectangle((140 + index * 30, 120, 760, 620), outline="white", width=14)
+        # Each fixture has a distinct large-scale pattern so perceptual dedup
+        # does not collapse the eight images into near-duplicate samples.
+        rng = random.Random(index * 941)
+        for row in range(4):
+            for col in range(5):
+                fill = tuple(rng.randint(30, 225) for _ in range(3))
+                draw.rectangle((col * 192 + 10, row * 180 + 10,
+                                col * 192 + 180, row * 180 + 168), fill=fill)
         draw.text((360, 350), f"Photo {index}", fill="white", stroke_width=2, stroke_fill="#24344d")
         exif = image.getexif()
         exif[271] = "Apple"
@@ -130,7 +136,7 @@ def assert_account_library_isolation(legacy_photo: Path) -> None:
         request(
             "/api/generate",
             "POST",
-            {"template": "daily_polaroid", "title": "不应跨账户取图"},
+            {"template": "template_1", "title": "不应跨账户取图"},
             headers=isolated_headers,
         )
         raise AssertionError("空账户不应从旧公共图库生成照片墙")
@@ -232,6 +238,46 @@ def assert_reprovision_and_delete_lifecycle(device_token: str, account_token: st
     assert recovered["claimed"] is True
     _, _, raw = request(f"/api/devices/{DEVICE_ID}/next?{device_query}")
     assert "command" not in json.loads(raw)
+
+    # A physical BOOT reset on firmware 0.3.6 clears the device credential.
+    # The App must authorize the fresh BLE setup token before bootstrap can
+    # rotate that credential while preserving the existing account binding.
+    physical_setup_token = "e" * 32
+    request(f"/api/devices/{DEVICE_ID}/reprovision", "POST", headers=account_headers)
+    request(
+        f"/api/devices/{DEVICE_ID}/reprovision",
+        "POST",
+        {"setup_token": physical_setup_token},
+        headers=account_headers,
+    )
+    try:
+        request("/api/devices/bootstrap", "POST", {
+            "device_id": DEVICE_ID,
+            "pairing_code": PAIRING_CODE,
+            "setup_token": "f" * 32,
+            "ip": "192.168.5.55",
+            "firmware_version": "integration-test-physical-reconfigure",
+            "device_token": "",
+        })
+        raise AssertionError("错误的物理配网凭据不应保留设备绑定")
+    except urllib.error.HTTPError as error:
+        assert error.code == 401, error.code
+    _, _, raw = request("/api/devices/bootstrap", "POST", {
+        "device_id": DEVICE_ID,
+        "pairing_code": PAIRING_CODE,
+        "setup_token": physical_setup_token,
+        "ip": "192.168.5.55",
+        "firmware_version": "integration-test-physical-reconfigure",
+        "device_token": "",
+    })
+    physical_reconfigured = json.loads(raw)
+    assert physical_reconfigured["device_token"] != device_token
+    assert physical_reconfigured["claimed"] is True
+    device_token = physical_reconfigured["device_token"]
+    device_query = urllib.parse.urlencode({"revision": "", "token": device_token})
+    token_query = urllib.parse.urlencode({"token": device_token})
+    _, _, raw = request("/api/devices", headers=account_headers)
+    assert any(item["device_id"] == DEVICE_ID for item in json.loads(raw)["devices"])
 
     _, _, raw = request(
         f"/api/devices/{DEVICE_ID}",
@@ -349,7 +395,7 @@ def main() -> None:
         "/api/generate",
         "POST",
         {
-            "template": "daily_polaroid",
+            "template": "template_1",
             "title": "集成测试模板",
             "exclude_filters": ["__never__"],
         },

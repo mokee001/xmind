@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>PhotoWall · 19 寸展示屏</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Noto Sans SC", "Source Han Sans SC", sans-serif;
+      background: #171614;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #171614;
+      cursor: none;
+    }
+
+    #screen {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      isolation: isolate;
+      background: #171614;
+    }
+
+    .wall {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      opacity: 0;
+      transition: opacity 700ms ease;
+    }
+
+    .wall.is-visible {
+      opacity: 1;
+    }
+
+    #empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      gap: 18px;
+      color: #d5ccbd;
+      text-align: center;
+      transition: opacity 300ms ease;
+    }
+
+    #empty[hidden] {
+      display: none;
+    }
+
+    .waiting-mark {
+      width: 28px;
+      height: 28px;
+      margin: 0 auto;
+      border: 2px solid #8c806d;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 1.4s linear infinite;
+    }
+
+    #empty strong {
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: 0;
+    }
+
+    #empty span {
+      color: #81786b;
+      font-size: 15px;
+      letter-spacing: 0;
+      line-height: 1.7;
+      white-space: pre-line;
+    }
+
+    #status {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 8px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      color: #f0d9d3;
+      background: rgba(43, 33, 31, 0.94);
+      font-size: 14px;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 200ms ease, transform 200ms ease;
+      pointer-events: none;
+    }
+
+    #status::before {
+      width: 8px;
+      height: 8px;
+      margin-right: 10px;
+      border-radius: 50%;
+      background: #db6957;
+      content: "";
+    }
+
+    #status[data-state="connecting"],
+    #status[data-state="offline"] {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    #status[data-state="connecting"]::before {
+      background: #d8a35d;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .wall,
+      #status {
+        transition: none;
+      }
+
+      .waiting-mark {
+        animation: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main id="screen" aria-live="polite">
+    <img class="wall" data-layer="0" alt="" />
+    <img class="wall" data-layer="1" alt="" />
+    <div id="empty">
+      <div class="waiting-mark" aria-hidden="true"></div>
+      <strong id="empty-title">等待第一张画面</strong>
+      <span id="empty-detail">手机生成后会自动显示</span>
+    </div>
+    <div id="status" data-state="connecting" role="status">正在连接</div>
+  </main>
+  <script src="display.js"></script>
+</body>
+</html>
