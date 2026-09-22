@@ -31,8 +31,8 @@ function renderStickers(list) {
     const cell = document.createElement("div");
     cell.className = "cell";
     const badge = s.qualified
-      ? `<span class="badge ok">达标</span>`
-      : `<span class="badge bad">未达标</span>`;
+      ? `<span class="badge ok">可生成</span>`
+      : `<span class="badge bad">暂不可生成</span>`;
     const themes = (s.themes || []).join(" · ");
     cell.innerHTML = `
       ${badge}
@@ -75,15 +75,15 @@ function renderTemplates(list) {
   const grid = $("tplGrid");
   grid.innerHTML = "";
   const ok = list.filter((t) => t.qualified);
-  $("tplCount").textContent = `共 ${list.length} 套，达标 ${ok.length} 套`;
+  $("tplCount").textContent = `共 ${list.length} 套，可生成 ${ok.length} 套`;
   list.forEach((t) => {
     const cell = document.createElement("div");
     cell.className = "cell";
     const badge = t.qualified
-      ? `<span class="badge ok">达标</span>`
-      : `<span class="badge bad">未达标</span>`;
+      ? `<span class="badge ok">可生成</span>`
+      : `<span class="badge bad">暂不可生成</span>`;
     const del = t.builtin ? "" : `<div class="del" data-id="${t.id}" title="删除">×</div>`;
-    const cover = t.qualified
+    const cover = t.preview_available || t.qualified
       ? `<img src="/api/template_preview/${t.id}.png?t=${Date.now()}" alt="" />`
       : `<div class="sticker-thumb" style="height:110px">无法预览</div>`;
     cell.innerHTML = `
@@ -102,7 +102,7 @@ function renderTemplates(list) {
   const sel = $("previewTpl");
   const cur = sel.value;
   sel.innerHTML = `<option value="">🎲 随机模板（推荐）</option>` +
-    ok.map((t) => `<option value="${t.id}">${t.name || t.id}</option>`).join("");
+    ok.filter((t) => t.generation_mode !== "pet_cutout").map((t) => `<option value="${t.id}">${t.name || t.id}</option>`).join("");
   sel.value = cur;
 }
 

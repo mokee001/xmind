@@ -1,0 +1,372 @@
+{
+  "template_id": "template_3",
+  "version": "1.0.0",
+  "source_template_json": "template.json",
+  "canvas": {
+    "width": 2000,
+    "height": 2668,
+    "unit": "px"
+  },
+  "default_processing": {
+    "resize": true,
+    "crop": true,
+    "color_adjustment": false,
+    "cutout": false,
+    "upscale": false
+  },
+  "capability_requirements": {
+    "vision_understanding": true,
+    "image_scoring": true,
+    "slot_selection": true,
+    "crop": true,
+    "segmentation": true,
+    "cutout": true,
+    "background_removal": true,
+    "alpha_mask_required": true
+  },
+  "image_precheck": {
+    "minimum_short_side_px": 900,
+    "prefer_short_side_px": 1400,
+    "reject_if": [
+      "severe_blur",
+      "no_clear_primary_subject",
+      "heavy_text_or_screenshot",
+      "subject_too_small_for_cutout"
+    ]
+  },
+  "cutout_pipeline": {
+    "enabled": true,
+    "target": "primary_subject",
+    "subject_types": [
+      "person",
+      "pet",
+      "food",
+      "object",
+      "architecture",
+      "foreground_scene"
+    ],
+    "output": "rgba_png",
+    "alpha_mask_required": true,
+    "transparent_background": true,
+    "edge_quality": "high",
+    "preserve_fine_edges": true,
+    "model_agnostic": true,
+    "service_contract": {
+      "request": {
+        "method": "POST",
+        "path": "/api/cutout",
+        "content_type": "application/json",
+        "body_fields": [
+          "id",
+          "name",
+          "image"
+        ]
+      },
+      "response": {
+        "ok": true,
+        "image": "data:image/png;base64,...",
+        "output_schema": "rgba_png_cutout"
+      }
+    },
+    "local_adapter_hint": {
+      "runtime": "rembg",
+      "compatible_model_family": "isnet-general-use",
+      "provider": "CPUExecutionProvider",
+      "package_model_path": "models/isnet-general-use.onnx",
+      "cache_model_path": ".cache/rembg/isnet-general-use.onnx",
+      "health_endpoint": "http://127.0.0.1:8766/health",
+      "cutout_endpoint": "http://127.0.0.1:8766/api/cutout"
+    },
+    "fallback": {
+      "preview_mode": "full_image_preview",
+      "production_acceptance": false,
+      "review_failure_reason": "cutout_layer_rendered_as_full_rectangular_image"
+    }
+  },
+  "slot_groups": {
+    "cutout_layers": [
+      "image_cutout_01",
+      "image_cutout_02",
+      "image_cutout_03",
+      "image_cutout_04",
+      "image_cutout_05",
+      "image_cutout_06",
+      "image_cutout_07",
+      "image_cutout_08",
+      "image_cutout_09",
+      "image_cutout_10",
+      "image_cutout_11",
+      "image_cutout_12"
+    ],
+    "full_image_layers": [
+      "image01",
+      "image02",
+      "image03"
+    ],
+    "fixed_mock_layers": [
+      "mock_01_back",
+      "mock_01_front",
+      "mock_02_back",
+      "mock_02_front",
+      "mock_03_back",
+      "mock_03_front"
+    ]
+  },
+  "slots": {
+    "image_cutout_01": {
+      "layer_type": "image_cutout",
+      "image_index": 0,
+      "role": "full_canvas_background_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_02": {
+      "layer_type": "image_cutout",
+      "image_index": 1,
+      "role": "left_bottom_foreground_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "align_y": "bottom",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_03": {
+      "layer_type": "image_cutout",
+      "image_index": 2,
+      "role": "large_background_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "align_y": "top",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_04": {
+      "layer_type": "image_cutout",
+      "image_index": 3,
+      "role": "top_right_rotated_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_05": {
+      "layer_type": "image_cutout",
+      "image_index": 4,
+      "role": "top_left_small_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_06": {
+      "layer_type": "image_cutout",
+      "image_index": 5,
+      "role": "left_middle_food_or_object_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image01": {
+      "layer_type": "image",
+      "image_index": 6,
+      "role": "large_polaroid_photo",
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "clip": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image02": {
+      "layer_type": "image",
+      "image_index": 7,
+      "role": "top_polaroid_photo",
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "clip": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_cutout_07": {
+      "layer_type": "image_cutout",
+      "image_index": 8,
+      "role": "right_large_portrait_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_08": {
+      "layer_type": "image_cutout",
+      "image_index": 9,
+      "role": "right_middle_supporting_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "align_y": "top",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image03": {
+      "layer_type": "image",
+      "image_index": 10,
+      "role": "lower_polaroid_photo",
+      "crop": {
+        "enabled": true,
+        "mode": "cover",
+        "clip": true
+      },
+      "cutout": {
+        "enabled": false
+      }
+    },
+    "image_cutout_09": {
+      "layer_type": "image_cutout",
+      "image_index": 11,
+      "role": "bottom_wide_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_10": {
+      "layer_type": "image_cutout",
+      "image_index": 12,
+      "role": "left_large_flipped_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_face": true,
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_11": {
+      "layer_type": "image_cutout",
+      "image_index": 13,
+      "role": "bottom_left_small_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    },
+    "image_cutout_12": {
+      "layer_type": "image_cutout",
+      "image_index": 14,
+      "role": "left_middle_rotated_supporting_cutout",
+      "crop": {
+        "enabled": true,
+        "mode": "subject_aware_cover",
+        "align_y": "bottom",
+        "preserve_main_subject": true
+      },
+      "cutout": {
+        "enabled": true,
+        "target": "primary_subject",
+        "output": "rgba_png",
+        "alpha_mask_required": true,
+        "edge_quality": "high"
+      }
+    }
+  },
+  "rendering_notes": [
+    "Render layers strictly in template.json order.",
+    "Mock layers are fixed paper frame elements and must not be replaced by user images.",
+    "Cutout slots must use RGBA cutout assets, not rectangular source photos, for production output.",
+    "Full-image slots image01, image02, and image03 keep the complete photo inside the polaroid frame."
+  ]
+}

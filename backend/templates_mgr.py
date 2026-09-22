@@ -43,7 +43,7 @@ _BUILTIN = {
     "daily_polaroid", "travel_grid", "monthly_collage",
     "grid_5", "grid_10", "grid_15", "grid_20", "grid_24",
     "editorial_magazine", "minimal_gallery", "film_strip", "collage_pop",
-    "scrapbook_echoes", "corkboard_recap", "july_dumps",
+    "scrapbook_echoes", "corkboard_recap", "july_dumps", "eink_portrait_gallery",
 }
 
 _SLUG_RE = re.compile(r"[^a-z0-9_\-]+")

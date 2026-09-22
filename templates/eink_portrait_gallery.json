@@ -1,0 +1,26 @@
+{
+  "id": "eink_portrait_gallery",
+  "name": "六色墨水屏·竖版画廊",
+  "description": "为 Spectra 6 优化的纯白底竖版画廊，大面积留白避免中间色背景造成整屏红黄偏色",
+  "canvas": {
+    "width": 960,
+    "height": 1280,
+    "background": { "type": "color", "value": "#FFFFFF" }
+  },
+  "slots": [
+    { "x": 48,  "y": 190, "w": 410, "h": 300, "border": { "top": 6, "right": 6, "bottom": 6, "left": 6, "color": "#111111" } },
+    { "x": 502, "y": 190, "w": 410, "h": 300, "border": { "top": 6, "right": 6, "bottom": 6, "left": 6, "color": "#111111" } },
+    { "x": 48,  "y": 540, "w": 410, "h": 300, "border": { "top": 6, "right": 6, "bottom": 6, "left": 6, "color": "#111111" } },
+    { "x": 502, "y": 540, "w": 410, "h": 300, "border": { "top": 6, "right": 6, "bottom": 6, "left": 6, "color": "#111111" } },
+    { "x": 160, "y": 900, "w": 640, "h": 280, "border": { "top": 6, "right": 6, "bottom": 6, "left": 6, "color": "#111111" } }
+  ],
+  "decorations": [
+    { "type": "title", "text": "{{title}}", "x": 48, "y": 48, "w": 864, "align": "center", "size": 54, "color": "#000000" },
+    { "type": "text", "text": "{{date}}", "x": 48, "y": 116, "w": 864, "align": "center", "size": 24, "color": "#000000" },
+    { "type": "line", "x1": 48, "y1": 164, "x2": 912, "y2": 164, "width": 3, "color": "#000000" },
+    { "type": "rect", "x": 380, "y": 1228, "w": 36, "h": 14, "color": "#FFFF00" },
+    { "type": "rect", "x": 424, "y": 1228, "w": 36, "h": 14, "color": "#FF0000" },
+    { "type": "rect", "x": 468, "y": 1228, "w": 36, "h": 14, "color": "#0000FF" },
+    { "type": "rect", "x": 512, "y": 1228, "w": 36, "h": 14, "color": "#00FF00" }
+  ]
+}

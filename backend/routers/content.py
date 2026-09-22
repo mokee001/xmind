@@ -11,8 +11,6 @@
 from __future__ import annotations
 
 import datetime
-import io
-import json
 import os
 import random
 import sys
@@ -20,7 +18,7 @@ import time
 from typing import Optional
 
 from fastapi import APIRouter, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 # engine.py 在项目根目录，保证能被导入
@@ -29,9 +27,9 @@ if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
-from .. import stickers, store, templates_mgr  # noqa: E402
+from .. import stickers, store, template_catalog, template_packages, templates_mgr  # noqa: E402
 
-OUTPUT_DIR = os.path.join(_ROOT, "output")
+OUTPUT_DIR = os.path.join(os.environ.get("PHOTOWALL_DATA_DIR", _ROOT), "output")
 
 router = APIRouter()
 
@@ -112,8 +110,8 @@ def _studio_sample(n: int) -> list[dict]:
 
 @router.get("/api/templates")
 def list_templates() -> dict:
-    """列出所有模板（内置 + 上传）及其达标状态、槽位数等元数据。"""
-    entries = templates_mgr.list_templates()
+    """仅列出用户确认的四款现行模板及资源状态。"""
+    entries = template_catalog.list_templates()
     return {
         "count": len(entries),
         "qualified": len([t for t in entries if t.get("qualified")]),
@@ -122,71 +120,52 @@ def list_templates() -> dict:
 
 
 @router.post("/api/upload_template")
-async def upload_template(files: list[UploadFile]) -> dict:
-    """上传模板 JSON 文件并达标校验（可一次传多个）。达标者写入 templates/ 目录。"""
-    results: list[dict] = []
-    for f in files:
-        raw = await f.read()
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except Exception as e:
-            results.append({"filename": f.filename, "qualified": False,
-                            "reason": f"不是合法 JSON：{e}"})
-            continue
-        entry = templates_mgr.save_uploaded(data)
-        entry["filename"] = f.filename
-        results.append(entry)
-    ok = [r for r in results if r.get("qualified")]
-    bad = [{"filename": r.get("filename"), "reason": r.get("reason")}
-           for r in results if not r.get("qualified")]
-    return {"added": len(results), "qualified": len(ok), "rejected": bad,
-            "templates": templates_mgr.list_templates()}
+async def upload_template(files: list[UploadFile]):
+    """Production templates change through a reviewed catalog version."""
+    return JSONResponse({"error": "现行清单固定为四款模板，上传不会新增或替换可用模板",
+                         "templates": template_catalog.list_templates()}, status_code=409)
 
 
 @router.post("/api/delete_template")
-def delete_template(req: dict) -> dict:
-    tid = str(req.get("id", ""))
-    ok = templates_mgr.delete_template(tid)
-    return {"deleted": ok, "templates": templates_mgr.list_templates()}
+def delete_template(req: dict):
+    return JSONResponse({"deleted": False, "error": "现行四款模板受版本管理，旧模板已退出可用清单",
+                         "templates": template_catalog.list_templates()}, status_code=409)
 
 
 @router.get("/api/template_preview/{tid}.png")
 def template_preview(tid: str):
-    """渲染某个模板的缩略预览（用占位图/样片填充，不贴贴纸），给平台的模板卡片当封面。"""
-    tpl = templates_mgr.load_template(tid)
-    if not tpl:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    n = len(tpl.get("slots", []))
-    photos = templates_mgr.placeholder_photos(n)
-    try:
-        img = engine.render(tpl, photos, {"title": tpl.get("name", "预览"),
-                                          "date": "2026-01-01"})
-    except Exception as e:
-        return JSONResponse({"error": f"render failed: {e}"}, status_code=500)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return Response(content=buf.getvalue(), media_type="image/png")
+    """Serve packaged layout previews without writing into the application checkout."""
+    if tid not in template_catalog.ACTIVE_IDS:
+        return JSONResponse({"error": "模板已停用或不存在"}, status_code=404)
+    path = template_catalog.PREVIEW_ROOT / f"{tid}.png"
+    if not path.is_file():
+        return JSONResponse({"error": "模板布局预览资源未部署"}, status_code=503)
+    return FileResponse(path, media_type="image/png", headers={"X-Preview-Kind": "repository-reference" if tid == "template_3" else "layout-placeholder"})
 
 
 @router.post("/api/studio/preview")
 def studio_preview(req: StudioPreviewReq) -> dict:
     """创作平台的核心预览：自动挑模板 + 自动匹配贴纸 + 用相册样片渲染，
     生成一张「多样有惊喜感」的照片墙效果图。不推屏、不覆盖正式画面（纯预览）。"""
-    tpls = [t for t in templates_mgr.list_templates() if t.get("qualified")]
+    tpls = [t for t in template_catalog.list_templates()
+            if t.get("qualified") and t["id"] in template_catalog.STANDARD_IDS]
     if not tpls:
         return {"error": "没有达标的模板"}
 
     if req.template:
-        tpl = templates_mgr.load_template(req.template)
-        if not tpl:
-            return {"error": f"模板 {req.template} 不存在"}
+        if req.template == "denim_pet":
+            return JSONResponse({"error": "宠物牛仔拼贴需通过宠物分析与抠图流程生成"}, status_code=409)
+        if req.template not in template_catalog.STANDARD_IDS:
+            return JSONResponse({"error": "模板已停用或不存在"}, status_code=410)
+        if not any(t["id"] == req.template for t in tpls):
+            return JSONResponse({"error": "模板资源不完整"}, status_code=503)
         tid = req.template
     else:
-        choice = random.choice(tpls)          # 随机挑一个 -> 多样惊喜
-        tpl = templates_mgr.load_template(choice["id"])
-        tid = choice["id"]
+        tid = random.choice(tpls)["id"]
 
-    slot_n = len(tpl.get("slots", []))
+    packaged = template_packages.is_package(tid)
+    tpl = template_packages.load_package(tid) if packaged else templates_mgr.load_template(tid)
+    slot_n = template_packages.required_photo_count(tid) if packaged else len(tpl.get("slots", []))
     chosen = _studio_sample(slot_n)
     photo_paths = [c["path"] for c in chosen]
 
@@ -194,23 +173,25 @@ def studio_preview(req: StudioPreviewReq) -> dict:
     W, H = int(canvas.get("width", 1280)), int(canvas.get("height", 720))
     # 自动匹配贴纸：预览里至少尝试贴 1 张，让用户直观看到「贴纸×模板」的组合
     try:
-        plan = stickers.plan_for_wall(tpl, chosen, [], W, H, min_count=1)
+        plan = [] if packaged else stickers.plan_for_wall(tpl, chosen, [], W, H, min_count=1)
         matched_by_theme = bool(plan)
-        if not plan:                       # 主题没匹配上也放 1 张做展示（正式成墙才严格按主题）
+        if not plan and not packaged:       # 固定装饰模板包不叠加随机贴纸
             plan = stickers.plan_any(tpl, chosen, W, H, n=1)
     except Exception:
         plan = []
         matched_by_theme = False
 
     date = req.date or datetime.date.today().isoformat()
-    img = engine.render(tpl, photo_paths, {"title": req.title, "date": date},
-                        stickers=plan)
+    context = {"title": req.title, "date": date, "nickname": req.title}
+    img = (template_packages.render(tid, photo_paths, context) if packaged else
+           engine.render(tpl, photo_paths, context, stickers=plan))
     out_name = f"_studio_{int(time.time() * 1000)}.png"
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
     img.save(os.path.join(OUTPUT_DIR, out_name))
     return {
         "image_url": f"/output/{out_name}",
         "template": tid,
-        "template_name": tpl.get("name", tid),
+        "template_name": template_catalog.NAMES[tid],
         "slots": slot_n,
         "stickers": [os.path.basename(p["path"]) for p in plan],
         "stickers_by_theme": matched_by_theme,
