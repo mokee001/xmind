@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 2,
+  "templateId": "template_3",
+  "name": "模板3",
+  "displayName": "模板 3",
+  "source": {
+    "type": "figma",
+    "fileKey": "J7QDx4EVReW4zfGsPvpoZv",
+    "fileName": "日历",
+    "nodeId": "146:976",
+    "nodeName": "模板3",
+    "url": "https://www.figma.com/design/J7QDx4EVReW4zfGsPvpoZv/%E6%97%A5%E5%8E%86?node-id=146-976&t=mBvyr3BuefI86pUa-4"
+  },
+  "canvas": {
+    "width": 2000,
+    "height": 2668,
+    "unit": "px",
+    "backgroundColor": "#140A12",
+    "aspectRatio": "750:1000"
+  },
+  "output": {
+    "format": "png",
+    "quality": 1.0
+  },
+  "requiredPhotoCount": 15,
+  "minimumAvailableImages": 18,
+  "slotContract": {
+    "slotIdField": "id",
+    "dynamicLayerTypes": [
+      "image_cutout",
+      "image"
+    ],
+    "fixedLayerTypes": [
+      "mock"
+    ],
+    "cutoutSlots": 12,
+    "fullImageSlots": 3,
+    "allDynamicLayersReplaceable": true,
+    "fixedMockLayersAreNotReplaceable": true
+  },
+  "renderOrder": [
+    "layers"
+  ],
+  "layers": [
+    {
+      "id": "image_cutout_01",
+      "figmaNodeId": "146:978",
+      "type": "image_cutout",
+      "index": 0,
+      "frame": { "x": 0, "y": 0, "width": 2000, "height": 2668 },
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_02",
+      "figmaNodeId": "146:979",
+      "type": "image_cutout",
+      "index": 1,
+      "frame": { "x": 0, "y": 0, "width": 954, "height": 1349 },
+      "fit": "cover",
+      "alignY": "bottom"
+    },
+    {
+      "id": "image_cutout_03",
+      "figmaNodeId": "146:980",
+      "type": "image_cutout",
+      "index": 2,
+      "frame": { "x": 0, "y": 0, "width": 2000, "height": 2116 },
+      "fit": "cover",
+      "alignY": "top"
+    },
+    {
+      "id": "image_cutout_04",
+      "figmaNodeId": "146:981",
+      "type": "image_cutout",
+      "index": 3,
+      "frame": { "x": 1406.5, "y": 17.5, "width": 610.917, "height": 575.917 },
+      "rotationDegrees": -90,
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_05",
+      "figmaNodeId": "146:982",
+      "type": "image_cutout",
+      "index": 4,
+      "frame": { "x": 0, "y": 0, "width": 476, "height": 708 },
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_06",
+      "figmaNodeId": "146:983",
+      "type": "image_cutout",
+      "index": 5,
+      "frame": { "x": -4, "y": 568, "width": 636, "height": 456 },
+      "fit": "cover"
+    },
+    {
+      "id": "mock_01_back",
+      "figmaNodeId": "146:986",
+      "type": "mock",
+      "frame": { "x": 298.495, "y": 831.514, "width": 1131.269, "height": 750.334 },
+      "rotationDegrees": -13.05,
+      "cornerRadius": 7.12,
+      "color": "#F8F8F8"
+    },
+    {
+      "id": "mock_01_front",
+      "figmaNodeId": "146:987",
+      "type": "mock",
+      "frame": { "x": 288.349, "y": 831.214, "width": 1129.599, "height": 645.91 },
+      "rotationDegrees": -13.05,
+      "cornerRadius": 7.12,
+      "color": "#F2F3EE"
+    },
+    {
+      "id": "image01",
+      "figmaNodeId": "146:988",
+      "type": "image",
+      "index": 6,
+      "frame": { "x": 316.624, "y": 865.532, "width": 1065.05, "height": 583.403 },
+      "rotationDegrees": -13.05,
+      "cornerRadius": 3.56,
+      "fit": "cover",
+      "innerShadow": true
+    },
+    {
+      "id": "mock_02_back",
+      "figmaNodeId": "146:990",
+      "type": "mock",
+      "frame": { "x": 904.786, "y": 168.733, "width": 800.909, "height": 579.725 },
+      "rotationDegrees": 9.09,
+      "cornerRadius": 5.501,
+      "color": "#F8F8F8"
+    },
+    {
+      "id": "mock_02_front",
+      "figmaNodeId": "146:991",
+      "type": "mock",
+      "frame": { "x": 912.758, "y": 168.287, "width": 799.727, "height": 499.044 },
+      "rotationDegrees": 9.09,
+      "cornerRadius": 5.501,
+      "color": "#F2F3EE"
+    },
+    {
+      "id": "image02",
+      "figmaNodeId": "146:992",
+      "type": "image",
+      "index": 7,
+      "frame": { "x": 932.109, "y": 193.509, "width": 754.028, "height": 450.75 },
+      "rotationDegrees": 9.09,
+      "cornerRadius": 2.751,
+      "fit": "cover",
+      "innerShadow": true
+    },
+    {
+      "id": "image_cutout_07",
+      "figmaNodeId": "146:993",
+      "type": "image_cutout",
+      "index": 8,
+      "frame": { "x": 1134, "y": 485, "width": 866, "height": 1303 },
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_08",
+      "figmaNodeId": "146:994",
+      "type": "image_cutout",
+      "index": 9,
+      "frame": { "x": 1424, "y": 1273, "width": 584, "height": 843 },
+      "fit": "cover",
+      "alignY": "top"
+    },
+    {
+      "id": "mock_03_back",
+      "figmaNodeId": "146:996",
+      "type": "mock",
+      "frame": { "x": 870.232, "y": 1754.815, "width": 986.643, "height": 714.166 },
+      "rotationDegrees": 9.09,
+      "cornerRadius": 6.777,
+      "color": "#F8F8F8"
+    },
+    {
+      "id": "mock_03_front",
+      "figmaNodeId": "146:997",
+      "type": "mock",
+      "frame": { "x": 880.058, "y": 1754.264, "width": 985.186, "height": 614.775 },
+      "rotationDegrees": 9.09,
+      "cornerRadius": 6.777,
+      "color": "#F2F3EE"
+    },
+    {
+      "id": "image03",
+      "figmaNodeId": "146:998",
+      "type": "image",
+      "index": 10,
+      "frame": { "x": 903.93, "y": 1785.35, "width": 928.89, "height": 555.281 },
+      "rotationDegrees": 9.09,
+      "cornerRadius": 3.389,
+      "fit": "cover",
+      "innerShadow": true
+    },
+    {
+      "id": "image_cutout_09",
+      "figmaNodeId": "146:999",
+      "type": "image_cutout",
+      "index": 11,
+      "frame": { "x": 716, "y": 2116, "width": 1292, "height": 552 },
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_10",
+      "figmaNodeId": "146:1000",
+      "type": "image_cutout",
+      "index": 12,
+      "frame": { "x": 0, "y": 1234, "width": 1212, "height": 1434 },
+      "rotationDegrees": 180,
+      "scaleY": -1,
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_11",
+      "figmaNodeId": "146:1001",
+      "type": "image_cutout",
+      "index": 13,
+      "frame": { "x": 0, "y": 1879, "width": 239, "height": 322 },
+      "fit": "cover"
+    },
+    {
+      "id": "image_cutout_12",
+      "figmaNodeId": "146:1002",
+      "type": "image_cutout",
+      "index": 14,
+      "frame": { "x": -36.107, "y": 1029.225, "width": 550.866, "height": 359.408 },
+      "rotationDegrees": 172.15,
+      "scaleY": -1,
+      "fit": "cover",
+      "alignY": "bottom"
+    }
+  ],
+  "cutout": {
+    "mode": "transparentInputOrExternalService",
+    "runtime": "rembg",
+    "modelName": "isnet-general-use",
+    "provider": "CPUExecutionProvider",
+    "preferredEndpoint": "/api/cutout",
+    "localBridge": {
+      "healthEndpoint": "http://127.0.0.1:8766/health",
+      "screenEndpoint": "http://127.0.0.1:8766/api/screen",
+      "cutoutEndpoint": "http://127.0.0.1:8766/api/cutout"
+    },
+    "modelFile": {
+      "path": "models/isnet-general-use.onnx",
+      "cachePath": ".cache/rembg/isnet-general-use.onnx",
+      "sizeBytes": 178648008
+    },
+    "runtimePackages": [
+      "rembg",
+      "onnxruntime"
+    ],
+    "fallback": "fullImagePreview",
+    "requiredForLayerType": "image_cutout",
+    "description": "image_cutout layers use transparent PNG input as-is, or rembg with the isnet-general-use ONNX model through /api/cutout. If the service is unavailable, render the full image instead of destructive edge-color cutout."
+  },
+  "defaultCopy": {
+    "nickname": ""
+  }
+}

@@ -47,6 +47,7 @@ sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
 from . import dedup, eink_push, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
+from . import template_packages  # Isolated selection gateway renderer dependency.
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
 _DATA_DIR = os.environ.get("PHOTOWALL_DATA_DIR", _ROOT)

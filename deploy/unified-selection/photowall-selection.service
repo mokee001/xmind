@@ -1,0 +1,39 @@
+[Unit]
+Description=PhotoWall isolated unified selection API
+After=network-online.target user@999.service
+Wants=network-online.target user@999.service
+
+[Service]
+Type=simple
+User=photowall
+Group=photowall
+WorkingDirectory=/opt/photowall/app
+EnvironmentFile=/etc/photowall-staging.env
+Environment=PHOTOWALL_RECOLLECTION_ROOT=/opt/photowall/recollection-v1
+Environment=PHOTOWALL_RECOLLECTION_PYTHON=/opt/photowall/recollection-v1/venv/bin/python
+Environment=PHOTOWALL_SELECTION_DIR=/opt/photowall-data/selection-v1
+Environment=PHOTOWALL_SELECTION_MEMORY_GIB=5
+Environment=PHOTOWALL_SELECTION_CPU_PERCENT=200
+Environment=PHOTOWALL_SELECTION_SYSTEMD_USER=1
+Environment=XDG_RUNTIME_DIR=/run/user/999
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/999/bus
+Environment=OMP_NUM_THREADS=1
+Environment=XDG_CONFIG_HOME=/opt/photowall-data/selection-runtime-config
+Environment=XDG_CACHE_HOME=/opt/photowall-data/selection-runtime-cache
+Environment=MPLCONFIGDIR=/opt/photowall-data/selection-runtime-cache/matplotlib
+Environment=YOLO_CONFIG_DIR=/opt/photowall-data/selection-runtime-config/ultralytics
+ExecStart=/opt/photowall/venv/bin/uvicorn backend.selection_gateway:app --host 127.0.0.1 --port 8001 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+MemoryMax=1G
+CPUQuota=100%
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,22 @@
+api.mokeedesign.cn {
+    encode zstd gzip
+    @selection path /api/selection/*
+    handle @selection {
+        reverse_proxy 127.0.0.1:8001
+    }
+    @unified {
+        path /api/generate
+        header X-Selection-Contract unified-recollections-v1
+    }
+    handle @unified {
+        reverse_proxy 127.0.0.1:8001
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8000
+    }
+}
+
+http://8.217.158.5 {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8000
+}

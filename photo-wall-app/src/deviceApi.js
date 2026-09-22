@@ -1,4 +1,5 @@
 import { requireCurrentWall } from './templateCatalog';
+import { UNIFIED_SELECTION, SELECTION_CONTRACT } from './unifiedSelection';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
@@ -49,7 +50,7 @@ async function responseJson(response) {
     data = { error: text || `HTTP ${response.status}` };
   }
   if (!response.ok) {
-    throw requestError(data.error || `请求失败（HTTP ${response.status}）`, response.status, data);
+    throw requestError(data.error || (typeof data.detail === 'string' ? data.detail : '') || `请求失败（HTTP ${response.status}）`, response.status, data);
   }
   return data;
 }
@@ -451,8 +452,16 @@ export async function syncPhotoAlbum({
   };
 }
 
-export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken }) {
+export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken, selectionSources = ['all'] }) {
   const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
+  if (UNIFIED_SELECTION) {
+    const response = await fetch(`${baseUrl(apiBase)}/api/selection/content`, {
+      method:'POST', headers:{...headers,'Content-Type':'application/json'}, body:JSON.stringify({sources:selectionSources}),
+    });
+    const result = await responseJson(response);
+    return {...result, people:(result.people || []).map(person => ({...person,
+      avatarUrl:baseUrl(apiBase)+person.cover, avatarHeaders:headers}))};
+  }
   const [peopleResponse, albumsResponse] = await Promise.all([
     fetch(`${baseUrl(apiBase)}/api/people`, { headers }),
     fetch(`${baseUrl(apiBase)}/api/smart_albums`, { headers }),
@@ -477,7 +486,8 @@ export async function readSelectionModel({ apiBase = DEFAULT_API_BASE, accountTo
   return responseJson(response);
 }
 
-export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken }) {
+export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken, selectionSources = ['all'] }) {
+  if (UNIFIED_SELECTION) return readRecognizedContent({apiBase,accountToken,selectionSources});
   const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
   let cluster = null;
   try {
@@ -515,10 +525,12 @@ export async function generateWall({
   excludeFilters = [],
   deviceId = '',
   preferenceRevisionId = '',
+  selectionSources = ['all'],
 }) {
   const response = await fetch(`${baseUrl(apiBase)}/api/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
+    headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}),
+      ...(UNIFIED_SELECTION ? {'X-Selection-Contract':SELECTION_CONTRACT} : {}) },
     body: JSON.stringify({
       template,
       title,
@@ -526,6 +538,7 @@ export async function generateWall({
       exclude_filters: excludeFilters,
       device_id: deviceId,
       preference_revision_id: preferenceRevisionId,
+      ...(UNIFIED_SELECTION ? {selection_contract:SELECTION_CONTRACT, selection_sources:selectionSources} : {}),
     }),
   });
   return responseJson(response);

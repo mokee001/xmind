@@ -1,0 +1,547 @@
+{
+  "template_id": "template_2",
+  "template_name": "christmas_monthly_collage_02",
+  "version": "1.0.0",
+  "source": {
+    "type": "figma",
+    "file_key": "J7QDx4EVReW4zfGsPvpoZv",
+    "file_name": "日历",
+    "node_id": "141:216",
+    "node_name": "模板2",
+    "url": "https://www.figma.com/design/J7QDx4EVReW4zfGsPvpoZv/%E6%97%A5%E5%8E%86?node-id=141-216&t=mBvyr3BuefI86pUa-4"
+  },
+  "canvas": {
+    "width": 2000,
+    "height": 2668,
+    "aspect_ratio": "500:667",
+    "unit": "px",
+    "coordinate_system": "pixel",
+    "background": "#000000"
+  },
+  "output": {
+    "format": "png",
+    "quality": 1.0,
+    "width": 2000,
+    "height": 2668
+  },
+  "image_requirement": {
+    "total_images": 8,
+    "minimum_available_images": 12
+  },
+  "render_order": [
+    "background",
+    "slots",
+    "fixed_assets",
+    "text_slots"
+  ],
+  "slots": [
+    {
+      "slot_id": "image_01",
+      "type": "image",
+      "role": "supporting",
+      "figma_node_id": "141:242",
+      "z_index": 11,
+      "frame": {
+        "x": 1429.831,
+        "y": 359.132,
+        "width": 424,
+        "height": 462
+      },
+      "bounds": {
+        "x": 1384.02,
+        "y": 317.99,
+        "width": 515.621,
+        "height": 544.283
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": 12.77
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 3.287,
+        "inner_shadows": [
+          {
+            "x": -7.696,
+            "y": -7.696,
+            "blur": 23.087,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 19.239,
+            "y": 19.239,
+            "blur": 76.957,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "portrait",
+        "strong_subject": false,
+        "preferred_content": [
+          "daily_life",
+          "food",
+          "object",
+          "detail"
+        ],
+        "avoid_content": [
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_02",
+      "type": "image",
+      "role": "supporting",
+      "figma_node_id": "141:243",
+      "z_index": 17,
+      "frame": {
+        "x": 1366.735,
+        "y": 1580.229,
+        "width": 538,
+        "height": 568
+      },
+      "bounds": {
+        "x": 1310.62,
+        "y": 1527.8,
+        "width": 650.229,
+        "height": 672.857
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": 12.77
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 3.995,
+        "inner_shadows": [
+          {
+            "x": -9.351,
+            "y": -9.351,
+            "blur": 28.054,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 23.378,
+            "y": 23.378,
+            "blur": 93.513,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "portrait",
+        "strong_subject": false,
+        "preferred_content": [
+          "food",
+          "gathering",
+          "daily_life",
+          "holiday"
+        ],
+        "avoid_content": [
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_03",
+      "type": "image",
+      "role": "hero",
+      "figma_node_id": "141:244",
+      "z_index": 15,
+      "frame": {
+        "x": 694.435,
+        "y": 936.691,
+        "width": 632,
+        "height": 664
+      },
+      "bounds": {
+        "x": 635.11,
+        "y": 880.84,
+        "width": 750.649,
+        "height": 775.702
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": -11.39
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 4.679,
+        "inner_shadows": [
+          {
+            "x": -12.503,
+            "y": -12.503,
+            "blur": 37.51,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 31.258,
+            "y": 31.258,
+            "blur": 125.033,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "portrait",
+        "strong_subject": true,
+        "preferred_content": [
+          "portrait",
+          "person",
+          "daily_life"
+        ],
+        "avoid_content": [
+          "wide_landscape",
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_04",
+      "type": "image",
+      "role": "small_detail",
+      "figma_node_id": "141:245",
+      "z_index": 12,
+      "frame": {
+        "x": 415.763,
+        "y": 649.846,
+        "width": 282,
+        "height": 296
+      },
+      "bounds": {
+        "x": 395.34,
+        "y": 630.54,
+        "width": 322.846,
+        "height": 334.611
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": -8.54
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 2.086,
+        "inner_shadows": [
+          {
+            "x": -7.641,
+            "y": -7.641,
+            "blur": 22.924,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 19.103,
+            "y": 19.103,
+            "blur": 76.414,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "square",
+        "strong_subject": false,
+        "preferred_content": [
+          "object",
+          "food",
+          "pet",
+          "daily_life"
+        ],
+        "avoid_content": [
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_05",
+      "type": "image",
+      "role": "supporting_portrait",
+      "figma_node_id": "141:246",
+      "z_index": 18,
+      "frame": {
+        "x": 733.947,
+        "y": 1895.957,
+        "width": 400,
+        "height": 420
+      },
+      "bounds": {
+        "x": 709.24,
+        "y": 1872.58,
+        "width": 449.413,
+        "height": 466.753
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": 7.19
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 2.96,
+        "inner_shadows": [
+          {
+            "x": -10.843,
+            "y": -10.843,
+            "blur": 32.528,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 27.107,
+            "y": 27.107,
+            "blur": 108.427,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "portrait",
+        "strong_subject": true,
+        "preferred_content": [
+          "portrait",
+          "person",
+          "selfie",
+          "daily_life"
+        ],
+        "avoid_content": [
+          "group_photo",
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_06",
+      "type": "image",
+      "role": "supporting_landscape",
+      "figma_node_id": "141:247",
+      "z_index": 14,
+      "frame": {
+        "x": 1307.81,
+        "y": 1065.351,
+        "width": 456,
+        "height": 306
+      },
+      "bounds": {
+        "x": 1276.92,
+        "y": 1013.45,
+        "width": 517.779,
+        "height": 409.801
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": 14.4
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 2.831,
+        "inner_shadows": [
+          {
+            "x": -7.566,
+            "y": -7.566,
+            "blur": 22.697,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 18.915,
+            "y": 18.915,
+            "blur": 75.658,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "landscape",
+        "strong_subject": false,
+        "preferred_content": [
+          "group_photo",
+          "travel",
+          "outdoor",
+          "landscape"
+        ],
+        "avoid_content": [
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_07",
+      "type": "image",
+      "role": "supporting_landscape",
+      "figma_node_id": "141:248",
+      "z_index": 16,
+      "frame": {
+        "x": 186.003,
+        "y": 1837.956,
+        "width": 492,
+        "height": 352
+      },
+      "bounds": {
+        "x": 147.88,
+        "y": 1778.55,
+        "width": 568.246,
+        "height": 470.811
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": -15.52
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 2.994,
+        "inner_shadows": [
+          {
+            "x": -8,
+            "y": -8,
+            "blur": 24,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 20,
+            "y": 20,
+            "blur": 80,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "landscape",
+        "strong_subject": false,
+        "preferred_content": [
+          "friends",
+          "group_photo",
+          "party",
+          "travel"
+        ],
+        "avoid_content": [
+          "screenshot",
+          "text_only"
+        ]
+      }
+    },
+    {
+      "slot_id": "image_08",
+      "type": "image",
+      "role": "supporting_portrait",
+      "figma_node_id": "141:249",
+      "z_index": 13,
+      "frame": {
+        "x": 91.654,
+        "y": 1128.961,
+        "width": 460,
+        "height": 580
+      },
+      "bounds": {
+        "x": 11.43,
+        "y": 1070.91,
+        "width": 620.448,
+        "height": 696.101
+      },
+      "transform": {
+        "origin": "center",
+        "rotation_degrees": 18.53
+      },
+      "fit": "cover",
+      "clip": true,
+      "style": {
+        "corner_radius": 3.417,
+        "inner_shadows": [
+          {
+            "x": -8,
+            "y": -8,
+            "blur": 24,
+            "color": "rgba(0,0,0,0.24)"
+          },
+          {
+            "x": 20,
+            "y": 20,
+            "blur": 80,
+            "color": "rgba(0,0,0,0.45)"
+          }
+        ]
+      },
+      "requirements": {
+        "preferred_orientation": "portrait",
+        "strong_subject": true,
+        "preferred_content": [
+          "pet",
+          "portrait",
+          "daily_life",
+          "indoor"
+        ],
+        "avoid_content": [
+          "screenshot",
+          "text_only"
+        ]
+      }
+    }
+  ],
+  "text_slots": [
+    {
+      "slot_id": "signature",
+      "type": "text",
+      "role": "signature",
+      "figma_node_id": "144:264",
+      "z_index": 110,
+      "frame": {
+        "x": 762,
+        "y": 2516,
+        "width": 478,
+        "height": 70
+      },
+      "default_text": "chenchen’Plog",
+      "text_template": "{nickname}’Plog",
+      "style": {
+        "font_family": "MomoZhuanji",
+        "font_asset": "assets/momo-zhuanji-handwriting-4.0.ttf",
+        "font_size": 64,
+        "font_weight": 400,
+        "color": "#FFFFFF",
+        "align": "center",
+        "vertical_align": "center",
+        "max_characters": 18
+      }
+    }
+  ],
+  "fixed_assets": [
+    {
+      "asset_id": "background",
+      "type": "image",
+      "role": "background",
+      "figma_node_id": "141:215",
+      "path": "assets/background.jpg",
+      "z_index": 0,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 2000,
+        "height": 2668
+      },
+      "fit": "cover"
+    },
+    {
+      "asset_id": "sticker",
+      "type": "image",
+      "role": "decoration_overlay",
+      "figma_node_id": "141:254",
+      "path": "assets/sticker.png",
+      "z_index": 100,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 2000,
+        "height": 2668
+      },
+      "fit": "cover"
+    }
+  ]
+}

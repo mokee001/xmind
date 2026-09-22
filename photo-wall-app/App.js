@@ -1,6 +1,7 @@
 import { WALL_TEMPLATES, PET_COLLAGE_TEMPLATE, currentTemplateId } from './src/templateCatalog';
 import WallExperience from './src/WallExperience';
 import MemoryCalendar from './src/MemoryCalendar';
+import { UNIFIED_SELECTION, selectionSources, syncSelectionInBackground } from './src/unifiedSelection';
 import { publicationFromResponse, hasDisplayReceipt, nativeWallPresentation, isCurrentWallRequest } from './src/wallExperienceState.cjs';
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -276,7 +277,8 @@ function recognizedPersonItem(person, index) {
     detail: `${count} 张照片`,
     icon: label.slice(0, 1),
     filters: [personId],
-    avatarUrl: recognizedPersonThumbnail(person?.cover),
+    avatarUrl: person?.avatarUrl || recognizedPersonThumbnail(person?.cover),
+    avatarHeaders: person?.avatarHeaders,
     count,
     template: 'template_1',
   };
@@ -772,7 +774,7 @@ function ModelPreferenceGroup({
               scaleTo={0.96}
             >
               {item.avatarUrl ? (
-                <Image source={{ uri: item.avatarUrl }} style={styles.modelPreferencePersonAvatarImage} accessible={false} />
+                <Image source={{ uri: item.avatarUrl, headers:item.avatarHeaders }} style={styles.modelPreferencePersonAvatarImage} accessible={false} />
               ) : (
                 <Text style={styles.modelPreferencePersonAvatarFallback}>{item.icon || '人'}</Text>
               )}
@@ -1067,7 +1069,7 @@ function AlbumModal({ visible, albums, selectedSource, onClose, onConfirm }) {
             <MotionPressable onPress={onClose} contentStyle={styles.close}><Text style={styles.closeText}>取消</Text></MotionPressable>
           </View>
           <ScrollView style={styles.albumPickerScroll} contentContainerStyle={styles.albumPickerContent} showsVerticalScrollIndicator={false}>
-            <Text style={styles.help}>选择要参与照片墙的来源。可多选；“所有已授权照片”会覆盖其他选择。照片只会在你确认同步时上传。</Text>
+            <Text style={styles.help}>{UNIFIED_SELECTION ? '选择要参与照片墙的来源。可多选；本机会先筛选，合格候选会自动上传用于云端识别与生成。' : '选择要参与照片墙的来源。可多选；“所有已授权照片”会覆盖其他选择。照片只会在你确认同步时上传。'}</Text>
             <Text style={styles.albumGroupTitle}>照片精选</Text>
             <View style={styles.albumGrid}>
               {featuredAlbums.map((album, index) => (
@@ -1979,6 +1981,7 @@ function PhotoWallApp() {
     readRecognizedContent({
       apiBase: DEFAULT_API_BASE,
       accountToken: session.accountToken,
+      selectionSources:selectionSources(photoSync),
     }).then(result => {
       if (active) setRecognitionSnapshot(result);
     }).catch(caught => {
@@ -1987,7 +1990,7 @@ function PhotoWallApp() {
       if (active) setRecognitionLoading(false);
     });
     return () => { active = false; };
-  }, [session?.accountToken, photoAllowed]);
+  }, [session?.accountToken, photoAllowed, photoSync]);
 
   useEffect(() => {
     if (contentMode !== 'live' || !recognizedItems.length) return;
@@ -2231,6 +2234,12 @@ function PhotoWallApp() {
       albums: selectedSources,
     };
     setPhotoSync(selectedAlbum);
+    if (UNIFIED_SELECTION && !IS_WEB_PREVIEW) {
+      await savePhotoSyncPreference(selectedAlbum);
+      await syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session?.accountToken,
+        album:selectedAlbum, active:currentBinding});
+      return {ok:true};
+    }
     if (IS_WEB_PREVIEW) {
       setNotice(`网页预览已将照片来源切换为“${selectedAlbum.title}”，没有读取或上传照片。`);
       onProgress?.({ stage: 'ready', progress: 100, scanned: INITIAL_ONBOARDING_ASSET_LIMIT, selected: 0, synced: 0 });
@@ -2345,6 +2354,11 @@ function PhotoWallApp() {
   };
 
   const startInitialPreferencePreparation = async () => {
+    if (UNIFIED_SELECTION && !IS_WEB_PREVIEW) {
+      const request = { ...wallRequestScopeRef.current };
+      return syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session?.accountToken,
+        album:photoSync, active:() => request.bindingEpoch === wallRequestScopeRef.current.bindingEpoch});
+    }
     const allowed = photoAllowed || await requestPhotoPermission();
     if (!allowed) return;
 
@@ -2419,16 +2433,39 @@ function PhotoWallApp() {
       ...(recognizedContent.topics || []),
       ...(recognizedContent.albums || []),
     ].filter(item => Array.isArray(item.filters) && item.filters.length);
+    const unresolved = UNIFIED_SELECTION ? Object.entries(preferenceRules)
+      .filter(([id,rule]) => id.startsWith('person-person_') && ['more','hide'].includes(rule)
+        && !people.some(person => person.id === id)) : [];
     return {
       // New interactions are positive. Retain historical explicit exclusions.
       prefer: [...new Set([...people, ...recallThemes]
         .filter(item => preferenceRules[item.id] === 'more')
-        .flatMap(item => item.filters))],
+        .flatMap(item => item.filters).concat(unresolved.filter(([,rule]) => rule==='more').map(([id]) => id.slice(7))))],
       exclude: [...new Set(people
         .filter(item => preferenceRules[item.id] === 'hide')
-        .flatMap(item => item.filters))],
+        .flatMap(item => item.filters).concat(unresolved.filter(([,rule]) => rule==='hide').map(([id]) => id.slice(7))))],
     };
   };
+
+  useEffect(() => {
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || !photoAllowed || !connected || needsOnboarding || !session?.accountToken) return undefined;
+    let mounted = true;
+    const request = { ...wallRequestScopeRef.current };
+    const active = () => mounted && request.bindingEpoch === wallRequestScopeRef.current.bindingEpoch;
+    const resume = () => {
+      if (!active() || AppState.currentState !== 'active') return;
+      syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken, album:photoSync, active})
+        .then(async () => {
+          if (!active()) return;
+          const result = await refreshRecognizedContent({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken, selectionSources:selectionSources(photoSync)});
+          if (active()) setRecognitionSnapshot(result);
+        }).catch(() => { /* Retain checkpoint and current wall; next active tick retries. */ });
+    };
+    resume();
+    const timer = setInterval(resume, 30000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') resume(); });
+    return () => { mounted = false; clearInterval(timer); subscription.remove(); };
+  }, [photoAllowed, connected, needsOnboarding, session?.accountToken, effectiveSession?.device?.device_id, photoSync]);
 
   const requestModelWall = async () => {
     const { prefer, exclude } = modelFilters();
@@ -2450,8 +2487,10 @@ function PhotoWallApp() {
         excludeFilters: exclude,
         deviceId: effectiveSession?.device?.device_id || '',
         preferenceRevisionId: preferenceProfile?.activeRevisionId || '',
+        selectionSources: selectionSources(photoSync),
       });
     } catch (autoError) {
+      if (UNIFIED_SELECTION) throw autoError;
       // During the rolling upgrade, old production nodes may not yet expose
       // the `auto` layout endpoint.  Keep the user on the model-led flow and
       // select a safe internal layout rather than bringing back a template UI.
@@ -3124,7 +3163,7 @@ function PhotoWallApp() {
                   <Text style={styles.landingNote}>{preferenceProfile?.onboardingCompleted ? '已保存的偏好和更新安排会继续保留。' : '先由我们自然安排，每天 20:00 更新。\n偏好与更新时间，之后随时可以调整。'}</Text>
                   <View style={styles.landingPreparation}><Text style={styles.landingPreparationTitle}>连接前，准备好</Text><Text style={styles.landingNote}>已通电的照片墙 · 家中的 2.4 GHz Wi-Fi</Text></View>
                   <ActionButton onPress={beginOnboardingAuthorization}>{photoAllowed ? '继续连接照片墙' : '授权照片，开始使用'}</ActionButton>
-                  <Text style={styles.landingFootnote}>{photoAllowed ? permissionDescription : '可允许全部或部分照片，随时在系统设置中调整。'}</Text>
+                  <Text style={styles.landingFootnote}>{photoAllowed ? permissionDescription : '可允许全部或部分照片，随时在系统设置中调整。'}{UNIFIED_SELECTION ? '\n连接后，本机会先筛选已授权照片，合格候选自动上传用于云端识别与照片墙生成。' : ''}</Text>
                 </View>
               ) : onboardingStep === 'device' ? (
                 <>
@@ -3162,8 +3201,6 @@ function PhotoWallApp() {
             <>
 
               <ModelPreferenceGroup kind="people" title="想多看到谁？" description="来自已识别的人物与宠物。点头像增加出现机会，再点取消；未点选内容仍由模型自然安排。" items={preferencePeople} rules={visiblePreferenceRules} onChange={setModelPreference} sample={selectionIsSample} readOnly={!editingPreferences} disabled={!canEditModelPreferences} peopleExpanded={preferencePeopleExpanded} onTogglePeopleExpanded={() => setPreferencePeopleExpanded(current => !current)} />
-              {initialPreferencePreparation.state === 'working' ? <Text style={styles.settingHint}>正在整理已授权照片，你可以先回到日历。</Text> : null}
-              {initialPreferencePreparation.state === 'failed' ? <ContextCard title="照片稍后继续整理" description="当前连接和已保存的偏好不受影响。" actionLabel="重新整理" onAction={() => { onboardingPreparationRef.current = ''; startInitialPreferencePreparation(); }} /> : null}
               {!preferencePeople.length ? <ContextCard title="正在补充人物与宠物" description="人物分组准备好后会出现在这里；不需要手动筛选照片。" /> : null}
               <ModelPreferenceGroup kind="themes" title="想多看到哪些照片？" description="选中的主题会增加出现机会；不选择也会自动安排。" items={preferencePlacesAndTopics} rules={visiblePreferenceRules} onChange={setModelPreference} sample={selectionIsSample} readOnly={!editingPreferences} disabled={!canEditModelPreferences} />
               {!preferencePlacesAndTopics.length ? <ContextCard title="正在整理回忆主题" description="旅行、日常、风景等主题会在照片整理后自动出现。" /> : null}
@@ -3552,7 +3589,7 @@ function PhotoWallApp() {
             <View style={styles.settingCard}>
               <Text style={styles.settingLabel}>照片权限</Text>
               <Text style={styles.settingValue}>{permissionDescription}</Text>
-              <Text style={styles.settingHint}>{photoSync ? `当前范围：${photoSync.title}（本机优先，失败时保留兼容回退）` : '尚未建立本机照片索引。原图不会因授权自动上传。'}</Text>
+              <Text style={styles.settingHint}>{UNIFIED_SELECTION ? `当前范围：${photoSync?.title || '所有已授权照片'}。本机先筛选，合格候选自动上传用于云端识别与生成；中断后继续，不上传被过滤的照片。` : photoSync ? `当前范围：${photoSync.title}（本机优先，失败时保留兼容回退）` : '尚未建立本机照片索引。原图不会因授权自动上传。'}</Text>
               <ActionButton
                 secondary
                 onPress={startAutomaticDiscovery}
@@ -3632,7 +3669,7 @@ function PhotoWallApp() {
 
         {notice ? <View style={styles.notice}><Text style={styles.noticeText}>✓ {notice}</Text></View> : null}
         {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View> : null}
-        {!IS_WEB_PREVIEW ? <Text style={styles.footer}>照片仅在你选择相簿并主动同步时上传。</Text> : null}
+        {!IS_WEB_PREVIEW ? <Text style={styles.footer}>{UNIFIED_SELECTION ? '仅在授权范围内筛选，合格候选自动上传用于识别与生成。' : '照片仅在你选择相簿并主动同步时上传。'}</Text> : null}
         </Animated.View>
       </ScrollView>
 

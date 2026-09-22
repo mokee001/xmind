@@ -51,3 +51,13 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 提交任务 `a8314c59-9d49-42ae-897a-5c794bcaa96f` 为 FINISHED，无错误。核对时间 2026-09-16 17:57（上海）。测试者可从 TestFlight 更新；没有宣称特定手机已自动安装。
 - UI 验证为真实 App 的网页导出，硬件连接使用实际函数回归；本轮未现场重新连接实体设备。
 - 前后源码快照、IPA SHA256、回归与 UI 检查、Apple 和测试组证据见该目录 `release-status.json`。
+
+## 2026-09-22 · 统一选片 App 1.3.7（30）
+
+- 用户授权真实选片链路统一接入并更新安装包，随后自主将服务器升级为 4 vCPU / 8 GiB。
+- 新包独立快照提交 `7bdd297c34f261abe047cf867f5b007f40541983`，归档目录 `outputs/unified-selection-20260922/`。
+- IPA `photo-wall-unified-selection.ipa`，SHA-256 `77db49e7ff2380c2d4c17ad3a76a77207885fea41aa2bff812f12071a6b34d8c`；版本 1.3.7 / 构建 30、签名、两个照片处理原生模块及 `observeFileAsync` 均已核验，Hermes 新契约开关确认为 true。
+- 提交 `044c8af4-2987-4015-bf6d-6507f7ef9f38` 为 FINISHED；Apple 构建 `22896d4f-7c8e-4e30-91dc-2d82d78fae0c` 于 16:41:37（上海）核对为 VALID / IN_BETA_TESTING，未过期，精确关联原 Team (Expo) 内部组。
+- 手机从 TestFlight → Echooo 更新。没有自动安装到具体手机，也没有修改固件。
+- 独立后端网关已部署，新契约流量进入 8001，其余请求仍保留原 8000；固定模型完整运行仅使用三张公开测试图。详情及回滚见 `docs/unified-selection-rollout-20260922.md`，不将此结果当作私人图库质量或实体上屏验收。
+- 主项目配置已同步为构建 30，冻结的构建源码仍保留 EAS 远程递增前的 buildNumber 29；以实际签名包及 Apple 为准，不修改发布快照。

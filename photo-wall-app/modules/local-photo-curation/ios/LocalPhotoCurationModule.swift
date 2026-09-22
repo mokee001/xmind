@@ -4,10 +4,45 @@ import Foundation
 import Photos
 import UIKit
 import Vision
+import ImageIO
 
 public final class LocalPhotoCurationModule: Module {
   public func definition() -> ModuleDefinition {
     Name("LocalPhotoCuration")
+
+    AsyncFunction("observeFileAsync") { (uri: String) throws -> [String: Any] in
+      guard let url = URL(string: uri), url.isFileURL,
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+        throw NSError(domain: "LocalPhotoCuration", code: 2, userInfo: [NSLocalizedDescriptionKey: "照片原文件不可用"])
+      }
+      func image(_ size: Int) throws -> CGImage {
+        guard let result = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+          kCGImageSourceCreateThumbnailFromImageAlways: true,
+          kCGImageSourceCreateThumbnailWithTransform: true,
+          kCGImageSourceThumbnailMaxPixelSize: size
+        ] as CFDictionary) else { throw NSError(domain: "LocalPhotoCuration", code: 3) }
+        return result
+      }
+      // Match the confirmed baseline's public Vision revisions and input sizes.
+      let classification = VNClassifyImageRequest()
+      classification.revision = VNClassifyImageRequestRevision1
+      try VNImageRequestHandler(cgImage: image(640), orientation: .up).perform([classification])
+      let faces = VNDetectFaceRectanglesRequest()
+      faces.revision = VNDetectFaceRectanglesRequestRevision3
+      let humans = VNDetectHumanRectanglesRequest()
+      humans.revision = VNDetectHumanRectanglesRequestRevision2
+      humans.upperBodyOnly = true
+      try VNImageRequestHandler(cgImage: image(1600), orientation: .up).perform([faces, humans])
+      func region(_ observation: VNDetectedObjectObservation) -> [String: Any] {
+        let box = observation.boundingBox
+        return ["box": [box.minX, 1-box.maxY, box.maxX, 1-box.minY], "confidence": observation.confidence]
+      }
+      return ["version": 1,
+              "labels": (classification.results ?? []).map { ["identifier": $0.identifier, "confidence": $0.confidence] as [String: Any] },
+              "faces": faces.results?.count ?? 0,
+              "face_regions": (faces.results ?? []).map { region($0) },
+              "humans": (humans.results ?? []).map { region($0) }]
+    }
 
     AsyncFunction("curateAsync") { (assetIDs: [String], options: [String: Double]) throws -> [String: Any] in
       let permission = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -27,6 +62,7 @@ public final class LocalPhotoCurationModule: Module {
       var accepted: [[String: Any]] = []
       var rejected: [String: Int] = [:]
       var unavailable = 0
+      var reviewedIDs: [String] = []
 
       for assetID in assetIDs {
         guard let asset = assetByID[Self.normalizedIdentifier(assetID)] ?? assetByID[assetID] else {
@@ -34,6 +70,7 @@ public final class LocalPhotoCurationModule: Module {
           continue
         }
         if asset.mediaSubtypes.contains(.photoScreenshot) {
+          reviewedIDs.append(assetID)
           rejected["screenshot", default: 0] += 1
           continue
         }
@@ -41,6 +78,7 @@ public final class LocalPhotoCurationModule: Module {
           unavailable += 1
           continue
         }
+        reviewedIDs.append(assetID)
 
         let signals = Self.analyze(image: image, textLineLimit: textLineLimit)
         if let reason = signals.rejectionReason {
@@ -79,6 +117,7 @@ public final class LocalPhotoCurationModule: Module {
       let candidates = Array(accepted.prefix(maximumCandidates))
       return [
         "version": 1,
+        "reviewedIds": reviewedIDs,
         "engine": "apple-vision-local-v1",
         "inspected": assetIDs.count,
         "analyzed": max(0, assetIDs.count - unavailable),

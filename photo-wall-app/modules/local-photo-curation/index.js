@@ -9,6 +9,11 @@ export function isLocalPhotoCurationAvailable() {
   return Boolean(NativeCuration);
 }
 
+export async function observeLocalPhotoFile(uri) {
+  if (!NativeCuration?.observeFileAsync) throw new Error('当前安装包缺少统一选片的照片分析模块');
+  return NativeCuration.observeFileAsync(uri);
+}
+
 export async function curateLocalPhotos(assetIds, options = {}) {
   if (!NativeCuration) throw new Error('当前安装包不包含设备端照片识别模块');
   return NativeCuration.curateAsync(assetIds, {
