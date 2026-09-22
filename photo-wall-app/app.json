@@ -3,17 +3,41 @@
     "name": "手帐照片墙",
     "slug": "photo-wall-app",
     "version": "1.0.0",
+    "scheme": "photowall",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "bundleIdentifier": "cn.mokeedesign.photowall",
+      "buildNumber": "1",
       "supportsTablet": true,
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "需要读取相册，自动挑选照片生成照片墙并投屏。"
+        "NSPhotoLibraryUsageDescription": "需要读取相册，自动挑选照片生成照片墙并投屏。",
+        "NSLocalNetworkUsageDescription": "需要在家庭局域网中发现并连接你的墨水屏。",
+        "NSBonjourServices": [
+          "_photowall._tcp",
+          "_http._tcp"
+        ],
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "permissions": ["READ_MEDIA_IMAGES", "READ_EXTERNAL_STORAGE"],
+      "package": "cn.mokeedesign.photowall",
+      "versionCode": 1,
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,7 +56,14 @@
           "savePhotosPermission": "需要访问相册以读取照片。",
           "isAccessMediaLocationEnabled": true
         }
-      ]
-    ]
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0116e4c2-d42b-4017-8e65-45858e8c9d9c"
+      }
+    },
+    "owner": "mokeee"
   }
 }

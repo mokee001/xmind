@@ -19,15 +19,23 @@ from __future__ import annotations
 
 import datetime
 import glob
+import hashlib
+import hmac
 import io
+import ipaddress
 import json
 import os
 import random
+import re
+import secrets
+import shutil
 import sys
 import time
 from typing import Any, Optional
 
 from fastapi import FastAPI, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -38,14 +46,16 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 import engine  # noqa: E402
 
-from . import dedup, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
+from . import dedup, eink_push, faces, selector, stickers, store, tagger, templates_mgr, trainer  # noqa: E402
 from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
 
-PHOTOS_DIR = os.path.join(_ROOT, "photos")
-OUTPUT_DIR = os.path.join(_ROOT, "output")
+_DATA_DIR = os.environ.get("PHOTOWALL_DATA_DIR", _ROOT)
+PHOTOS_DIR = os.path.join(_DATA_DIR, "photos")
+OUTPUT_DIR = os.path.join(_DATA_DIR, "output")
 TEMPLATES_DIR = os.path.join(_ROOT, "templates")
 WEBAPP_DIR = os.path.join(_ROOT, "webapp")
 DISPLAY_DIR = os.path.join(_ROOT, "display")
+EINK_UI_DIR = os.path.join(_ROOT, "eink")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(stickers.STICKERS_DIR, exist_ok=True)
@@ -56,6 +66,14 @@ except Exception:
     pass
 
 app = FastAPI(title="手帐照片墙")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in os.environ.get(
+        "PHOTOWALL_CORS_ORIGINS", "http://localhost:8081,http://127.0.0.1:8081"
+    ).split(",") if origin.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ---------- 双端互联：管理已连接的展示屏 ----------
@@ -141,6 +159,34 @@ class LabelSample(BaseModel):
 class LabelReq(BaseModel):
     wall_id: str = ""
     samples: list[LabelSample]
+
+
+class DeviceBootstrapReq(BaseModel):
+    device_id: str
+    pairing_code: str
+    setup_token: str = ""
+    ip: str = ""
+    firmware_version: str = ""
+    device_token: str = ""
+
+
+class DeviceClaimReq(BaseModel):
+    pairing_code: str
+    name: str = "客厅照片墙"
+
+
+class DeviceAutoClaimReq(BaseModel):
+    device_id: str
+    setup_token: str
+    name: str = "客厅照片墙"
+
+
+class DeviceStatusReq(BaseModel):
+    state: str
+    revision: str = ""
+    progress: float = 0.0
+    error: str = ""
+    ip: str = ""
 
 
 # ---------- 链路1：相册授权 ----------
@@ -797,6 +843,553 @@ def frame(w: int = 320, h: int = 480) -> Response:
     return Response(content=buf.getvalue(), media_type="image/jpeg")
 
 
+def _spectra6_palette() -> Image.Image:
+    """创建 E Ink Spectra 6 的六色调色板：黑、白、红、黄、绿、蓝。
+    面板不是连续 RGB 彩屏；后端先收敛颜色，固件只需按厂商色码送屏即可。
+    """
+    palette = Image.new("P", (1, 1))
+    colors = [
+        (0, 0, 0),        # black
+        (255, 255, 255),  # white
+        (220, 30, 30),    # red
+        (242, 201, 32),   # yellow
+        (35, 142, 70),    # green
+        (35, 92, 184),    # blue
+    ]
+    raw = [value for color in colors for value in color]
+    palette.putpalette(raw + [0] * (768 - len(raw)))
+    return palette
+
+
+@app.get("/api/frame_eink.png")
+def frame_eink() -> Response:
+    """给 13.3 寸 E Ink Spectra 6 用的原生画面。
+
+    固定输出 1600×1200 横屏 PNG，并用 Floyd-Steinberg 抖动压到 E6 的六种可显示
+    颜色。它和 /api/frame.jpg 完全独立，保留旧 LCD 的 800×480 JPEG 传输路径。
+    """
+    w, h = 1600, 1200
+    last = store.load("last_wall", None)
+    if not last:
+        img = Image.new("RGB", (w, h), "#FFFFFF")
+    else:
+        src_path = os.path.join(OUTPUT_DIR, os.path.basename(last["image_url"]))
+        if not os.path.exists(src_path):
+            img = Image.new("RGB", (w, h), "#FFFFFF")
+        else:
+            src = Image.open(src_path).convert("RGB")
+            from PIL import ImageOps
+            # 先保持原图比例，避免把现有 16:9 模板拉伸；4:3 墨水屏多出的区域用模板背景补齐。
+            pad_color = src.getpixel((0, 0))
+            fitted = ImageOps.contain(src, (w, h), method=Image.LANCZOS)
+            img = Image.new("RGB", (w, h), pad_color)
+            img.paste(fitted, ((w - fitted.width) // 2, (h - fitted.height) // 2))
+
+    # Spectra 6 是有限色面板；抖动能让照片的明暗/细节在六色中保留得更自然。
+    eink = img.quantize(palette=_spectra6_palette(), dither=Image.Dither.FLOYDSTEINBERG)
+    buf = io.BytesIO()
+    eink.save(buf, format="PNG", optimize=True)
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.post("/api/eink/upload")
+async def eink_upload(
+    file: UploadFile,
+    host: str = "192.168.1.200",
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+) -> dict:
+    """上传单张照片，并通过微雪官方 Wi-Fi Loader 协议直接刷新 13.3E6。"""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return JSONResponse(status_code=400, content={"error": "墨水屏地址必须是局域网 IP"})
+    if not address.is_private:
+        return JSONResponse(status_code=400, content={"error": "只允许局域网墨水屏地址"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.verify()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别该图片格式"})
+
+    preview_name = "eink_live_preview.png"
+    try:
+        return eink_push.start_upload(
+            image_bytes,
+            host=host,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            enhancement=enhancement,
+            preview_path=os.path.join(OUTPUT_DIR, preview_name),
+            preview_url=f"/output/{preview_name}",
+        )
+    except RuntimeError as exc:
+        return JSONResponse(status_code=409, content={"error": str(exc)})
+
+
+@app.post("/api/eink/prepare")
+async def eink_prepare(
+    file: UploadFile,
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+) -> Response:
+    """把照片转换为手机可下载并直传屏幕的 PWE6 六色帧，不连接局域网设备。"""
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        preview, panel_codes = eink_push.prepare_image(
+            image_bytes,
+            dither=dither,
+            fit=fit,
+            rotation=rotation,
+            enhancement=enhancement,
+        )
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别或转换该图片"})
+
+    preview.save(os.path.join(OUTPUT_DIR, "eink_direct_preview.png"), format="PNG", optimize=True)
+    frame = eink_push.build_panel_frame(panel_codes)
+    return Response(
+        content=frame,
+        media_type="application/vnd.photowall.pwe6",
+        headers={
+            "Content-Disposition": 'attachment; filename="display.pwe6"',
+            "X-Panel-Width": str(eink_push.WIDTH),
+            "X-Panel-Height": str(eink_push.HEIGHT),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.get("/api/eink/status")
+def eink_status() -> dict:
+    """查询当前照片转换、传输与全刷进度。"""
+    return eink_push.status()
+
+
+# ---------- 无 Mac 设备链路：App 发布，屏幕主动拉取 ----------
+
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
+_PAIRING_CODE_RE = re.compile(r"^\d{6}$")
+DEVICE_FRAMES_DIR = os.path.join(OUTPUT_DIR, "device_frames")
+os.makedirs(DEVICE_FRAMES_DIR, exist_ok=True)
+
+
+def _devices() -> dict[str, dict[str, Any]]:
+    data = store.load("eink_devices", {})
+    return data if isinstance(data, dict) else {}
+
+
+def _public_device(device: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in device.items() if key not in ("device_token", "account_token")}
+
+
+def _device_auth(device: dict[str, Any], token: str) -> bool:
+    expected = str(device.get("device_token", ""))
+    return bool(expected and token and secrets.compare_digest(expected, token))
+
+
+def _account_auth(device: dict[str, Any], token: str) -> bool:
+    expected = str(device.get("account_token", ""))
+    return bool(expected and token and secrets.compare_digest(expected, token))
+
+
+def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
+    """Build a deterministic July 2026 calendar plan from the existing album.
+
+    The normal selector remains the only photo-ranking authority.  Calendar
+    rendering is deliberately a downstream layout step, so it cannot change
+    daily-wall preference scores or require a Qwen credential.
+    """
+    by_day: dict[int, list[dict]] = {day: [] for day in range(1, 32)}
+    for photo in photos:
+        try:
+            taken = datetime.datetime.fromtimestamp(float(photo.get("taken_at")))
+        except (TypeError, ValueError, OSError, OverflowError):
+            continue
+        if (taken.year, taken.month) == (2026, 7) and 1 <= taken.day <= 31:
+            by_day[taken.day].append(photo)
+
+    selected_count = 0
+    days: list[dict[str, Any]] = []
+    for day in range(1, 32):
+        candidates = by_day[day]
+        if not candidates:
+            days.append({
+                "day": day,
+                "sources": [],
+                "treatment": "blank",
+                "reason": "当天没有已同步的相机照片，保留留白。",
+                "placements": [],
+            })
+            continue
+
+        chosen = selector.rank_photos(candidates)[0]
+        selected_count += 1
+        days.append({
+            "day": day,
+            "sources": [chosen["path"]],
+            "treatment": "proportional_full_image",
+            "reason": "按现有质量、美观度和偏好综合评分选出的当天代表照片。",
+            "selection": {
+                "filename": chosen.get("filename", ""),
+                "final_score": chosen.get("final_score", 0.0),
+            },
+            "placements": [{
+                "kind": "photo",
+                "fit": "cover",
+                "box": [0.01, 0.01, 0.98, 0.98],
+                "focal": [0.5, 0.5],
+                "rotation": 0,
+            }],
+        })
+
+    return {
+        "schema_version": "1.0",
+        "calendar": {
+            "year": 2026,
+            "month": 7,
+            "week_start": "sunday",
+            "template": "calendar_template_v1",
+        },
+        "decision": {
+            "backend": "photowall_selector_v1",
+            "api_used": False,
+            "cutout_style": {"white_outline": False, "shadow": False},
+        },
+        "days": days,
+    }, selected_count
+
+
+def _queue_device_image(device: dict[str, Any], image_bytes: bytes) -> tuple[str, str]:
+    """Convert an image to PWE6 and make it the device's next cloud-pulled frame."""
+    preview, panel_codes = eink_push.prepare_image(
+        image_bytes,
+        dither=True,
+        fit="contain",
+        rotation=0,
+        enhancement="standard",
+    )
+    revision = str(time.time_ns())
+    device_id = str(device["device_id"])
+    device_dir = os.path.join(DEVICE_FRAMES_DIR, device_id)
+    os.makedirs(device_dir, exist_ok=True)
+    frame_path = os.path.join(device_dir, f"{revision}.pwe6")
+    preview_path = os.path.join(device_dir, f"{revision}.png")
+    with open(frame_path, "wb") as output:
+        output.write(eink_push.build_panel_frame(panel_codes))
+    preview.save(preview_path, format="PNG", optimize=True)
+    device.update({
+        "revision": revision,
+        "frame_path": frame_path,
+        "preview_url": f"/output/device_frames/{device_id}/{revision}.png",
+        "published_at": time.time(),
+        "state": "queued",
+        "progress": 0.0,
+        "error": "",
+    })
+    return revision, preview_path
+
+
+def _materialize_calendar_sources(plan: dict[str, Any], run_dir: str) -> None:
+    """Copy selected originals into date-prefixed proxies required by calendar QA."""
+    proxy_dir = os.path.join(run_dir, "proxies")
+    os.makedirs(proxy_dir, exist_ok=True)
+    for day in plan["days"]:
+        sources = list(day.get("sources", []))
+        if not sources:
+            continue
+        source = sources[0]
+        if not os.path.isfile(source):
+            raise OSError(f"找不到日历候选照片：{source}")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", os.path.basename(source))
+        proxy_path = os.path.join(proxy_dir, f"2026-07-{int(day['day']):02d}__{safe_name}")
+        shutil.copy2(source, proxy_path)
+        day["sources"] = [proxy_path]
+
+
+@app.post("/api/devices/bootstrap")
+def device_bootstrap(req: DeviceBootstrapReq) -> Response:
+    """设备连上 Wi-Fi 后首次登记；后续启动使用已保存的 device token 报到。"""
+    if not _DEVICE_ID_RE.fullmatch(req.device_id) or not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+        return JSONResponse(status_code=400, content={"error": "设备编号或配对码格式无效"})
+
+    devices_data = _devices()
+    existing = devices_data.get(req.device_id)
+    if existing and existing.get("device_token") and not _device_auth(existing, req.device_token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
+
+    now = time.time()
+    device = existing or {
+        "device_id": req.device_id,
+        "device_token": secrets.token_urlsafe(32),
+        "account_token": "",
+        "claimed": False,
+        "name": "PhotoWall E6",
+        "created_at": now,
+        "revision": "",
+        "displayed_revision": "",
+    }
+    device.update({
+        "pairing_code": req.pairing_code,
+        "ip": req.ip,
+        "firmware_version": req.firmware_version,
+        "last_seen": now,
+        "state": "online",
+        "error": "",
+    })
+    setup_token = req.setup_token.strip()
+    if not device.get("claimed") and setup_token:
+        token_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+        if device.get("setup_token_digest") != token_digest:
+            device["setup_token_digest"] = token_digest
+            device["setup_token_expires_at"] = now + 600
+    devices_data[req.device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({
+        "device_id": req.device_id,
+        "device_token": device["device_token"],
+        "claimed": bool(device.get("claimed")),
+        "poll_seconds": 15,
+    })
+
+
+@app.post("/api/devices/claim")
+def device_claim(req: DeviceClaimReq) -> Response:
+    """App 使用屏幕/机身上的六位码绑定最近在线的设备。"""
+    if not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+        return JSONResponse(status_code=400, content={"error": "请输入六位配对码"})
+    devices_data = _devices()
+    matches = [d for d in devices_data.values() if d.get("pairing_code") == req.pairing_code]
+    if not matches:
+        return JSONResponse(status_code=404, content={"error": "设备尚未联网，请完成配网后重试"})
+    device = max(matches, key=lambda item: float(item.get("last_seen", 0)))
+    if time.time() - float(device.get("last_seen", 0)) > 300:
+        return JSONResponse(status_code=409, content={"error": "设备已离线，请确认配网状态"})
+    if not device.get("account_token"):
+        device["account_token"] = secrets.token_urlsafe(32)
+    device["claimed"] = True
+    device["name"] = req.name.strip()[:40] or "客厅照片墙"
+    devices_data[device["device_id"]] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+
+
+@app.post("/api/devices/auto-claim")
+def device_auto_claim(req: DeviceAutoClaimReq) -> Response:
+    """Bind a display using the single-use token read from its local setup AP."""
+    setup_token = req.setup_token.strip()
+    if not _DEVICE_ID_RE.fullmatch(req.device_id) or len(setup_token) < 24:
+        return JSONResponse(status_code=400, content={"error": "设备自动绑定信息无效"})
+
+    devices_data = _devices()
+    device = devices_data.get(req.device_id)
+    if not device:
+        return JSONResponse(status_code=404, content={"error": "设备尚未联网，请完成 Wi-Fi 配置后重试"})
+    if time.time() - float(device.get("last_seen", 0)) > 300:
+        return JSONResponse(status_code=409, content={"error": "设备已离线，请重新连接设备热点后重试"})
+    expected_digest = str(device.get("setup_token_digest", ""))
+    expires_at = float(device.get("setup_token_expires_at", 0))
+    supplied_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+    if not expected_digest or time.time() > expires_at or not hmac.compare_digest(expected_digest, supplied_digest):
+        return JSONResponse(status_code=403, content={"error": "自动绑定已过期，请重新开始设备配网"})
+
+    if not device.get("account_token"):
+        device["account_token"] = secrets.token_urlsafe(32)
+    device["claimed"] = True
+    device["name"] = req.name.strip()[:40] or "客厅照片墙"
+    device.pop("setup_token_digest", None)
+    device.pop("setup_token_expires_at", None)
+    devices_data[req.device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+
+
+@app.get("/api/devices")
+def device_list(x_account_token: str = Header(default="")) -> Response:
+    devices_data = _devices()
+    visible = [_public_device(d) for d in devices_data.values() if _account_auth(d, x_account_token)]
+    return JSONResponse({"devices": visible})
+
+
+@app.post("/api/devices/{device_id}/publish")
+async def device_publish(
+    device_id: str,
+    file: UploadFile,
+    dither: bool = True,
+    fit: str = "contain",
+    rotation: int = 0,
+    enhancement: str = "standard",
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """App 上传照片，云端转换为 PWE6 并设置为设备下一待显示版本。"""
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+    if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+        return JSONResponse(status_code=400, content={"error": "图片适配参数无效"})
+    if enhancement not in ("none", "standard", "strong"):
+        return JSONResponse(status_code=400, content={"error": "显色增强参数无效"})
+
+    image_bytes = await file.read()
+    if not image_bytes or len(image_bytes) > 30 * 1024 * 1024:
+        return JSONResponse(status_code=400, content={"error": "请选择不超过 30MB 的图片"})
+    try:
+        preview, panel_codes = eink_push.prepare_image(
+            image_bytes, dither=dither, fit=fit, rotation=rotation, enhancement=enhancement)
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "无法识别或转换该图片"})
+
+    revision = str(time.time_ns())
+    device_dir = os.path.join(DEVICE_FRAMES_DIR, device_id)
+    os.makedirs(device_dir, exist_ok=True)
+    frame_path = os.path.join(device_dir, f"{revision}.pwe6")
+    preview_path = os.path.join(device_dir, f"{revision}.png")
+    frame_data = eink_push.build_panel_frame(panel_codes)
+    with open(frame_path, "wb") as output:
+        output.write(frame_data)
+    preview.save(preview_path, format="PNG", optimize=True)
+
+    device.update({
+        "revision": revision,
+        "frame_path": frame_path,
+        "preview_url": f"/output/device_frames/{device_id}/{revision}.png",
+        "published_at": time.time(),
+        "state": "queued",
+        "progress": 0.0,
+        "error": "",
+    })
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"device": _public_device(device), "revision": revision})
+
+
+@app.post("/api/devices/{device_id}/calendar/july-2026/publish")
+async def device_publish_july_calendar(
+    device_id: str,
+    x_account_token: str = Header(default=""),
+) -> Response:
+    """Generate a QA-approved July 2026 calendar from the synced album and queue it.
+
+    Only photos genuinely captured in July 2026 are eligible. This prevents an
+    attractive but misleading calendar assembled from unrelated dates.
+    """
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _account_auth(device, x_account_token):
+        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
+
+    photos = store.load("photos", []) or _tag_all()
+    photos, _ = dedup.deduplicate(photos)
+    plan, selected_count = _july_calendar_plan(photos)
+    if not selected_count:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "没有已同步的 2026 年 7 月相机照片，暂时无法生成七月日历"},
+        )
+
+    from calendar_engine import GenerationError, generate_july_calendar
+
+    run_id = f"july-2026-{time.time_ns()}"
+    run_dir = os.path.join(OUTPUT_DIR, "calendar_runs", device_id, run_id)
+    os.makedirs(run_dir, exist_ok=True)
+    plan_path = os.path.join(run_dir, "treatment_plan.json")
+
+    try:
+        _materialize_calendar_sources(plan, run_dir)
+        with open(plan_path, "w", encoding="utf-8") as output:
+            json.dump(plan, output, ensure_ascii=False, indent=2)
+        result = generate_july_calendar(run_dir, final_name="calendar.png", preview_name="preview.jpg")
+        image_bytes = result.calendar_path.read_bytes()
+        revision, _ = _queue_device_image(device, image_bytes)
+    except (GenerationError, OSError, ValueError) as exc:
+        return JSONResponse(status_code=500, content={"error": f"七月日历生成失败：{exc}"})
+
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({
+        "device": _public_device(device),
+        "revision": revision,
+        "calendar": {
+            "year": 2026,
+            "month": 7,
+            "selected_day_count": selected_count,
+            "qa": result.qa_report.get("status"),
+        },
+    })
+
+
+@app.get("/api/devices/{device_id}/next")
+def device_next(device_id: str, revision: str = "", token: str = "") -> Response:
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _device_auth(device, token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    device["last_seen"] = time.time()
+    device["state"] = "online" if not device.get("revision") else device.get("state", "online")
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    target = str(device.get("revision", ""))
+    if not target or target == revision:
+        return Response(status_code=204)
+    return JSONResponse({
+        "revision": target,
+        "size": eink_push.FRAME_HEADER.size + (eink_push.WIDTH * eink_push.HEIGHT // 2),
+        "frame_url": f"/api/devices/{device_id}/frame/{target}?token={token}",
+    })
+
+
+@app.get("/api/devices/{device_id}/frame/{revision}")
+def device_frame(device_id: str, revision: str, token: str = "") -> Response:
+    device = _devices().get(device_id)
+    if not device or not _device_auth(device, token) or str(device.get("revision")) != revision:
+        return JSONResponse(status_code=401, content={"error": "画面授权无效"})
+    frame_path = str(device.get("frame_path", ""))
+    if not frame_path or not os.path.isfile(frame_path):
+        return JSONResponse(status_code=404, content={"error": "画面文件不存在"})
+    return FileResponse(frame_path, media_type="application/vnd.photowall.pwe6", filename="display.pwe6")
+
+
+@app.post("/api/devices/{device_id}/status")
+def device_status(device_id: str, req: DeviceStatusReq, token: str = "") -> Response:
+    devices_data = _devices()
+    device = devices_data.get(device_id)
+    if not device or not _device_auth(device, token):
+        return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+    device.update({
+        "state": req.state[:24],
+        "progress": max(0.0, min(float(req.progress), 100.0)),
+        "error": req.error[:240],
+        "last_seen": time.time(),
+        "ip": req.ip or device.get("ip", ""),
+    })
+    if req.state == "displayed" and req.revision == str(device.get("revision", "")):
+        device["displayed_revision"] = req.revision
+    devices_data[device_id] = device
+    store.save("eink_devices", devices_data)
+    return JSONResponse({"ok": True})
+
+
 @app.get("/photos/{name}")
 def serve_photo(name: str) -> FileResponse:
     return FileResponse(os.path.join(PHOTOS_DIR, name))
@@ -826,9 +1419,23 @@ def thumb(name: str, s: int = 160) -> Response:
 app.include_router(content.router)
 
 
+app.mount("/eink", StaticFiles(directory=EINK_UI_DIR, html=True), name="eink")
 app.mount("/studio", StaticFiles(directory=os.path.join(_ROOT, "studio"), html=True), name="studio")
 app.mount("/app", StaticFiles(directory=WEBAPP_DIR, html=True), name="app")
 app.mount("/screen", StaticFiles(directory=DISPLAY_DIR, html=True), name="screen")
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    storage_ready = all(
+        os.path.isdir(directory) and os.access(directory, os.R_OK | os.W_OK)
+        for directory in (PHOTOS_DIR, OUTPUT_DIR, store._BASE)
+    )
+    payload = {
+        "status": "ok" if storage_ready else "degraded",
+        "storage_ready": storage_ready,
+    }
+    return JSONResponse(content=payload, status_code=200 if storage_ready else 503)
 
 
 @app.get("/")

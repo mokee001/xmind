@@ -8,6 +8,14 @@
 photos/
 output/
 backend/data/
+calendar_runs/
+runs/
+outputs/
+release/
+originals/
+proxies/
+contact_sheets/
+api_decisions/
 *.jpg
 *.jpeg
 *.heic
@@ -22,6 +30,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+.pio/
 
 # --- 依赖包（各自 install，不入库）---
 node_modules/
@@ -38,6 +47,11 @@ web-build/
 .venv/
 venv/
 env/
+.env
+.env.*
+*.key
+*.secret
+credentials.json
 
 # --- 编辑器 / 系统 ---
 .idea/

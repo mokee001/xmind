@@ -11,7 +11,7 @@ import threading
 from typing import Any
 
 _LOCK = threading.Lock()
-_BASE = os.path.join(os.path.dirname(__file__), "data")
+_BASE = os.environ.get("PHOTOWALL_STORE_DIR", os.path.join(os.path.dirname(__file__), "data"))
 os.makedirs(_BASE, exist_ok=True)
 
 

@@ -1,0 +1,153 @@
+{
+  "version": "1.0",
+  "source": "结构化提炼自 GPT Vision 已确认的 2026 年 7 月正例，不包含原始用户照片",
+  "objective": "把逐日合理的处理结果组织成有手帐拼贴感、轻重变化和呼吸感的整月版式",
+  "pipeline_position": "after_daily_ai_decisions_before_asset_execution",
+  "visual_families": {
+    "rectangular": [
+      "proportional_full_image",
+      "non_cell_ratio_image"
+    ],
+    "organic": [
+      "irregular_cutout",
+      "multi_irregular_cutout",
+      "irregular_cutout_with_text",
+      "circle_image",
+      "oval_image_with_cutout"
+    ],
+    "quiet": [
+      "blank",
+      "text_only",
+      "illustration_only",
+      "illustration_with_text"
+    ]
+  },
+  "monthly_rhythm": {
+    "maximum_consecutive_rectangular_cells": 2,
+    "target_rectangular_ratio": [0.30, 0.50],
+    "target_organic_ratio": [0.30, 0.50],
+    "target_quiet_ratio": [0.15, 0.30],
+    "minimum_blank_days": 4,
+    "recommended_blank_days": [5, 7],
+    "maximum_consecutive_blank_days": 1,
+    "row_rules": [
+      "每一行至少包含一种非矩形处理或一个文字、插画、留白格",
+      "不得用动态贴纸弥补连续方图造成的僵硬版式",
+      "同一行不得连续出现三个完整矩形照片",
+      "月底一行允许用较多抠图形成轻盈收尾，但主体中心仍归属原日期"
+    ]
+  },
+  "aesthetic_priority": [
+    "whole_month_rhythm",
+    "subject_readability",
+    "life_memory_value",
+    "shape_diversity",
+    "background_value",
+    "technical_safety"
+  ],
+  "semantic_profiles": [
+    {
+      "id": "environment_event_full_bleed",
+      "keywords": ["人物户外活动", "攀岩活动", "自然风景", "城市晚霞", "现场音乐演出"],
+      "treatment_mode": "proportional_full_image",
+      "placement_profile": "full_bleed",
+      "reason": "活动环境或风景本身属于记忆内容，使用完整画面建立版面重量。"
+    },
+    {
+      "id": "poster_preserve_ratio",
+      "keywords": ["电影海报", "影视海报", "专辑封面"],
+      "treatment_mode": "non_cell_ratio_image",
+      "placement_profile": "contained",
+      "reason": "海报标题、人物关系和原始比例需要完整保留。"
+    },
+    {
+      "id": "compact_coffee_circle",
+      "keywords": ["咖啡日常", "拉花咖啡", "咖啡杯"],
+      "treatment_mode": "circle_image",
+      "placement_profile": "circle_focus",
+      "reason": "杯口和拉花天然适合圆形聚焦，可在连续矩形照片之间形成节奏变化。"
+    },
+    {
+      "id": "market_collection_oval",
+      "keywords": ["市场购物", "购物战利品"],
+      "treatment_mode": "oval_image_with_cutout",
+      "placement_profile": "oval_focus",
+      "reason": "密集商品组合使用椭圆边界柔化四角，避免继续堆叠方形照片。"
+    },
+    {
+      "id": "paper_and_handheld_cutout",
+      "keywords": ["纸质记录", "手持卡片", "阅读记录", "手持 Kindle", "手持玩偶", "手持饮品"],
+      "treatment_mode": "irregular_cutout",
+      "placement_profile": "handheld_cutout",
+      "reason": "纸张、设备或饮品连同手部作为一个整体抠出，保留真实拿取动作。"
+    },
+    {
+      "id": "portrait_editorial_cutout",
+      "keywords": ["人物肖像", "人物旅行肖像"],
+      "treatment_mode": "irregular_cutout",
+      "placement_profile": "portrait_cutout",
+      "reason": "主体清楚的人物近景采用大尺寸抠图，比连续方形肖像更有手帐拼贴感。"
+    },
+    {
+      "id": "pet_relationship_cutout",
+      "keywords": ["宠物", "双宠物关系", "猫咪", "猫"],
+      "treatment_mode": "irregular_cutout",
+      "placement_profile": "pet_cutout",
+      "reason": "宠物应保留表情、身体姿态和多主体关系，不默认裁成头像圆图。"
+    },
+    {
+      "id": "food_object_cutout",
+      "keywords": ["聚餐食物", "食物日常", "刺身拼盘", "蛋饼"],
+      "treatment_mode": "irregular_cutout",
+      "placement_profile": "food_cutout",
+      "reason": "餐盘或多道菜作为一个食物组合抠出，用有机轮廓代替连续矩形餐桌照。"
+    }
+  ],
+  "no_photo_art_direction": {
+    "third_party_report_without_personal_emotion": {
+      "signals": ["朋友", "别人", "同事"],
+      "missing_personal_signals": ["我", "我的", "我们", "想", "喜欢", "难过", "开心"],
+      "treatment_mode": "blank",
+      "reason": "仅转述第三方事件、没有用户自身感受时不生成插画，避免把别人的经历画成用户当天事件。"
+    },
+    "personal_health_state": {
+      "signals": ["痛经", "疼", "生病", "发烧", "不舒服", "休息"],
+      "treatment_mode": "illustration_with_text",
+      "placement_profile": "illustration_with_text",
+      "illustration_category": "health.comfort",
+      "illustration_role": "mood",
+      "illustration_brief": "仅画热水袋靠着枕头的物件局部特写，最多两个物件，表现休息和自我照顾；单色深灰低细节手绘线描，透明背景；不要人物、手、脸或身体，不要完整房间场景",
+      "reason": "用户明确记录身体状态时，保留原话并用非写实的舒缓物件补充视觉线索。"
+    }
+  },
+  "placement_profiles": {
+    "full_bleed": {"box": [0.01, 0.01, 0.98, 0.98], "rotation_range": [0, 0]},
+    "contained": {"box": [0.05, 0.03, 0.90, 0.94], "rotation_range": [-3, 3]},
+    "circle_focus": {"box": [0.00, 0.05, 1.00, 0.90], "rotation_range": [0, 0]},
+    "oval_focus": {"box": [-0.01, 0.07, 1.02, 0.86], "rotation_range": [-3, 3]},
+    "default_cutout": {"box": [-0.06, -0.03, 1.12, 1.06], "rotation_range": [-5, 5]},
+    "handheld_cutout": {"box": [-0.08, -0.06, 1.16, 1.12], "rotation_range": [-5, 5]},
+    "portrait_cutout": {"box": [-0.10, -0.02, 1.20, 1.05], "rotation_range": [-3, 3]},
+    "pet_cutout": {"box": [-0.12, 0.06, 1.24, 0.92], "rotation_range": [-4, 4]},
+    "food_cutout": {"box": [-0.05, 0.03, 1.10, 0.94], "rotation_range": [-3, 3]},
+    "illustration_with_text": {
+      "illustration_box": [0.08, 0.03, 0.84, 0.60],
+      "text_box": [0.05, 0.70, 0.90, 0.22]
+    }
+  },
+  "overflow_rules": {
+    "cutout_center_must_remain_in_owner_cell": true,
+    "cutout_main_area_minimum_in_owner_cell": 0.65,
+    "date_number_overlap_allowed": false,
+    "neighbor_safe_rect_overlap_allowed": false,
+    "maximum_absolute_rotation_degrees": 10,
+    "white_outline_allowed": false,
+    "shadow_allowed": false
+  },
+  "decoration_after_layout": {
+    "dynamic_stickers_are_secondary": true,
+    "do_not_use_to_fix_rigid_composition": true,
+    "avoid_on_large_cutout": true,
+    "recommended_decorated_cells_per_month": [0, 4]
+  }
+}

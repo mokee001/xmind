@@ -9,6 +9,12 @@
 - 时间字段 `date` 是字符串，空串表示"由后端用今天"。
 - 标签（tags/filters）是英文小写词，如 `warm`、`food`、`person_1`。
 
+**GET `/healthz`** — 生产健康检查，不依赖照片、设备或账号状态。
+```json
+{ "status": "ok", "storage_ready": true }
+```
+当运行时照片、输出或存储目录不可读写时返回 `503`，并将 `status` 设为 `degraded`。
+
 ---
 
 ## 一、归属划分
@@ -19,6 +25,7 @@
 | `/api/generate` `/api/suggest_filters` | A | `backend/server.py` |
 | `/api/cluster_people` `/api/people` `/api/retag` `/api/smart_albums` | A | `backend/server.py` |
 | `/api/label` `/api/train` `/api/model` | A | `backend/server.py` |
+| `/api/devices/bootstrap` `/api/devices/auto-claim` | A | `backend/server.py` |
 | `/ws/display` `/output/{name}` `/api/frame.jpg` `/api/thumb/{name}` `/photos/{name}` | A | `backend/server.py` |
 | `/api/stickers` `/api/upload_sticker` `/api/sticker.png/{name}` | B | `backend/routers/content.py` |
 | `/api/templates` `/api/upload_template` `/api/delete_template` `/api/template_preview/{tid}.png` | B | `backend/routers/content.py` |
@@ -27,6 +34,19 @@
 ---
 
 ## 二、核心链路
+
+### 0. 无输入首次绑定（A）
+
+设备处于 `PhotoWall-XXXX` 配网热点时，App 从 `GET http://192.168.4.1/status`
+读取 `device_id` 和一次性 `setup_token`。用户完成设备网页 Wi-Fi 配置后，设备向
+云端 bootstrap；App 使用下列接口自动绑定，不需要输入配对码。
+
+**POST `/api/devices/auto-claim`** — Body：
+```json
+{ "device_id": "pwe6-90E5B1D6E300", "setup_token": "<32-char token>", "name": "客厅照片墙" }
+```
+令牌仅在设备 bootstrap 后有效 10 分钟，只能使用一次。成功返回 `device` 和
+`account_token`。原 `POST /api/devices/claim` 继续保留，作为手动恢复路径。
 
 ### 1. 相册授权 / 上传（A）
 
