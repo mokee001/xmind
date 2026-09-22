@@ -68,3 +68,15 @@ firmware/legacy/display_esp32/local_config.h
 #    stickers/*.png             <- B 的贴纸种子素材（如太大可改为忽略）
 #    photo-wall-app/  webapp/  studio/  display/  firmware/  README.md
 # ============================================================
+
+# Temporary Superdesign authoring files
+.superdesign/tmp/
+
+# Local build / verification artifacts (never portable deployment evidence)
+/build/
+.venv-*/
+*.ipa
+*.p12
+*.p8
+/deploy/unified-selection/production-ready.json
+/pid_list.json

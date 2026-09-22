@@ -114,3 +114,28 @@ python3 -m uvicorn backend.server:app --port 8000
 - 人物/宠物/场景的语义标签，MVP 用确定性占位实现（保证可复现、开箱即跑）。
 - 生产环境把 `_detect_semantic()` 换成真实模型即可（YOLOv8 检测 / CLIP 零样本 / 云端视觉 API），
   返回同样的 tag 列表，**上层选图、打标、训练闭环一行都不用改**。
+
+### 可选的 Immich CLIP 增强
+
+后端可连接 Immich machine-learning 服务，为通过相机来源审核的照片生成 CLIP
+向量。向量用于识别裁剪、曝光或构图略有变化的同场景照片，并在最终选图时降低
+画面同质化。截图、文档和拼图会先被淘汰，不会送入 CLIP，也不会进入照片墙。
+没有相机 EXIF 但通过内容检查的真实照片会标记为分享照片并保留，避免误伤微信、
+社交平台或修图软件处理过的相机照片。
+
+```bash
+export PHOTOWALL_CLIP_ENDPOINT=http://127.0.0.1:3003
+# 可选，默认值如下：
+export PHOTOWALL_CLIP_MODEL=ViT-B-32__openai
+export PHOTOWALL_CLIP_DUPLICATE_DISTANCE=0.03
+# 非照片提示词领先真实摄影提示词达到此差值时，拒绝 shared 候选
+export PHOTOWALL_CLIP_NON_PHOTO_MARGIN=0.03
+
+python3 -m uvicorn backend.server:app --port 8000
+```
+
+未设置 `PHOTOWALL_CLIP_ENDPOINT` 或服务临时不可用时，后端会安全回退到原有的
+dHash、内容签名和标签多样性逻辑。
+
+通用策展、回忆价值、事件分组、主题权重和后期模板绑定方法见
+[照片策展与主题选片策略](docs/selection-strategy.md)。
