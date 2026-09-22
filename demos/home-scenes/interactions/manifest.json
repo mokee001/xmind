@@ -1,0 +1,40 @@
+{
+  "asset": "assets/memory-scenes.png",
+  "source": "ImageGen original; unmodified sprite; CSS presentation crop",
+  "uploadedUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/home-interaction-scenes-v1/memory-scenes.png",
+  "nodeId": "d51d0e8b-46b8-4c97-9475-48daeda44248",
+  "sha256": "3e2dd43a304826111899d397e99b171ac1d17507d7a9a7062b9294aa4686f64b",
+  "projectId": "91a39332-1812-460c-b2a6-a9e59410c414",
+  "drafts": {
+    "paper": {
+      "draftId": "17ca06b2-f1e0-4f28-8542-14dd7a5602d9",
+      "title": "01 · 光影纸面｜逐日翻阅",
+      "visualDirection": "一天一页；左右拖动翻日，日期目录跳转，点击照片展开",
+      "currentVersion": 1,
+      "sourcePath": "demos/home-scenes/interactions/paper.html",
+      "previewUrl": "https://p.superdesign.dev/draft/17ca06b2-f1e0-4f28-8542-14dd7a5602d9",
+      "sourceSha256": "be3c39a47e9dfccf66acc441d23eee718206b35bf8ca385a969f9628fc18e78c",
+      "status": "interaction-proposal-awaiting-user-selection"
+    },
+    "weave": {
+      "draftId": "3d81fedf-e6b1-473a-b32b-08c25ce7f45a",
+      "title": "02 · 回忆织毯｜整月探索",
+      "visualDirection": "一整月织物地图；点选某天展开，保留缩小月图定位，返回整月",
+      "currentVersion": 1,
+      "sourcePath": "demos/home-scenes/interactions/weave.html",
+      "previewUrl": "https://p.superdesign.dev/draft/3d81fedf-e6b1-473a-b32b-08c25ce7f45a",
+      "sourceSha256": "a4bf9accd9a1a07a6544ceaa0d83498931168488c05707ae411bb94c45e45c51",
+      "status": "interaction-proposal-awaiting-user-selection"
+    },
+    "film": {
+      "draftId": "625b3eb7-902c-4d92-b706-ae0624d7328d",
+      "title": "03 · 显影长卷｜拖动定位",
+      "visualDirection": "大幅照片与横向胶片；拖动轨道连续预览，松手吸附历史回忆",
+      "currentVersion": 1,
+      "sourcePath": "demos/home-scenes/interactions/film.html",
+      "previewUrl": "https://p.superdesign.dev/draft/625b3eb7-902c-4d92-b706-ae0624d7328d",
+      "sourceSha256": "09b22a0bdd6c4bf6670abe096f5bd0a43203bbc94f78766d3cd4f87c89023cc5",
+      "status": "interaction-proposal-awaiting-user-selection"
+    }
+  }
+}

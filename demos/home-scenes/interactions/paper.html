@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#efeeea">
+<title>光影纸面 · 一天一页</title>
+<script defer src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#deddd8;color:#292b29;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif;-webkit-font-smoothing:antialiased}button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}button:focus-visible,[tabindex]:focus-visible{outline:2px solid #666e60;outline-offset:5px}button:disabled{cursor:default}.connected,.preference,.settings,.month-button,.nav-day,.recent-button,.today-button,.close-dialog,.sheet-action{min-height:44px;min-width:44px}.directory-grid button{min-height:44px}iconify-icon{display:inline-flex;flex-shrink:0}button iconify-icon{width:19px;height:19px;font-size:19px}.status-icons iconify-icon{width:15px;height:15px;font-size:15px}button:active:not(:disabled){transform:scale(.97)}button{transition:background-color 120ms,transform 120ms}button:disabled{opacity:.3}#root{position:relative;isolation:isolate;max-width:480px;min-height:100dvh;margin:0 auto;overflow:hidden;background:#eeede8}.paper-grain{pointer-events:none;position:absolute;inset:0;z-index:10;opacity:.11;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.24' filter='url(%23n)'/%3E%3C/svg%3E")}.status-line{height:47px;display:flex;justify-content:space-between;align-items:center;padding:12px 27px 0;font-size:12px;font-weight:650;position:relative;z-index:11}.status-icons{display:flex;gap:5px;align-items:center}.signal{font-size:10px;letter-spacing:-1px}.battery{width:20px;height:10px;border:1px solid #555;border-radius:2px;padding:1px;position:relative}.battery:before{content:"";display:block;background:#444;width:14px;height:6px;border-radius:1px}.battery:after{content:"";position:absolute;right:-3px;top:2px;width:2px;height:4px;background:#555;border-radius:1px}.app-header{padding:8px 23px 4px;display:flex;justify-content:space-between;align-items:center;position:relative;z-index:11;gap:10px}.connected{border:0;background:none;display:flex;align-items:center;padding:8px 0;gap:7px;font-size:12px;white-space:nowrap}.connected:before{content:"";width:6px;height:6px;background:#667a58;border-radius:50%}.connected span{color:#7b7d76;font-size:10px}.header-actions{display:flex;gap:11px;align-items:center}.preference{border:0;background:none;padding:10px 0;font-size:13px}.settings{border:0;background:none;width:30px;height:36px;display:grid;place-items:center}.intro{margin:28px 29px 25px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:11}.intro h1{font-weight:450;font-size:18px;letter-spacing:.06em;margin:0}.month-button{border:0;background:none;padding:8px 0 8px 12px;display:flex;align-items:center;gap:9px;font-size:12px;font-variant-numeric:tabular-nums;color:#686b63}.month-button iconify-icon{width:12px;height:12px;font-size:12px}.stage{position:relative;perspective:1100px;margin:0 29px;height:clamp(430px,57.5dvh,534px)}.under-sheet{position:absolute;inset:0;background:#faf9f4;border:1px solid rgba(65,63,47,.055);transform:translateY(8px) rotate(-.9deg);box-shadow:0 1px 0 #c7c5ba,0 2px 0 #f6f5f0,0 3px 0 #cac8bf,0 4px 0 #f7f6f1,0 5px 0 #cccac1,0 6px 0 #f4f3ee,0 7px 0 #ceccc3,0 8px 0 #f7f5ee,0 9px 0 #c7c5bc,0 23px 30px -16px rgba(49,46,33,.28)}.under-sheet.second{transform:translateY(4px) rotate(.8deg);box-shadow:none}.page{position:relative;height:100%;padding:29px 28px 26px;background:#f8f7f2;box-shadow:0 2px 5px rgba(69,62,39,.06),12px 26px 42px -28px rgba(62,57,37,.5);border:1px solid rgba(85,80,63,.07);transform-origin:left center;will-change:transform;touch-action:pan-y;user-select:none;cursor:grab;overflow:hidden}.page:active{cursor:grabbing}.page:before{content:"";pointer-events:none;position:absolute;inset:0;background:linear-gradient(133deg,transparent 10%,rgba(94,96,92,.08) 28%,rgba(94,96,92,.035) 44%,transparent 44.5%,transparent 48%,rgba(255,255,255,.65) 49%,transparent 72%);z-index:2}.page:after{content:"";position:absolute;pointer-events:none;top:0;right:0;width:47px;height:47px;background:linear-gradient(225deg,#eeede8 0%,#eeede8 48%,#eeede2 50%,#fdfcf7 56%,#f7f6ee 77%);filter:drop-shadow(-1px 2px 1px rgba(74,70,43,.08));clip-path:polygon(0 0,100% 0,100% 100%);z-index:3}.page-meta{position:relative;z-index:4;display:flex;justify-content:space-between;align-items:center;color:#797d73;font-size:10px;letter-spacing:.13em}.page-meta span:last-child{font-size:9px;letter-spacing:.07em;padding-right:8px}.date{font-family:"Helvetica Neue",Arial,sans-serif;font-size:clamp(124px,34vw,152px);font-weight:200;letter-spacing:-.085em;line-height:1.1;margin:24px 0 3px -5px;position:relative;z-index:4;text-shadow:0 1px 0 #fff;color:#42473f}.page[data-record="true"] .date{font-size:106px;margin-top:16px}.page-subtitle{position:relative;z-index:4;margin:0;font-size:14px;font-weight:450;letter-spacing:.06em}.page-content{position:absolute;bottom:29px;left:28px;right:28px;z-index:4}.empty-line{width:27px;height:1px;background:#b5b8aa;margin-bottom:17px}.empty-message{font-size:12px;line-height:1.9;color:#85897e;margin:0;letter-spacing:.04em}.recent-button{background:transparent;border:0;border-bottom:1px solid #a9aea0;padding:11px 0 6px;font-size:11px;display:inline-flex;align-items:center;gap:15px;margin-top:15px;letter-spacing:.04em}.recent-button iconify-icon{width:14px;height:14px;font-size:14px}.memory-image{display:block;position:relative;border:0;padding:0;height:clamp(155px,23dvh,207px);width:100%;background-image:url('./assets/memory-scenes.png');background-size:300% 100%;background-position:0% center;background-color:#9aadae;box-shadow:inset 0 0 0 1px rgba(26,39,37,.04);overflow:hidden}.memory-image:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(16,33,28,.12),transparent 50%)}.memory-image .image-open{position:absolute;bottom:10px;right:10px;width:26px;height:26px;border:1px solid rgba(255,255,255,.55);border-radius:50%;color:white;display:grid;place-items:center;z-index:1;background:rgba(33,46,37,.12)}.memory-image .image-open iconify-icon{width:13px;height:13px;font-size:13px}.memory-label{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:9px}.memory-label strong{font-size:12px;font-weight:450}.memory-label span{font-size:8px;letter-spacing:.08em;color:#92968a;white-space:nowrap}.navigation{position:relative;z-index:11;display:flex;align-items:center;justify-content:space-between;margin:30px 27px 0;gap:15px}.nav-day{border:0;background:none;display:flex;align-items:center;gap:6px;padding:12px 0;font-size:11px}.nav-day iconify-icon{width:15px;height:15px;font-size:15px}.page-count{font-family:"Helvetica Neue",Arial,sans-serif;font-size:10px;color:#8a8d83;letter-spacing:.13em;font-variant-numeric:tabular-nums}.footer{min-height:44px;position:relative;z-index:11;display:flex;justify-content:center;align-items:center;height:39px;gap:10px;padding:0 24px;color:#93968a;font-size:10px;letter-spacing:.025em}.today-button{border:0;border-bottom:1px solid #969b8d;background:none;padding:4px 0;color:#606854;font-size:10px}.home-indicator{height:4px;width:104px;background:#33382f;border-radius:4px;margin:19px auto 12px;opacity:.45}.dialog-backdrop{position:fixed;z-index:30;inset:0;background:rgba(37,40,32,.32);display:flex;align-items:flex-end;justify-content:center;backdrop-filter:blur(6px);padding:18px}.dialog-backdrop[hidden]{display:none}.dialog{position:relative;width:min(100%,430px);max-height:calc(100dvh - 52px);overflow:auto;background:#f8f7f2;padding:26px 24px 28px;box-shadow:0 20px 60px rgba(31,34,26,.18);border-radius:5px}.dialog-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.dialog h2{margin:0;font-size:19px;font-weight:450;letter-spacing:.03em}.close-dialog{border:1px solid #e0e1d8;background:transparent;width:33px;height:33px;display:grid;place-items:center;border-radius:50%;padding:0}.close-dialog iconify-icon{width:15px;height:15px;font-size:15px}.dialog p{font-size:13px;color:#767c6c;line-height:1.85;margin:0}.directory-week,.directory-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.directory-week{font-size:9px;color:#969b8d;text-align:center;margin:25px 0 11px}.directory-week span{padding:5px 0}.directory-grid button{position:relative;height:40px;border:0;background:none;font-size:13px;font-weight:350;border-radius:50%}.directory-grid button[aria-current=date]{background:#30392d;color:#f9f8f0}.directory-grid button[data-record]:after{content:"";position:absolute;bottom:4px;width:3px;height:3px;background:currentColor;border-radius:50%;left:calc(50% - 1.5px)}.directory-grid button:disabled{opacity:.18}.directory-note{font-size:10px!important;margin-top:18px!important;color:#8f9586!important}.detail-image{height:320px;background-image:url('./assets/memory-scenes.png');background-size:300% 100%;margin:7px 0 20px;background-color:#aab6ad}.detail-date{font-size:10px!important;letter-spacing:.08em;margin-bottom:7px!important}.detail-note{font-size:11px!important}.dialog-body .detail-image+strong{display:block;font-size:20px;font-weight:450;margin-bottom:11px}.sheet-action{background:#30382c;color:#fff;border:0;width:100%;padding:13px;border-radius:3px;font-size:12px;margin-top:24px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(max-height:760px){.intro{margin-top:18px;margin-bottom:18px}.stage{height:421px}.date{font-size:117px;margin-top:19px}.memory-image{height:175px}.navigation{margin-top:27px}.home-indicator{margin-top:8px}.status-line{height:37px}}@media(max-width:350px){.stage{margin:0 20px}.intro{margin-left:23px;margin-right:23px}.page{padding-left:23px;padding-right:23px}.page-content{left:23px;right:23px}.header-actions{gap:7px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.page{will-change:auto}}
+</style>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const $=id=>document.getElementById(id);
+  const page=$('page'), content=$('pageContent'), motion=matchMedia('(prefers-reduced-motion: reduce)');
+  const entries={13:{title:'去看海',scene:0,description:'海风吹过的那个下午。'},11:{title:'窗边的午后',scene:50,description:'一杯咖啡，把下午留得很长。'},8:{title:'走进一片绿',scene:100,description:'沿着树影，慢慢走。'},5:{title:'潮水的声音',scene:0,description:'又一次，想起海。'},2:{title:'山林里的周末',scene:100,description:'日光穿过林间的那一刻。'}};
+  const englishDays=['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'];
+  const chineseDays=['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+  const arrow='<iconify-icon icon="lucide:arrow-up-right" aria-hidden="true"></iconify-icon>';
+  const imageObserver=new ResizeObserver(items=>items.forEach(({target})=>{const width=target.clientWidth,height=target.clientHeight,size=Math.max(width,height),index=Number(target.dataset.scene);target.style.backgroundSize=`${size*3}px ${size}px`;target.style.backgroundPosition=`${-(index*size+(size-width)/2)}px ${(height-size)/2}px`;}));
+  let day=15, animation=null, gesture=null, ignoreClick=false, lastFocus=null;
+  // The gesture owns its starting day. Repeated or foreign pointer events cannot accumulate flips.
+  function render(){
+    imageObserver.disconnect();
+    const date=new Date(2026,8,day), record=entries[day];page.dataset.record=record?'true':'false';
+    $('dayNumber').textContent=String(day).padStart(2,'0');$('weekday').textContent=englishDays[date.getDay()];
+    $('pageSubtitle').textContent=day===15?'今天':chineseDays[date.getDay()];
+    $('pageCount').textContent=String(day).padStart(2,'0')+' / 15';$('previousDay').disabled=day===1;$('nextDay').disabled=day===15;$('todayButton').hidden=day===15;
+    page.setAttribute('aria-label',`2026 年 9 月 ${day} 日，${day===15?'今天':chineseDays[date.getDay()]}。${record?record.title:'暂无回忆记录'}。左右轻扫翻页`);
+    if(record){
+      content.innerHTML=`<button class="memory-image" id="memoryButton" data-scene="${record.scene/50}" style="background-position:${record.scene}% center" aria-label="打开 9 月 ${day} 日示例回忆：${record.title}"><span class="image-open">${arrow}</span></button><div class="memory-label"><strong>${record.title}</strong><span>已展示 · 示例</span></div>`;
+      imageObserver.observe($('memoryButton'));
+      $('memoryButton').addEventListener('click',()=>{if(!ignoreClick)openMemory();});
+    }else{
+      content.innerHTML=`<div class="empty-line"></div><p class="empty-message">${day===15?'今天，慢慢经过。<br>回忆会在它到来时留下。':'这一天，还没有留下回忆。'}</p>${day===15?`<button class="recent-button" id="recentButton">回看最近一次 ${arrow}</button>`:''}`;
+      $('recentButton')?.addEventListener('click',()=>goTo(13));
+    }
+    $('announcement').textContent=`9 月 ${day} 日，${record?record.title:'暂无回忆记录'}`;
+  }
+  function settle(){const previousAnimation=animation;animation=null;previousAnimation?.cancel();page.style.transform='';page.style.opacity='';}
+  function animatePage(frames,duration){
+    const current=page.animate(frames,{duration,easing:'cubic-bezier(.2,0,0,1)'});animation=current;
+    current.onfinish=()=>{if(animation===current)animation=null;};
+  }
+  function cancelGesture(){
+    const previousGesture=gesture;gesture=null;
+    if(previousGesture&&page.hasPointerCapture(previousGesture.id))page.releasePointerCapture(previousGesture.id);
+    settle();
+  }
+  function goTo(next,dragOffset=null){
+    cancelGesture();next=Math.max(1,Math.min(15,next));const previous=day;
+    if(next===day){if(dragOffset!==null&&!motion.matches)animatePage([{transform:`translateX(${dragOffset*.17}px) rotateY(${dragOffset/28}deg)`},{transform:'none'}],200);return;}
+    day=next;render();
+    if(!motion.matches){const sign=next<previous?1:-1;animatePage([{transform:`translateX(${sign*24}px) rotateY(${sign*-13}deg)`,opacity:.65},{transform:'translateX(0) rotateY(0)',opacity:1}],320);}
+  }
+  $('previousDay').addEventListener('click',()=>goTo(day-1));$('nextDay').addEventListener('click',()=>goTo(day+1));$('todayButton').addEventListener('click',()=>goTo(15));
+  page.addEventListener('pointerdown',event=>{
+    if(gesture||event.isPrimary===false||event.button!==0||(event.target.closest('button')&&!event.target.closest('.memory-image')))return;
+    settle();ignoreClick=false;
+    gesture={id:event.pointerId,dayAtStart:day,startX:event.clientX,startY:event.clientY,dx:0,dragged:false,committed:false,startedAt:performance.now()};
+  });
+  page.addEventListener('pointermove',event=>{
+    const active=gesture;if(!active||event.pointerId!==active.id||active.committed)return;
+    active.dx=event.clientX-active.startX;const dy=event.clientY-active.startY;
+    if(!active.dragged&&Math.abs(dy)>Math.abs(active.dx)+8){cancelGesture();return;}
+    if(Math.abs(active.dx)>8&&!active.dragged){active.dragged=true;page.setPointerCapture(active.id);}
+    if(active.dragged&&!motion.matches){const resistance=((active.dayAtStart===15&&active.dx>0)||(active.dayAtStart===1&&active.dx<0))?0.22:1;page.style.transform=`translateX(${active.dx*.17*resistance}px) rotateY(${active.dx/28*resistance}deg)`;}
+  });
+  function release(event){
+    const active=gesture;if(!active||event.pointerId!==active.id||active.committed)return;
+    // Consume before releasing capture or rendering: both can synchronously dispatch more events.
+    active.committed=true;gesture=null;
+    if(page.hasPointerCapture(active.id))page.releasePointerCapture(active.id);
+    ignoreClick=active.dragged;
+    const velocity=Math.abs(active.dx)/Math.max(1,performance.now()-active.startedAt);
+    const shouldTurn=active.dragged&&(Math.abs(active.dx)>54||(Math.abs(active.dx)>24&&velocity>.45));
+    const target=active.dayAtStart+(shouldTurn?(active.dx<0?-1:1):0);
+    goTo(target,active.dx);
+  }
+  page.addEventListener('pointerup',release);
+  page.addEventListener('pointercancel',event=>{if(gesture?.id===event.pointerId)cancelGesture();});
+  page.addEventListener('lostpointercapture',event=>{if(gesture?.id===event.pointerId)cancelGesture();});
+  page.addEventListener('click',event=>{if(ignoreClick){ignoreClick=false;event.preventDefault();event.stopImmediatePropagation();}},true);
+  document.addEventListener('keydown',event=>{
+    if(!$('dialogBackdrop').hidden||gesture)return;
+    if(event.key==='ArrowLeft'){event.preventDefault();goTo(day-1);}
+    if(event.key==='ArrowRight'){event.preventDefault();goTo(day+1);}
+  });
+  function openDialog(title,html){lastFocus=document.activeElement;$('dialogTitle').textContent=title;$('dialogBody').innerHTML=html;$('dialogBackdrop').hidden=false;$('closeDialog').focus();}
+  function closeDialog(){$('dialogBody').querySelectorAll('.detail-image').forEach(element=>imageObserver.unobserve(element));$('dialogBackdrop').hidden=true;lastFocus?.focus();}
+  $('closeDialog').addEventListener('click',closeDialog);$('dialogBackdrop').addEventListener('click',event=>{if(event.target===$('dialogBackdrop'))closeDialog();});
+  document.addEventListener('keydown',event=>{if($('dialogBackdrop').hidden)return;if(event.key==='Escape'){event.preventDefault();closeDialog();}if(event.key==='Tab'){const focusable=[...$('dialogBackdrop').querySelectorAll('button:not(:disabled),[tabindex="0"]')];const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+  $('monthButton').addEventListener('click',()=>{
+    let cells='<span></span><span></span>';for(let n=1;n<=30;n++)cells+=`<button data-date="${n}" ${n>15?'disabled':''} ${entries[n]?'data-record="true"':''} ${n===day?'aria-current="date"':''} aria-label="9 月 ${n} 日${n>15?'，未来日期':entries[n]?'，有示例回忆':'，暂无回忆记录'}">${n}</button>`;
+    openDialog('2026 年 9 月',`<p>选一个日子，直接翻到那一页。</p><div class="directory-week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div class="directory-grid">${cells}</div><p class="directory-note">日期下的圆点，代表已经展示过的示例回忆。</p>`);
+    $('dialogBody').querySelectorAll('[data-date]:not(:disabled)').forEach(button=>button.addEventListener('click',()=>{closeDialog();goTo(Number(button.dataset.date));}));
+  });
+  function openMemory(){const record=entries[day];if(!record)return;openDialog('这一页的回忆',`<p class="detail-date">2026 / 09 / ${String(day).padStart(2,'0')} · 示例记录</p><div class="detail-image" data-scene="${record.scene/50}" role="img" aria-label="${record.title}，概念示例图" style="background-position:${record.scene}% center"></div><strong>${record.title}</strong><p>${record.description}</p><p class="detail-note" style="margin-top:15px">此处回看已展示内容。画面与上屏记录均为演示示例。</p>`);imageObserver.observe($('dialogBody').querySelector('.detail-image'));}
+  const info={connection:['照片墙连接','此处常驻显示照片墙的连接状态。本 Demo 使用“已连接”示例，没有连接真实设备。'],preference:['偏好','从这里管理人物与内容偏好。首页可以随时进入；保存后，筛选会继续在后台完成。此版仅演示首页交互。'],settings:['设置','设备与账户管理在这里，与偏好是同级入口。连接状态始终保留在首页左上角。此版仅演示首页交互。']};
+  document.querySelectorAll('[data-info]').forEach(button=>button.addEventListener('click',()=>{const item=info[button.dataset.info];openDialog(item[0],`<p>${item[1]}</p><button class="sheet-action" id="acknowledge">知道了</button>`);$('acknowledge').addEventListener('click',closeDialog);}));
+  motion.addEventListener('change',()=>cancelGesture());render();
+});
+</script>
+</head>
+<body>
+<div id="root">
+  <div class="paper-grain" aria-hidden="true"></div>
+  <div class="status-line" aria-hidden="true"><span>9:41</span><div class="status-icons"><span class="signal">▂▄▆█</span><iconify-icon icon="lucide:wifi" aria-hidden="true"></iconify-icon><span class="battery"></span></div></div>
+  <header class="app-header"><button class="connected" data-info="connection" aria-label="连接状态：已连接，示例">已连接 <span>· 示例</span></button><div class="header-actions"><button class="preference" data-info="preference">偏好</button><button class="settings" data-info="settings" aria-label="设置"><iconify-icon icon="lucide:settings" aria-hidden="true"></iconify-icon></button></div></header>
+  <section class="intro"><h1>回忆日历</h1><button class="month-button" id="monthButton" aria-label="打开 2026 年 9 月日期目录">2026 / 09<iconify-icon icon="lucide:chevron-down" aria-hidden="true"></iconify-icon></button></section>
+  <main class="stage" aria-label="一天一页的回忆日历">
+    <div class="under-sheet" aria-hidden="true"></div><div class="under-sheet second" aria-hidden="true"></div>
+    <article class="page" id="page" tabindex="0" aria-label="2026 年 9 月 15 日，今天。左右轻扫翻页">
+      <div class="page-meta"><span id="weekday">TUESDAY</span><span>SEPTEMBER · 2026</span></div>
+      <div class="date" id="dayNumber">15</div><p class="page-subtitle" id="pageSubtitle">今天</p>
+      <div class="page-content" id="pageContent"></div>
+    </article>
+  </main>
+  <nav class="navigation" aria-label="按日翻页"><button class="nav-day" id="previousDay"><iconify-icon icon="lucide:arrow-left" aria-hidden="true"></iconify-icon>前一天</button><span class="page-count" id="pageCount">15 / 15</span><button class="nav-day" id="nextDay" disabled>后一天<iconify-icon icon="lucide:arrow-right" aria-hidden="true"></iconify-icon></button></nav>
+  <footer class="footer"><span>左右轻扫，一次回看一天</span><button class="today-button" id="todayButton" hidden>回到今天</button></footer>
+  <div class="home-indicator" aria-hidden="true"></div>
+  <span id="announcement" class="sr-only" aria-live="polite"></span>
+  <div class="dialog-backdrop" id="dialogBackdrop" hidden><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle"><div class="dialog-header"><h2 id="dialogTitle"></h2><button class="close-dialog" id="closeDialog" aria-label="关闭"><iconify-icon icon="lucide:x" aria-hidden="true"></iconify-icon></button></div><div class="dialog-body" id="dialogBody"></div></section></div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f3f4f3">
+<title>以内容，串起回忆。</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#f3f4f3;color:#171b18;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}button,a{-webkit-tap-highlight-color:transparent}button{font:inherit;cursor:pointer}a{color:inherit;text-decoration:none}a:hover{text-decoration:underline}button:focus-visible,a:focus-visible{outline:2px solid #46564b;outline-offset:4px}[hidden]{display:none!important}.review{max-width:1030px;margin:0 auto;padding:45px 29px 27px}.review-header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin:0 0 31px}.eyebrow{font-size:10px;letter-spacing:.05em;color:#858c87;margin:0 0 11px}.review-header h1{font-size:33px;font-weight:450;line-height:1.25;letter-spacing:-.04em;margin:0}.review-meta{color:#7e8780;font-size:11px;line-height:1.6;text-align:right;white-space:nowrap;padding-top:3px}.review-meta p{margin:0 0 7px}.mobile-open,.mobile-selector,.mobile-intent,.mobile-archive{display:none}.comparisons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:50px;align-items:start}.case{min-width:0}.case-header{display:flex;align-items:center;justify-content:space-between;gap:12px;width:393px;max-width:100%;margin:0 auto 14px}.case-name{display:flex;gap:11px;align-items:baseline}.number{font-size:10px;color:#8d948e;font-variant-numeric:tabular-nums}.case h2{font-size:14px;font-weight:550;letter-spacing:.02em;margin:0}.open-link{font-size:10px;color:#59655c;min-height:34px;display:flex;align-items:center;gap:5px;white-space:nowrap}.arrow{font-size:14px;line-height:1}.screen{position:relative;width:393px;height:852px;max-width:100%;margin:0 auto;background:#fff;overflow:hidden}.screen iframe{position:absolute;left:50%;top:50%;width:393px;height:852px;border:0;transform:translate(-50%,-50%);transform-origin:center;background:#fff;display:block}.case-intent{width:393px;max-width:100%;margin:17px auto 0;line-height:1.8;font-size:11px;color:#78827a;letter-spacing:.015em}.review-footer{margin:34px 0 0;padding-top:18px;border-top:1px solid #e0e5e0;display:flex;justify-content:space-between;align-items:center;gap:20px;font-size:10px;color:#89918a;line-height:1.8}.review-footer a{color:#79837b}.review-footer p{margin:0}.review-footer .context{max-width:70%}@media(min-width:900px) and (max-width:969px){.review{padding-left:27px;padding-right:27px}.comparisons{column-gap:30px}}@media(max-width:899px){html,body{height:100%;overflow:hidden}.review{height:100dvh;min-height:440px;padding:0;display:flex;flex-direction:column}.review-header{margin:0;padding:17px 17px 12px;gap:12px;align-items:center}.eyebrow{font-size:8px;margin-bottom:7px;letter-spacing:.04em}.mobile-archive{display:inline;margin-left:10px;color:#8d958e;text-decoration:underline;text-underline-offset:2px}.review-header h1{font-size:20px;letter-spacing:-.03em}.review-meta{display:none}.mobile-open{display:flex;flex-shrink:0;min-height:44px;align-items:center;gap:4px;font-size:11px;color:#5c685f;padding:0 1px 0 7px}.mobile-selector{display:flex;gap:6px;padding:0 17px}.mobile-selector button{border:0;background:#e7eae7;color:#818981;flex:1;min-height:40px;padding:0 10px;border-radius:3px;font-size:11px;display:flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap;transition:background-color 120ms,color 120ms}.mobile-selector button[aria-selected=true]{background:#202923;color:#fff}.mobile-selector .tab-number{font-size:9px;opacity:.65}.mobile-intent{display:block;text-align:center;min-height:30px;font-size:9px;color:#89928b;line-height:1.5;margin:0;padding:8px 10px 6px}.comparisons{display:block;flex:1;min-height:0;padding:0 13px 13px}.case{height:100%;display:flex;flex-direction:column}.case-header,.case-intent{display:none}.screen{width:100%;height:auto;max-width:none;flex:1;min-height:0;background:transparent}.review-footer{display:none}.screen iframe{box-shadow:none}}@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="review">
+  <header class="review-header">
+    <div><p class="eyebrow">首页提案 · 可操作 Demo<a class="mobile-archive" href="../studies/">早前提案</a></p><h1>以内容，串起回忆。</h1></div>
+    <div class="review-meta"><p>让照片与生活细节成为首页</p><a href="../studies/">上一轮提案 <span aria-hidden="true">↗</span></a></div>
+    <a class="mobile-open" id="mobileOpen" href="./canvas.html" target="_blank" rel="noopener">单独打开 <span class="arrow" aria-hidden="true">↗</span></a>
+  </header>
+  <nav class="mobile-selector" role="tablist" aria-label="选择首页提案">
+    <button id="tabCollage" role="tab" aria-controls="collagePanel" aria-selected="true" data-choice="collage"><span class="tab-number">01</span>生活画布</button>
+    <button id="tabQuiet" role="tab" aria-controls="quietPanel" aria-selected="false" data-choice="quiet" tabindex="-1"><span class="tab-number">02</span>极简叠片</button>
+  </nav>
+  <p class="mobile-intent" id="mobileIntent">照片与细节自然相连，直接在画布里回看。</p>
+  <main class="comparisons" aria-label="两种首页对比">
+    <section class="case" id="collagePanel" aria-labelledby="collageTitle" data-case="collage">
+      <header class="case-header"><div class="case-name"><span class="number">01</span><h2 id="collageTitle">生活画布</h2></div><a class="open-link" href="./canvas.html" target="_blank" rel="noopener">单独打开 <span class="arrow" aria-hidden="true">↗</span></a></header>
+      <div class="screen"><iframe src="./canvas.html" title="生活画布：照片与细节自然相连" width="393" height="852"></iframe></div>
+      <p class="case-intent">照片与细节自然相连，直接在画布里回看。</p>
+    </section>
+    <section class="case" id="quietPanel" aria-labelledby="quietTitle" data-case="quiet">
+      <header class="case-header"><div class="case-name"><span class="number">02</span><h2 id="quietTitle">极简叠片</h2></div><a class="open-link" href="./quiet.html" target="_blank" rel="noopener">单独打开 <span class="arrow" aria-hidden="true">↗</span></a></header>
+      <div class="screen"><iframe src="./quiet.html" title="极简叠片：按组展开生活片段" width="393" height="852"></iframe></div>
+      <p class="case-intent">两列叠片收起一组回忆，点开再展开。</p>
+    </section>
+  </main>
+  <footer class="review-footer"><p class="context">示例内容 · 只回看历史。两案均保留连接状态、偏好与设置。</p><a href="../studies/">查看上一轮提案 <span aria-hidden="true">↗</span></a></footer>
+</div>
+<script>
+(()=>{
+  const query=matchMedia('(max-width:899px)'),tabs=[...document.querySelectorAll('[data-choice]')],panels=[...document.querySelectorAll('[data-case]')];
+  const details={collage:{url:'./canvas.html',intent:'照片与细节自然相连，直接在画布里回看。'},quiet:{url:'./quiet.html',intent:'两列叠片收起一组回忆，点开再展开。'}};
+  let chosen=location.hash==='#quiet'?'quiet':'collage';
+  function fit(){document.querySelectorAll('.screen').forEach(screen=>{if(screen.closest('.case').hidden)return;const scale=Math.min(1,screen.clientWidth/393,screen.clientHeight/852);screen.querySelector('iframe').style.transform=`translate(-50%,-50%) scale(${scale})`;});}
+  function paint(){
+    tabs.forEach(tab=>{const active=tab.dataset.choice===chosen;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;});
+    panels.forEach(panel=>{const concealed=query.matches&&panel.dataset.case!==chosen;panel.hidden=concealed;panel.inert=concealed;panel.setAttribute('role',query.matches?'tabpanel':'region');});
+    document.getElementById('mobileOpen').href=details[chosen].url;document.getElementById('mobileIntent').textContent=details[chosen].intent;requestAnimationFrame(fit);
+  }
+  function choose(value){chosen=value;if(location.hash!=='#'+value)location.hash=value;else paint();}
+  tabs.forEach(tab=>{tab.addEventListener('click',()=>choose(tab.dataset.choice));tab.addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const target=event.key==='Home'?'collage':event.key==='End'?'quiet':chosen==='collage'?'quiet':'collage';choose(target);tabs.find(item=>item.dataset.choice===target).focus();});});
+  addEventListener('hashchange',()=>{chosen=location.hash==='#quiet'?'quiet':'collage';paint();});query.addEventListener('change',paint);new ResizeObserver(fit).observe(document.querySelector('.comparisons'));addEventListener('resize',fit);paint();
+})();
+</script>
+</body>
+</html>

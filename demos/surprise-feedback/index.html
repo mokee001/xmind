@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Echooo · 把惊喜留在家里</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="guide">
+      <a class="brand" href="./">echooo<span>●</span></a>
+      <div class="concept"><p class="eyebrow">体验提案 / 04</p><h1>一切安排好了。<br>惊喜，留在家里。</h1><p>手机给你一个确定的回应。<br>那些被重新发现的回忆，<br>在照片墙上，慢慢遇见。</p></div>
+      <div class="demo-tools"><p class="eyebrow">预览控制 · 不属于 App</p><label for="scenario">体验情境</label><select id="scenario"><option value="normal">正常准备与上屏</option><option value="slow">准备需要更久</option><option value="generation-error">画面准备失败</option><option value="offline">设备暂时离线</option><option value="few">授权照片不足</option></select><button class="tool" id="quick">直接体验设置完成 →</button><button class="tool" id="restart">从首次授权开始</button><button class="tool" id="leave">模拟离开 App</button></div>
+      <p class="demo-note">D04 · v0.1 · 独立本地预览<br>授权、生成、设备回执均为模拟。<br>不读取相册，不上传照片。</p>
+    </aside>
+    <div class="phone-wrap"><div class="phone" aria-label="手机 App 预览"><div class="status-bar"><span>9:41</span><span class="island"></span><span aria-hidden="true">▮▮▮ ▰</span></div><header><button id="back" aria-label="返回">‹</button><span class="brand">echooo<span>●</span></span><span class="header-dot" aria-hidden="true"></span></header><main id="screen"></main><div class="home-indicator"></div></div><p class="phone-caption">手机界面 · 全程不展示最终照片墙</p></div>
+    <aside class="observer"><details id="wall-observer"><summary><span>观察实体照片墙</span><small>仅用于理解 Demo</small></summary><div class="room"><div class="wall-frame" id="wall-art"></div><div class="shelf"></div></div><p id="wall-status" role="status"></p><p class="observer-note">此处模拟家中的实体屏，<br>不是手机里的预览入口。</p></details></aside>
+  </div>
+  <script src="state.js"></script><script src="app.js"></script>
+</body></html>

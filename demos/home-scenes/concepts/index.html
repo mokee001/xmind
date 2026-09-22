@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>新的首页构想 · 回忆日历</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #242424;
+      background: #f7f7f7;
+      font-synthesis: none;
+      -webkit-font-smoothing: antialiased;
+      --line: #dedede;
+      --muted: #686868;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: inherit; text-decoration: none; -webkit-tap-highlight-color: rgba(0, 0, 0, .08); }
+    a:focus-visible { outline: 2px solid #333; outline-offset: 5px; }
+    .gallery { max-width: 1496px; margin: 0 auto; padding: 38px 40px 48px; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 25px; border-bottom: 1px solid var(--line); }
+    h1 { margin: 0 0 9px; font-size: 26px; line-height: 1.3; font-weight: 600; letter-spacing: -.025em; }
+    .subtitle { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .hint { margin: 0 0 2px; color: var(--muted); font-size: 12px; line-height: 1.6; text-align: right; }
+    .jump-links { display: none; }
+    .concepts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; padding-top: 28px; }
+    .concept { min-width: 0; scroll-margin-top: 24px; }
+    .concept-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 9px; }
+    h2 { display: flex; align-items: baseline; gap: 10px; margin: 0; font-size: 17px; line-height: 1.5; font-weight: 550; }
+    .number { color: #777; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .original { display: inline-flex; align-items: center; gap: 5px; padding: 8px 0 8px 8px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .original svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.4; }
+    .description { min-height: 42px; margin: 0 0 17px; color: var(--muted); font-size: 12px; line-height: 1.75; text-wrap: pretty; }
+    .image-link { display: block; background: #fff; outline: 1px solid rgba(0, 0, 0, .05); }
+    .image-link img { display: block; width: 100%; height: auto; }
+    .footnote { margin: 27px 0 0; color: #767676; font-size: 11px; line-height: 1.7; }
+    @media (hover: hover) { .original:hover, .jump-links a:hover { color: #111; text-decoration: underline; text-underline-offset: 4px; } }
+    @media (max-width: 1000px) {
+      .gallery { padding: 28px 24px 36px; }
+      .concepts { gap: 22px; }
+      h2 { font-size: 15px; gap: 7px; }
+      .description { min-height: 63px; }
+    }
+    @media (max-width: 760px) {
+      .gallery { max-width: 544px; padding: 27px 20px 32px; }
+      .page-header { display: block; padding-bottom: 18px; }
+      h1 { font-size: 25px; }
+      .subtitle { font-size: 12px; }
+      .hint { margin-top: 13px; text-align: left; font-size: 11px; }
+      .jump-links { display: flex; justify-content: space-between; gap: 12px; padding: 15px 0 0; }
+      .jump-links a { display: inline-block; padding: 8px 0; font-size: 12px; line-height: 1.5; color: #555; }
+      .concepts { grid-template-columns: minmax(0, 1fr); gap: 42px; padding-top: 24px; }
+      h2 { font-size: 18px; gap: 10px; }
+      .original { min-height: 44px; font-size: 12px; }
+      .concept-header { margin-bottom: 2px; }
+      .description { min-height: 0; margin-bottom: 18px; font-size: 13px; }
+      .footnote { padding-top: 20px; margin-top: 27px; border-top: 1px solid var(--line); }
+    }
+    @media (max-width: 350px) {
+      .gallery { padding-right: 16px; padding-left: 16px; }
+      .jump-links { gap: 6px; }
+      .jump-links a { font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="gallery">
+    <header class="page-header">
+      <div>
+        <h1>新的首页构想</h1>
+        <p class="subtitle">静态概念图 · 用于选择视觉方向</p>
+      </div>
+      <p class="hint">点击画面可查看原图<br>图内控件仅作示意</p>
+    </header>
+    <nav class="jump-links" aria-label="跳到首页概念">
+      <a href="#paper">01 光影纸面</a>
+      <a href="#weave">02 回忆织毯</a>
+      <a href="#film">03 显影长卷</a>
+    </nav>
+    <div class="concepts">
+      <section class="concept" id="paper" aria-labelledby="paper-title">
+        <div class="concept-header">
+          <h2 id="paper-title"><span class="number">01</span>光影纸面</h2>
+          <a class="original" href="./paper.png" target="_blank" rel="noopener" aria-label="独立查看光影纸面原图">查看原图<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+        </div>
+        <p class="description">日期留在纸里，时间由光和影缓缓显现。<br>安静、轻盈，有真实的触感。</p>
+        <a class="image-link" href="./paper.png" target="_blank" rel="noopener" aria-label="打开光影纸面完整概念图">
+          <img src="./paper.png" width="853" height="1844" alt="光影纸面首页概念图：以纸的质感、光线和日期构成回忆日历。" fetchpriority="high">
+        </a>
+      </section>
+      <section class="concept" id="weave" aria-labelledby="weave-title">
+        <div class="concept-header">
+          <h2 id="weave-title"><span class="number">02</span>回忆织毯</h2>
+          <a class="original" href="./weave.png" target="_blank" rel="noopener" aria-label="独立查看回忆织毯原图">查看原图<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+        </div>
+        <p class="description">生活的色彩织成纹理，日子逐渐连成一幅作品。<br>鲜明、温暖，每个人都有自己的图案。</p>
+        <a class="image-link" href="./weave.png" target="_blank" rel="noopener" aria-label="打开回忆织毯完整概念图">
+          <img src="./weave.png" width="853" height="1844" alt="回忆织毯首页概念图：照片色彩形成连续织物，日期融入织纹。" loading="eager">
+        </a>
+      </section>
+      <section class="concept" id="film" aria-labelledby="film-title">
+        <div class="concept-header">
+          <h2 id="film-title"><span class="number">03</span>显影长卷</h2>
+          <a class="original" href="./film.png" target="_blank" rel="noopener" aria-label="独立查看显影长卷原图">查看原图<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+        </div>
+        <p class="description">让回忆本身成为画面，沿时间展开一段影像。<br>沉浸、连贯，情绪来自照片本身。</p>
+        <a class="image-link" href="./film.png" target="_blank" rel="noopener" aria-label="打开显影长卷完整概念图">
+          <img src="./film.png" width="853" height="1844" alt="显影长卷首页概念图：历史照片连续展开，日期沿影像边缘经过。" loading="eager">
+        </a>
+      </section>
+    </div>
+    <p class="footnote">本轮只比较首页视觉。画面与照片均为概念示例，不代表真实设备展示记录。</p>
+  </main>
+</body>
+</html>

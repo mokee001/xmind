@@ -1,0 +1,490 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "demos/calendar-app/#calendar": {
+      "targetKind": "existing-ui",
+      "projectId": "91a39332-1812-460c-b2a6-a9e59410c414",
+      "baselineDraftId": "1b1fc463-f3c7-4d29-9b76-c383a2103a38",
+      "activeDraftId": "1b1fc463-f3c7-4d29-9b76-c383a2103a38",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        "docs/homepage-selected-version.md",
+        "demos/calendar-app/README.md",
+        "demos/calendar-app/app.js",
+        "demos/calendar-app/index.html",
+        "demos/calendar-app/onboarding.css",
+        "demos/calendar-app/onboarding.js",
+        "demos/calendar-app/panels.css",
+        "demos/calendar-app/panels.js",
+        "demos/calendar-app/style.css",
+        "docs/calendar-onboarding-short-v0.3.md"
+      ],
+      "fingerprints": {
+        "docs/homepage-selected-version.md": "a0b510a0266401fbb0916e2583669f658f27a04467ed4a6c6d9a4dfdcf60a1dd",
+        "demos/calendar-app/README.md": "07ce2d50b182e627a17309e516e7dd229eabc076d8131a074c0137eeb4530367",
+        "demos/calendar-app/app.js": "4019aef7381aaff64f92bbe392a133bce7a067afd4eb8305778f7dea0f2d362e",
+        "demos/calendar-app/index.html": "569a819319fa63521dce5bc15cdafbb696a7edb3bd4ba4ad924e2818113cb779",
+        "demos/calendar-app/onboarding.css": "40bb16fec89c48d507b187a99d442f78fef81d3b514d0a067a5e231a49c44b9c",
+        "demos/calendar-app/onboarding.js": "a44a12895f157e7b344f81a264c2447ec3530ffeef82fb3e5bad229b052dd6bf",
+        "demos/calendar-app/panels.css": "da01230ba2ec48c19b3d52ee01b8cfae63873456be7b3dcd789d3467d9b17903",
+        "demos/calendar-app/panels.js": "b32b36a81890a45473149f4a41fd0af72fd76274123afbd31549d68a3f0956c7",
+        "demos/calendar-app/style.css": "89446ea03a4092896848d1441196900933671f0e60f6385d53252dfbde9a8be7",
+        "docs/calendar-onboarding-short-v0.3.md": "5bd37d08a9194b7bdb24cb3958a625f51040bdfb001a869e06faa72d2127e915"
+      },
+      "components": [],
+      "drafts": {
+        "1b1fc463-f3c7-4d29-9b76-c383a2103a38": {
+          "title": "回忆日历 (Baseline)",
+          "visualDirection": "原版纸感日历",
+          "currentVersion": 1,
+          "status": "selected-existing-demo-reference",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "ee7f3d9a-5458-47af-b8f3-aacd1cad3c23": {
+          "title": "回忆日历 (轻盈日常)",
+          "visualDirection": "轻盈日常：圆润无衬线、淡珊瑚色、柔和缩略图",
+          "parentDraftId": "1b1fc463-f3c7-4d29-9b76-c383a2103a38",
+          "currentVersion": 1,
+          "reviewNote": "用户反馈结构差异不足，保留历史，不作为本轮推荐候选",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "19b3787c-866c-4afb-8cd4-7e9d2c2ffa52": {
+          "title": "回忆日历 - 黑白印记",
+          "visualDirection": "黑白印记：高对比排版、细网格、方形日期",
+          "parentDraftId": "1b1fc463-f3c7-4d29-9b76-c383a2103a38",
+          "currentVersion": 1,
+          "reviewNote": "用户反馈结构差异不足，保留历史，不作为本轮推荐候选",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "2f2a74b8-14ab-4023-afd2-582e0b570b54": {
+          "title": "C · 流动天空｜动态场景",
+          "visualDirection": "整屏天空、巨大日期、云间历史时间轴；晨昼暮夜交互和缓慢云动",
+          "currentVersion": 3,
+          "sourcePath": "demos/home-scenes/sky.html",
+          "reviewNote": "用户反馈不好看，转为光影纸面、回忆织毯、显影长卷的静态概念探索；历史保留",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "db6d2b77-b801-4860-9557-7c7057df2c11": {
+          "title": "D · 漂浮泳池｜动态场景",
+          "visualDirection": "俯视泳池、池边逐日刻度、漂浮回忆、水光与触碰涟漪",
+          "currentVersion": 2,
+          "sourcePath": "demos/home-scenes/pool.html",
+          "reviewNote": "用户反馈不好看，转为光影纸面、回忆织毯、显影长卷的静态概念探索；历史保留",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "17ca06b2-f1e0-4f28-8542-14dd7a5602d9": {
+          "title": "01 · 光影纸面｜逐日翻阅",
+          "visualDirection": "一天一页；左右拖动翻日，日期目录跳转，点击照片展开",
+          "currentVersion": 1,
+          "sourcePath": "demos/home-scenes/interactions/paper.html",
+          "previewUrl": "https://p.superdesign.dev/draft/17ca06b2-f1e0-4f28-8542-14dd7a5602d9",
+          "sourceSha256": "be3c39a47e9dfccf66acc441d23eee718206b35bf8ca385a969f9628fc18e78c",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "3d81fedf-e6b1-473a-b32b-08c25ce7f45a": {
+          "title": "02 · 回忆织毯｜整月探索",
+          "visualDirection": "一整月织物地图；点选某天展开，保留缩小月图定位，返回整月",
+          "currentVersion": 1,
+          "sourcePath": "demos/home-scenes/interactions/weave.html",
+          "previewUrl": "https://p.superdesign.dev/draft/3d81fedf-e6b1-473a-b32b-08c25ce7f45a",
+          "sourceSha256": "a4bf9accd9a1a07a6544ceaa0d83498931168488c05707ae411bb94c45e45c51",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "625b3eb7-902c-4d92-b706-ae0624d7328d": {
+          "title": "03 · 显影长卷｜拖动定位",
+          "visualDirection": "大幅照片与横向胶片；拖动轨道连续预览，松手吸附历史回忆",
+          "currentVersion": 1,
+          "sourcePath": "demos/home-scenes/interactions/film.html",
+          "previewUrl": "https://p.superdesign.dev/draft/625b3eb7-902c-4d92-b706-ae0624d7328d",
+          "sourceSha256": "09b22a0bdd6c4bf6670abe096f5bd0a43203bbc94f78766d3cd4f87c89023cc5",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "d086c36a-9671-4634-88d7-564a276cfb4b": {
+          "title": "04 · 回忆星图｜空间探索",
+          "visualDirection": "回忆星图：稳定月份坐标、有限平移与缩放，星点原位展开，返回恢复视角",
+          "sourcePath": "demos/home-scenes/explorations/constellation.html",
+          "sourceSha256": "71d409c62b2573ed289500cdbeae2ef9603dd750752631a075e256fd9e8e4c78",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/d086c36a-9671-4634-88d7-564a276cfb4b",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "87478f79-2562-42f9-b2a3-0e490bd90492": {
+          "title": "05 · 时光唱片｜圆周拨动",
+          "visualDirection": "时光唱片：冷银仪器面板，圆周拨动与六档吸附，盘心照片保持正向",
+          "sourcePath": "demos/home-scenes/explorations/turntable.html",
+          "sourceSha256": "c2c363333ca5fa4bfd8d92db0ab9f26082f412f97e26d6920e2c4545f0024ec6",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/87478f79-2562-42f9-b2a3-0e490bd90492",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "38c5d936-746e-47dd-9dde-4d2cfff2ee9c": {
+          "title": "06 · 时间地层｜展开时间",
+          "visualDirection": "时间地层：连续波状截面，点按展开一层，其余日期压缩保留上下文",
+          "sourcePath": "demos/home-scenes/explorations/strata.html",
+          "sourceSha256": "af13a43a511cb58cdd96fc93ff667ae8927a8d1f94912555a7cba5e572406ec2",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/38c5d936-746e-47dd-9dde-4d2cfff2ee9c",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "defa1cf5-f097-4248-a294-c8a725f9cc65": {
+          "draftId": "defa1cf5-f097-4248-a294-c8a725f9cc65",
+          "title": "07 · 整屏摄影｜上下滑动",
+          "visualDirection": "整屏摄影、垂直位移切换日期、长按或按钮查看完整构图",
+          "sourcePath": "demos/home-scenes/studies/immersive.html",
+          "sourceSha256": "144e98f465eba9c69783b40bad319f34560d23f1e2ef5b5f668d9e24a7d9784a",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/defa1cf5-f097-4248-a294-c8a725f9cc65",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6": {
+          "draftId": "258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6",
+          "title": "08 · 连续分屏｜拖动画幅",
+          "visualDirection": "无边框动态分屏、直接拖动分界、展开后返回原比例",
+          "sourcePath": "demos/home-scenes/studies/split.html",
+          "sourceSha256": "9650f988facbedd112e965d78ab6efe7832560451062d4b83ca1009560849370",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "8a9936ab-7667-49d0-919e-4261fb27d56b": {
+          "draftId": "8a9936ab-7667-49d0-919e-4261fb27d56b",
+          "title": "09 · 多尺度浏览｜从月到日",
+          "visualDirection": "稳定坐标的照片集合、连续缩放、月份与某天之间聚焦",
+          "sourcePath": "demos/home-scenes/studies/focus.html",
+          "sourceSha256": "469bd1ceb8b8c5db9e11acda0cf6c6928ac7b3398b67e983ed872bd7ccf5157d",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/8a9936ab-7667-49d0-919e-4261fb27d56b",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "b64e4f1d-5529-4aa7-a6a8-220310c58f87": {
+          "draftId": "b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+          "title": "10 · 内容回忆｜自由拼贴",
+          "sourcePath": "demos/home-scenes/collections/canvas.html",
+          "sourceSha256": "ef749eed1ea2013ecf6dc9de5ab47520b4af635aa64b5e087c42b69f8b348594",
+          "currentVersion": 2,
+          "previewUrl": "https://p.superdesign.dev/draft/b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+          "visualDirection": "直接阅读的连续生活画布：不同尺度的照片、语义局部和指向性批注自然成簇；弱日期，无重复分组标题及查看入口。",
+          "primaryReferenceNodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+          "status": "historical-not-selected",
+          "localUrl": "http://127.0.0.1:8096/collections/canvas.html",
+          "history": [
+            {
+              "draftId": "b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+              "title": "10 · 内容回忆｜自由拼贴",
+              "sourcePath": "demos/home-scenes/collections/collage.html",
+              "sourceSha256": "cf721e70daacc3a66368ac3d2654a9f7a4d56716f7a08cd04d07c8764df01d83",
+              "currentVersion": 1,
+              "previewUrl": "https://p.superdesign.dev/draft/b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+              "visualDirection": "内容自然成组，弱日期，自由拼贴长卷，点击组内照片回看并返回原阅读位置",
+              "primaryReferenceNodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+              "status": "demo-awaiting-user-review"
+            }
+          ],
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "e0d54fd9-947a-4313-8a6f-23ff8dd53f54": {
+          "draftId": "e0d54fd9-947a-4313-8a6f-23ff8dd53f54",
+          "title": "11 · 内容回忆｜极简叠片",
+          "sourcePath": "demos/home-scenes/collections/quiet.html",
+          "sourceSha256": "0d62e5b727cba03eb4daa70a18ef91f2eb860d9192ce5ffe1ffd7698f725fbf6",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/e0d54fd9-947a-4313-8a6f-23ff8dd53f54",
+          "visualDirection": "以两列轻柔叠片收纳内容组，弱日期，原位展开与组内轻拨，收起回原卡组",
+          "primaryReferenceNodeId": "53ed64c2-5557-432f-9592-10add1331cc2",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        }
+      },
+      "updatedAt": "2026-09-16T08:13:47.949020+00:00",
+      "referenceIds": [
+        "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+        "53ed64c2-5557-432f-9592-10add1331cc2"
+      ],
+      "selectionPending": false,
+      "comparisonUrl": "http://127.0.0.1:8096/collections/",
+      "conceptCandidates": {
+        "paper": {
+          "sourcePath": ".superdesign/concepts/2026-09-15/paper-v2.png",
+          "version": 2,
+          "referenceNodeId": "d9d3949b-f161-4782-b1c7-4c09ffc0484e",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-paper-concept-v2/paper-v2.png",
+          "contentHash": "a3ddb203fe7acc7551d696d8ade6d9cd6656edb8d0e9fbca4ae3afdabdf7e853",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "weave": {
+          "sourcePath": ".superdesign/concepts/2026-09-15/weave-v1.png",
+          "version": 1,
+          "referenceNodeId": "561eef97-1177-4544-8e82-ab0375e2186c",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-weave-concept-v1/weave-v1.png",
+          "contentHash": "b6dc59f44da2f90418157bc154480ce1733142232c8a9c8a0d37485503824448",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "film": {
+          "sourcePath": ".superdesign/concepts/2026-09-15/film-v1.png",
+          "version": 1,
+          "referenceNodeId": "6d68a3aa-628d-4f1d-a050-39d9f32e30bf",
+          "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-film-concept-v1/film-v1.png",
+          "contentHash": "bf2d4874dfe92c56f93e31e1d315c9cf679bd09aac9690f9d51f6a95eeeaa0f8",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        }
+      },
+      "conceptComparisonUrl": "http://127.0.0.1:8096/concepts/",
+      "interactionCandidates": {
+        "paper": {
+          "draftId": "17ca06b2-f1e0-4f28-8542-14dd7a5602d9",
+          "title": "01 · 光影纸面｜逐日翻阅",
+          "visualDirection": "一天一页；左右拖动翻日，日期目录跳转，点击照片展开",
+          "currentVersion": 1,
+          "sourcePath": "demos/home-scenes/interactions/paper.html",
+          "previewUrl": "https://p.superdesign.dev/draft/17ca06b2-f1e0-4f28-8542-14dd7a5602d9",
+          "sourceSha256": "be3c39a47e9dfccf66acc441d23eee718206b35bf8ca385a969f9628fc18e78c",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "weave": {
+          "draftId": "3d81fedf-e6b1-473a-b32b-08c25ce7f45a",
+          "title": "02 · 回忆织毯｜整月探索",
+          "visualDirection": "一整月织物地图；点选某天展开，保留缩小月图定位，返回整月",
+          "currentVersion": 1,
+          "sourcePath": "demos/home-scenes/interactions/weave.html",
+          "previewUrl": "https://p.superdesign.dev/draft/3d81fedf-e6b1-473a-b32b-08c25ce7f45a",
+          "sourceSha256": "a4bf9accd9a1a07a6544ceaa0d83498931168488c05707ae411bb94c45e45c51",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "film": {
+          "draftId": "625b3eb7-902c-4d92-b706-ae0624d7328d",
+          "title": "03 · 显影长卷｜拖动定位",
+          "visualDirection": "大幅照片与横向胶片；拖动轨道连续预览，松手吸附历史回忆",
+          "currentVersion": 1,
+          "sourcePath": "demos/home-scenes/interactions/film.html",
+          "previewUrl": "https://p.superdesign.dev/draft/625b3eb7-902c-4d92-b706-ae0624d7328d",
+          "sourceSha256": "09b22a0bdd6c4bf6670abe096f5bd0a43203bbc94f78766d3cd4f87c89023cc5",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        }
+      },
+      "interactionComparisonUrl": "http://127.0.0.1:8096/interactions/",
+      "interactionReviewNote": "用户反馈三款静态概念均为相似纵向列表；本轮保留材质方向，分别重构逐日翻页、整月探索和横向拖动。尚未选定方向；不迁移 App、后端或 TestFlight。",
+      "explorationCandidates": {
+        "constellation": {
+          "draftId": "d086c36a-9671-4634-88d7-564a276cfb4b",
+          "title": "04 · 回忆星图｜空间探索",
+          "visualDirection": "回忆星图：稳定月份坐标、有限平移与缩放，星点原位展开，返回恢复视角",
+          "sourcePath": "demos/home-scenes/explorations/constellation.html",
+          "sourceSha256": "71d409c62b2573ed289500cdbeae2ef9603dd750752631a075e256fd9e8e4c78",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/d086c36a-9671-4634-88d7-564a276cfb4b",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "turntable": {
+          "draftId": "87478f79-2562-42f9-b2a3-0e490bd90492",
+          "title": "05 · 时光唱片｜圆周拨动",
+          "visualDirection": "时光唱片：冷银仪器面板，圆周拨动与六档吸附，盘心照片保持正向",
+          "sourcePath": "demos/home-scenes/explorations/turntable.html",
+          "sourceSha256": "c2c363333ca5fa4bfd8d92db0ab9f26082f412f97e26d6920e2c4545f0024ec6",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/87478f79-2562-42f9-b2a3-0e490bd90492",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "strata": {
+          "draftId": "38c5d936-746e-47dd-9dde-4d2cfff2ee9c",
+          "title": "06 · 时间地层｜展开时间",
+          "visualDirection": "时间地层：连续波状截面，点按展开一层，其余日期压缩保留上下文",
+          "sourcePath": "demos/home-scenes/explorations/strata.html",
+          "sourceSha256": "af13a43a511cb58cdd96fc93ff667ae8927a8d1f94912555a7cba5e572406ec2",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/38c5d936-746e-47dd-9dde-4d2cfff2ee9c",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        }
+      },
+      "explorationComparisonUrl": "http://127.0.0.1:8096/explorations/",
+      "explorationBriefPath": "demos/home-scenes/explorations/README.md",
+      "explorationReviewNote": "用户认可上一轮交互差异，要求另外三套从意象到界面与交互的完整方案。新增星图、唱片与地层，并保留上一轮。未选择胜出方案，未迁移 App 或 TestFlight。",
+      "studyCandidates": {
+        "immersive": {
+          "draftId": "defa1cf5-f097-4248-a294-c8a725f9cc65",
+          "title": "07 · 整屏摄影｜上下滑动",
+          "visualDirection": "整屏摄影、垂直位移切换日期、长按或按钮查看完整构图",
+          "sourcePath": "demos/home-scenes/studies/immersive.html",
+          "sourceSha256": "144e98f465eba9c69783b40bad319f34560d23f1e2ef5b5f668d9e24a7d9784a",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/defa1cf5-f097-4248-a294-c8a725f9cc65",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "split": {
+          "draftId": "258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6",
+          "title": "08 · 连续分屏｜拖动画幅",
+          "visualDirection": "无边框动态分屏、直接拖动分界、展开后返回原比例",
+          "sourcePath": "demos/home-scenes/studies/split.html",
+          "sourceSha256": "9650f988facbedd112e965d78ab6efe7832560451062d4b83ca1009560849370",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "focus": {
+          "draftId": "8a9936ab-7667-49d0-919e-4261fb27d56b",
+          "title": "09 · 多尺度浏览｜从月到日",
+          "visualDirection": "稳定坐标的照片集合、连续缩放、月份与某天之间聚焦",
+          "sourcePath": "demos/home-scenes/studies/focus.html",
+          "sourceSha256": "469bd1ceb8b8c5db9e11acda0cf6c6928ac7b3398b67e983ed872bd7ccf5157d",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/8a9936ab-7667-49d0-919e-4261fb27d56b",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        }
+      },
+      "studyAsset": {
+        "sourcePath": "demos/home-scenes/studies/assets/life-scenes.png",
+        "sha256": "041ed694f599f1f7689fb6eb8865d878e2525f54967bb84fea947c00c3c55f3c",
+        "width": 1330,
+        "height": 1182,
+        "grid": "3 columns by 2 rows",
+        "origin": "built-in ImageGen; fictional example people and scenes; no user photos",
+        "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/home-studies-life-scenes-v1/life-scenes.png",
+        "nodeId": "b5ad8d0e-6032-4621-983a-96ddf925fd0e"
+      },
+      "studyComparisonUrl": "http://127.0.0.1:8096/studies/",
+      "studyBriefPath": "demos/home-scenes/studies/README.md",
+      "studyReviewNote": "用户否定前六款审美；改以生活摄影、动态画幅与连续变焦探索三个不同首页结构。未选定胜出方向，原版 active/baseline 不变。",
+      "contentHomeCandidates": {
+        "collage": {
+          "draftId": "b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+          "title": "10 · 内容回忆｜自由拼贴",
+          "sourcePath": "demos/home-scenes/collections/canvas.html",
+          "sourceSha256": "ef749eed1ea2013ecf6dc9de5ab47520b4af635aa64b5e087c42b69f8b348594",
+          "currentVersion": 2,
+          "previewUrl": "https://p.superdesign.dev/draft/b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+          "visualDirection": "直接阅读的连续生活画布：不同尺度的照片、语义局部和指向性批注自然成簇；弱日期，无重复分组标题及查看入口。",
+          "primaryReferenceNodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+          "status": "historical-not-selected",
+          "localUrl": "http://127.0.0.1:8096/collections/canvas.html",
+          "history": [
+            {
+              "draftId": "b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+              "title": "10 · 内容回忆｜自由拼贴",
+              "sourcePath": "demos/home-scenes/collections/collage.html",
+              "sourceSha256": "cf721e70daacc3a66368ac3d2654a9f7a4d56716f7a08cd04d07c8764df01d83",
+              "currentVersion": 1,
+              "previewUrl": "https://p.superdesign.dev/draft/b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+              "visualDirection": "内容自然成组，弱日期，自由拼贴长卷，点击组内照片回看并返回原阅读位置",
+              "primaryReferenceNodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+              "status": "demo-awaiting-user-review"
+            }
+          ],
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        },
+        "quiet": {
+          "draftId": "e0d54fd9-947a-4313-8a6f-23ff8dd53f54",
+          "title": "11 · 内容回忆｜极简叠片",
+          "sourcePath": "demos/home-scenes/collections/quiet.html",
+          "sourceSha256": "0d62e5b727cba03eb4daa70a18ef91f2eb860d9192ce5ffe1ffd7698f725fbf6",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/e0d54fd9-947a-4313-8a6f-23ff8dd53f54",
+          "visualDirection": "以两列轻柔叠片收纳内容组，弱日期，原位展开与组内轻拨，收起回原卡组",
+          "primaryReferenceNodeId": "53ed64c2-5557-432f-9592-10add1331cc2",
+          "status": "historical-not-selected",
+          "latestReviewNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。"
+        }
+      },
+      "contentHomeReferences": {
+        "collage": {
+          "sourcePath": ".superdesign/references/content-home/collage-reference.jpg",
+          "nodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+          "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/content-home-collage-user-reference/collage-reference.jpg",
+          "sha256": "7c394638dcfb633c32e94cdf0d8296b7bf27b2cefb8a01cc3851cc515ab0ac1f",
+          "purpose": "user-provided visual reference; not final content"
+        },
+        "quiet": {
+          "sourcePath": ".superdesign/references/content-home/quiet-reference.jpg",
+          "nodeId": "53ed64c2-5557-432f-9592-10add1331cc2",
+          "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/content-home-quiet-user-reference/quiet-reference.jpg",
+          "sha256": "d1e4ab0f0f4d260c02b444574b395005641f5fa8681bed18925972dfacc2852c",
+          "purpose": "user-provided visual reference; not final content"
+        }
+      },
+      "contentHomeComparisonUrl": "http://127.0.0.1:8096/collections/",
+      "contentHomeBriefPath": "demos/home-scenes/collections/README.md",
+      "contentHomeReviewNote": "2026-09-16 用户确认第一参考图的生活画布理念。按此重构为v2，实际新版仍待用户查看；不是App或TestFlight发布确认。第二极简方向保留。",
+      "userVisualPreference": {
+        "primary": "原版回忆日历",
+        "structure": "纵向连续日历，无底部Tab；连接左上，偏好与独立设置右上",
+        "laterExplorations": "历史保留，不采用"
+      },
+      "activePreviewUrl": "http://127.0.0.1:8095/#calendar",
+      "canvasAsset": {
+        "sourcePath": "demos/home-scenes/collections/assets/story-cutouts-v2.png",
+        "sha256": "453ec242ddfec8fff3b1881d014896f8dae31f0993c55922837af576db13d5fe",
+        "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/content-home-canvas-cutouts-v2/story-cutouts-v2.png",
+        "width": 2172,
+        "height": 724,
+        "grid": "3 columns by 1 row",
+        "origin": "built-in ImageGen edit of existing fictional demo photography; transparent RGBA; not real user photo extraction",
+        "promptRecord": "demos/home-scenes/collections/assets/README.md"
+      },
+      "contentHomeVerification": {
+        "mobile": "393x852 and 320x740 rendered and visually inspected; narrow page width = scrollWidth = 320",
+        "canvas": "No repeated chapter containers; mixed photos/crops/cutouts. Fruit opens photo4/6; pointer swipe advances4→5; dog opens original5/6. During dialog scrollTop405.5, after close405.5. Connection fixed above scrolling canvas.",
+        "preferences": "Readonly has zero visible checkboxes; manage/check exclusion/save restores readonly; reload retains selection; QA choice then restored via UI.",
+        "preservation": "Old collage.html hash unchanged; quiet.html hash unchanged. Index first slot updated only.",
+        "superdesign": "Draft b64e4f1d-5529-4aa7-a6a8-220310c58f87 version2 saved HTML exact-match refetched; public preview rendered and visually inspected.",
+        "limits": "Browser viewport emulation, no physical device tests; fictional example content; no inference run, App integration or release."
+      },
+      "selectedSourcePath": "demos/calendar-app/",
+      "selectedVersion": "calendar-demo-v0.2.0-selected-20260916",
+      "selectionDecisionPath": "docs/homepage-selected-version.md",
+      "selectionNote": "2026-09-16 用户明确保留8095回忆日历，后续探索不采用。实际Demo源码为权威实现。",
+      "historicalContextFiles": [
+        ".superdesign/design-system.md",
+        "demos/calendar-app/index.html",
+        "demos/calendar-app/app.js",
+        "demos/calendar-app/style.css",
+        ".superdesign/scene-motion-spec.md",
+        "demos/home-scenes/collections/canvas.html",
+        "demos/home-scenes/collections/canvas-v2-notes.md"
+      ],
+      "historicalFingerprints": {
+        ".superdesign/design-system.md": "c2d823c394721cb83a008d9455b4e7a07e9d883873546b988bc6d2029b6f9f62",
+        "demos/calendar-app/index.html": "a22d9a1c333b06a7241ff29719141f5615e6213364cb4b1b9b70c961b5e8646f",
+        "demos/calendar-app/app.js": "5a700eec3fc8bfc27cfa9247142b9ae05924f22aa253142407d27af9c6753aaf",
+        "demos/calendar-app/style.css": "89446ea03a4092896848d1441196900933671f0e60f6385d53252dfbde9a8be7",
+        ".superdesign/scene-motion-spec.md": "d219d60e48cf734932821e53e99d690d89ce0165e6872fffce8cfe39dc0722fb",
+        "demos/home-scenes/collections/canvas.html": "ef749eed1ea2013ecf6dc9de5ab47520b4af635aa64b5e087c42b69f8b348594",
+        "demos/home-scenes/collections/canvas-v2-notes.md": "931af43bbc35268e481396fc75b67ba90fe746718b8571a37c7e0036e57745c9"
+      },
+      "selectedScope": [
+        "新用户欢迎及照片授权",
+        "连接照片墙",
+        "回忆日历",
+        "偏好",
+        "独立设置"
+      ],
+      "newUserPreviewUrl": "http://127.0.0.1:8095/?v=0.3.0#welcome",
+      "completePreviewUrl": "http://127.0.0.1:8095/",
+      "onboardingVerification": "393x852 main flow and320x740 layout passed;9VM regressions passed;existing preferences/schedule preserved;two-page demo only, awaiting review.",
+      "currentDemoVersion": "calendar-demo-v0.3.0",
+      "onboardingReviewPending": true
+    }
+  }
+}

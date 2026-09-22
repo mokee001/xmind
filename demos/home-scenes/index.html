@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>首页场景探索 · 回忆日历</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #edf1f1;
+      background: #10191f;
+      --phone-scale: 1;
+      --phone-width: 390px;
+      --phone-height: 844px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; }
+    a, button { -webkit-tap-highlight-color: transparent; }
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+    a:focus-visible, button:focus-visible { outline: 2px solid #a3cbd5; outline-offset: 5px; }
+    .canvas { min-height: 100dvh; padding: 28px 34px 22px; }
+    .review-header {
+      max-width: 1040px; margin: 0 auto; display: flex; align-items: center;
+      justify-content: space-between; gap: 24px; padding-bottom: 21px;
+      border-bottom: 1px solid rgba(223, 236, 242, .13);
+    }
+    .heading { display: flex; align-items: baseline; gap: 23px; }
+    .eyebrow { margin: 0; color: #8e9da6; font-size: 10px; letter-spacing: .16em; white-space: nowrap; }
+    h1 { margin: 0; font-size: 23px; font-weight: 450; letter-spacing: .01em; line-height: 1.3; }
+    .original-link { color: #b3c0c7; font-size: 11px; white-space: nowrap; padding: 6px 0; }
+    .original-link span { margin-left: 7px; color: #6e8897; }
+    .scene-switch { display: none; }
+    .scenes { display: flex; align-items: flex-start; justify-content: center; gap: 64px; padding: 23px 0 0; }
+    .scene { width: var(--phone-width); flex: 0 0 var(--phone-width); min-width: 0; }
+    .scene-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 1px 11px; }
+    h2 { display: flex; align-items: baseline; gap: 11px; font-weight: 450; font-size: 13px; margin: 0; letter-spacing: .05em; }
+    .number { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; color: #7b929f; letter-spacing: .02em; }
+    .expand { display: inline-flex; align-items: center; gap: 5px; color: #8d9faa; font-size: 10px; padding: 3px 0 3px 8px; }
+    .expand svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+    .device {
+      position: relative; width: var(--phone-width); height: var(--phone-height); overflow: hidden;
+      border-radius: 27px; background: #15212a;
+      box-shadow: 0 0 0 1px rgba(226, 240, 248, .19), 0 18px 45px rgba(0, 0, 0, .22);
+    }
+    iframe {
+      display: block; width: 390px; height: 844px; border: 0;
+      transform: scale(var(--phone-scale)); transform-origin: top left;
+      background: #15212a; color-scheme: normal;
+    }
+    .description { margin: 12px 1px 0; font-size: 10px; color: #8c9da8; line-height: 1.7; letter-spacing: .01em; }
+    .footnote { margin: 16px auto 0; text-align: center; color: #607886; font-size: 9px; letter-spacing: .12em; }
+    @media (hover: hover) {
+      .original-link:hover, .expand:hover { color: #fff; }
+      .scene-switch button:hover { color: #fff; }
+    }
+    @media (max-width: 780px) {
+      .canvas { height: 100dvh; min-height: 770px; display: flex; flex-direction: column; padding: 16px 14px 10px; }
+      .review-header { width: 100%; border: 0; gap: 10px; padding: 0 1px; flex: 0 0 auto; }
+      .heading { display: block; }
+      .eyebrow { font-size: 8px; margin-bottom: 5px; letter-spacing: .13em; }
+      h1 { font-size: 19px; }
+      .original-link { font-size: 10px; }
+      .scene-switch {
+        display: flex; gap: 4px; background: #1a252c; border: 1px solid #283740;
+        padding: 3px; border-radius: 11px; margin-top: 14px; flex-shrink: 0;
+      }
+      .scene-switch button {
+        flex: 1; color: #8fa1ac; border: 0; background: transparent; border-radius: 7px;
+        cursor: pointer; font-size: 11px; padding: 9px 8px;
+      }
+      .scene-switch button[aria-pressed="true"] { color: #f3f7f8; background: #33434d; }
+      .scenes { display: flex; align-items: stretch; padding-top: 12px; flex: 1; min-height: 0; }
+      .scene { width: 100%; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+      .scene:not(.is-active) { display: none; }
+      .scene-heading { margin: 0 3px 9px; flex: 0 0 auto; }
+      h2 { font-size: 11px; }
+      .number, .expand { font-size: 9px; }
+      .device { width: 100%; height: auto; flex: 1; min-height: 550px; border-radius: 21px; }
+      iframe { width: 100%; height: 100%; transform: none; }
+      .description { margin: 9px 2px 0; font-size: 9px; flex: 0 0 auto; }
+      .footnote { margin: 11px auto 0; font-size: 8px; flex: 0 0 auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="canvas">
+    <header class="review-header">
+      <div class="heading">
+        <p class="eyebrow">02 / 场景探索</p>
+        <h1>首页，可以是一个世界。</h1>
+      </div>
+      <a class="original-link" href="http://127.0.0.1:8095/#calendar">原版日历<span aria-hidden="true">↗</span></a>
+    </header>
+
+    <nav class="scene-switch" aria-label="切换首页提案">
+      <button type="button" data-target="sky" aria-pressed="true" aria-controls="scene-sky">01 流动天空</button>
+      <button type="button" data-target="pool" aria-pressed="false" aria-controls="scene-pool">02 漂浮泳池</button>
+    </nav>
+
+    <div class="scenes">
+      <section class="scene is-active" id="scene-sky" data-scene="sky" aria-labelledby="title-sky">
+        <div class="scene-heading">
+          <h2 id="title-sky"><span class="number">01</span>流动天空</h2>
+          <a class="expand" href="./sky.html" target="_blank" rel="noopener" aria-label="独立打开流动天空提案">独立查看<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+        </div>
+        <div class="device">
+          <iframe src="./sky.html" title="流动天空：动态首页概念预览" loading="eager"></iframe>
+        </div>
+        <p class="description">让光线与云的流动，成为时间经过的痕迹。</p>
+      </section>
+      <section class="scene" id="scene-pool" data-scene="pool" aria-labelledby="title-pool">
+        <div class="scene-heading">
+          <h2 id="title-pool"><span class="number">02</span>漂浮泳池</h2>
+          <a class="expand" href="./pool.html" target="_blank" rel="noopener" aria-label="独立打开漂浮泳池提案">独立查看<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+        </div>
+        <div class="device">
+          <iframe src="./pool.html" title="漂浮泳池：动态首页概念预览" loading="eager"></iframe>
+        </div>
+        <p class="description">日子漂在水面，回忆在涟漪之间轻轻相遇。</p>
+      </section>
+    </div>
+    <p class="footnote">动态概念预览 · 示例内容</p>
+  </main>
+  <script>
+    const sceneButtons = [...document.querySelectorAll('[data-target]')];
+    function selectScene(name) {
+      if (name !== 'sky' && name !== 'pool') return;
+      sceneButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.target === name)));
+      document.querySelectorAll('[data-scene]').forEach(scene => scene.classList.toggle('is-active', scene.dataset.scene === name));
+      history.replaceState(null, '', '#' + name);
+    }
+    sceneButtons.forEach(button => button.addEventListener('click', () => selectScene(button.dataset.target)));
+    function fitDevices() {
+      if (window.innerWidth <= 780) return;
+      const scale = Math.max(.55, Math.min(1, (window.innerWidth - 132) / 780, (window.innerHeight - 192) / 844));
+      document.documentElement.style.setProperty('--phone-scale', scale);
+      document.documentElement.style.setProperty('--phone-width', 390 * scale + 'px');
+      document.documentElement.style.setProperty('--phone-height', 844 * scale + 'px');
+    }
+    window.addEventListener('resize', fitDevices, { passive: true });
+    window.addEventListener('hashchange', () => selectScene(location.hash.slice(1)));
+    if (location.hash === '#pool') selectScene('pool');
+    fitDevices();
+  </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+{
+  "version": "content-home-v2.0.0",
+  "updatedAt": "2026-09-16T02:22:36.133728+00:00",
+  "scope": "Two homepage demos based on user visual references. Content grouping and dates are explicit examples; no model inference, App migration or TestFlight release.",
+  "comparisonUrl": "http://127.0.0.1:8096/collections/",
+  "references": {
+    "collage": {
+      "sourcePath": ".superdesign/references/content-home/collage-reference.jpg",
+      "nodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+      "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/content-home-collage-user-reference/collage-reference.jpg",
+      "sha256": "7c394638dcfb633c32e94cdf0d8296b7bf27b2cefb8a01cc3851cc515ab0ac1f",
+      "purpose": "user-provided visual reference; not final content"
+    },
+    "quiet": {
+      "sourcePath": ".superdesign/references/content-home/quiet-reference.jpg",
+      "nodeId": "53ed64c2-5557-432f-9592-10add1331cc2",
+      "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/content-home-quiet-user-reference/quiet-reference.jpg",
+      "sha256": "d1e4ab0f0f4d260c02b444574b395005641f5fa8681bed18925972dfacc2852c",
+      "purpose": "user-provided visual reference; not final content"
+    }
+  },
+  "sharedAsset": {
+    "sourcePath": "demos/home-scenes/studies/assets/life-scenes.png",
+    "sha256": "041ed694f599f1f7689fb6eb8865d878e2525f54967bb84fea947c00c3c55f3c",
+    "width": 1330,
+    "height": 1182,
+    "grid": "3 columns by 2 rows",
+    "origin": "built-in ImageGen; fictional example people and scenes; no user photos",
+    "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/home-studies-life-scenes-v1/life-scenes.png",
+    "nodeId": "b5ad8d0e-6032-4621-983a-96ddf925fd0e"
+  },
+  "candidates": {
+    "collage": {
+      "draftId": "b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+      "title": "10 · 内容回忆｜自由拼贴",
+      "sourcePath": "demos/home-scenes/collections/canvas.html",
+      "sourceSha256": "ef749eed1ea2013ecf6dc9de5ab47520b4af635aa64b5e087c42b69f8b348594",
+      "currentVersion": 2,
+      "previewUrl": "https://p.superdesign.dev/draft/b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+      "visualDirection": "直接阅读的连续生活画布：不同尺度的照片、语义局部和指向性批注自然成簇；弱日期，无重复分组标题及查看入口。",
+      "primaryReferenceNodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+      "status": "demo-awaiting-user-review",
+      "localUrl": "http://127.0.0.1:8096/collections/canvas.html",
+      "history": [
+        {
+          "draftId": "b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+          "title": "10 · 内容回忆｜自由拼贴",
+          "sourcePath": "demos/home-scenes/collections/collage.html",
+          "sourceSha256": "cf721e70daacc3a66368ac3d2654a9f7a4d56716f7a08cd04d07c8764df01d83",
+          "currentVersion": 1,
+          "previewUrl": "https://p.superdesign.dev/draft/b64e4f1d-5529-4aa7-a6a8-220310c58f87",
+          "visualDirection": "内容自然成组，弱日期，自由拼贴长卷，点击组内照片回看并返回原阅读位置",
+          "primaryReferenceNodeId": "82246d3e-c38a-4338-a85d-1034a2ce5b7b",
+          "status": "demo-awaiting-user-review"
+        }
+      ]
+    },
+    "quiet": {
+      "draftId": "e0d54fd9-947a-4313-8a6f-23ff8dd53f54",
+      "title": "11 · 内容回忆｜极简叠片",
+      "sourcePath": "demos/home-scenes/collections/quiet.html",
+      "sourceSha256": "0d62e5b727cba03eb4daa70a18ef91f2eb860d9192ce5ffe1ffd7698f725fbf6",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/e0d54fd9-947a-4313-8a6f-23ff8dd53f54",
+      "visualDirection": "以两列轻柔叠片收纳内容组，弱日期，原位展开与组内轻拨，收起回原卡组",
+      "primaryReferenceNodeId": "53ed64c2-5557-432f-9592-10add1331cc2",
+      "status": "demo-awaiting-user-review"
+    }
+  },
+  "sampleGroups": [
+    {
+      "title": "海边的周末",
+      "displayDates": "9月12—13日",
+      "scenes": [
+        0,
+        4,
+        5
+      ]
+    },
+    {
+      "title": "一起吃顿饭",
+      "displayDates": "9月8日",
+      "scenes": [
+        3,
+        1,
+        5
+      ]
+    },
+    {
+      "title": "在家的小事",
+      "displayDates": "9月5日",
+      "scenes": [
+        2,
+        1,
+        5
+      ]
+    }
+  ],
+  "verification": {
+    "mobile": "393x852 and 320x740 rendered and visually inspected; narrow page width = scrollWidth = 320",
+    "canvas": "No repeated chapter containers; mixed photos/crops/cutouts. Fruit opens photo4/6; pointer swipe advances4→5; dog opens original5/6. During dialog scrollTop405.5, after close405.5. Connection fixed above scrolling canvas.",
+    "preferences": "Readonly has zero visible checkboxes; manage/check exclusion/save restores readonly; reload retains selection; QA choice then restored via UI.",
+    "preservation": "Old collage.html hash unchanged; quiet.html hash unchanged. Index first slot updated only.",
+    "superdesign": "Draft b64e4f1d-5529-4aa7-a6a8-220310c58f87 version2 saved HTML exact-match refetched; public preview rendered and visually inspected.",
+    "limits": "Browser viewport emulation, no physical device tests; fictional example content; no inference run, App integration or release."
+  },
+  "sampleGroupsScope": "旧版 collage.html 与 quiet.html 的演示分组。新版 canvas.html 为六张示例照片组成的连续画布，不采用重复组容器。",
+  "canvasAsset": {
+    "sourcePath": "demos/home-scenes/collections/assets/story-cutouts-v2.png",
+    "sha256": "453ec242ddfec8fff3b1881d014896f8dae31f0993c55922837af576db13d5fe",
+    "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/content-home-canvas-cutouts-v2/story-cutouts-v2.png",
+    "width": 2172,
+    "height": 724,
+    "grid": "3 columns by 1 row",
+    "origin": "built-in ImageGen edit of existing fictional demo photography; transparent RGBA; not real user photo extraction",
+    "promptRecord": "demos/home-scenes/collections/assets/README.md"
+  },
+  "verificationHistory": [
+    {
+      "desktop": "1280x1080, equal 393x852 frames, no horizontal overflow",
+      "mobile": "393x852 and 320x740 independent layouts; comparison hash and standalone-link synchronization",
+      "collage": "Click correct photo within group; pointer swipe 2/3→3/3; second group opened and closed with scrollTop647 preserved; readonly/manage/save preferences, exclusion saved then UI-restored",
+      "quiet": "Deck opening; pointer swipe photo0→1; close; readonly/manage/save preferences; narrow layout",
+      "superdesign": "Both v1 saved HTML exact-match refetched; collage public preview visually inspected",
+      "limits": "Desktop-browser pointer interaction and viewport emulation only; no physical-device integration or actual photo selection run."
+    }
+  ]
+}

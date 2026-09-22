@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#39c2d3">
+  <title>漂浮泳池 · 回忆日历</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://code.iconify.design/iconify-icon/2.3.0/iconify-icon.min.js"></script>
+  <style>
+    :root{font-family:"Helvetica Neue",Arial,"PingFang SC",sans-serif;color:#064b61;background:#d5dedc;font-synthesis:none;--water-image:url('https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/scene-pool-v1/scene-pool-v1.png');--ease:cubic-bezier(.2,.7,.2,1)}
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}button:focus-visible{outline:3px solid #ed674b;outline-offset:4px}button:active{filter:brightness(.95)}iconify-icon{display:block;width:20px;height:20px;font-size:20px;flex:none}button{border:0}#pool-app{position:relative;width:100%;max-width:480px;height:100dvh;min-height:500px;margin:auto;overflow:hidden;isolation:isolate;background:#39c2d3;box-shadow:0 0 80px #174b5940}.environment,.water-photo,.water-light,.water-depth{position:absolute;inset:0;pointer-events:none}.environment{z-index:-1;overflow:hidden}.water-photo{inset:-3%;background-image:var(--water-image);background-size:cover;background-position:52% center;transform:scale(1.04);animation:water-breathe 26s ease-in-out infinite alternate;filter:saturate(1.12)}.water-depth{background:linear-gradient(90deg,#14798710 0%,#15b8c800 28%,#1ee0e40d 80%),linear-gradient(180deg,#12b3c810,#32cce400 55%,#00647710)}.water-light{inset:-25%;opacity:.36;background-image:repeating-radial-gradient(ellipse at 38% 20%,transparent 0 38px,#ebffff55 41px,#efffff00 46px,transparent 76px),repeating-radial-gradient(ellipse at 70% 80%,transparent 0 60px,#ffffff3b 65px,transparent 72px);background-size:280px 410px,340px 260px;mix-blend-mode:screen;transform:rotate(-12deg);animation:caustics-drift 24s ease-in-out infinite alternate}.water-light.second{opacity:.17;background-size:400px 240px,220px 310px;transform:rotate(18deg);animation-duration:31s;animation-direction:alternate-reverse}.coping{position:absolute;left:0;top:0;bottom:0;width:61px;background:linear-gradient(90deg,#eeeadd 0%,#f8f6ed 74%,#e3dfd2 92%,#b5c4b6 96%,#07587065 100%);box-shadow:4px 0 9px #05455428;z-index:0;pointer-events:none}.coping:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(180deg,transparent 0 119px,#787f6d22 120px,transparent 121px);opacity:.5}.utility{height:76px;padding:env(safe-area-inset-top,0px) 16px 0;position:absolute;top:0;left:0;right:0;z-index:30;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(180deg,#f8f6efff,#f8f6eff7);box-shadow:0 1px 0 #49706716;gap:8px}.status{display:flex;align-items:center;gap:6px;min-height:44px;padding:0 6px;background:transparent;font-size:12px;font-weight:600;white-space:nowrap}.status-dot{width:6px;height:6px;border-radius:50%;background:#358276;box-shadow:0 0 0 3px #3582760b}.example{font-size:9px;font-weight:400;color:#728178;border-left:1px solid #cad1c6;padding-left:6px;margin-left:2px}.nav-peer{display:flex;align-items:center;gap:5px}.nav-button{display:flex;align-items:center;gap:7px;min-height:44px;padding:0 8px;background:transparent;font-size:12px;font-weight:600}.gear{height:44px;width:44px;border:1px solid #064b611c;border-radius:50%;justify-content:center;padding:0}.pool-scroll{position:absolute;inset:76px 0 0;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;overscroll-behavior-y:contain;z-index:2;touch-action:pan-y}.pool-scroll::-webkit-scrollbar{display:none}.month-intro{height:140px;position:relative;padding:22px 21px 0 86px;display:flex;justify-content:space-between;gap:16px}.month-number{font-size:72px;font-weight:800;letter-spacing:-5px;line-height:.96;color:#075368;text-shadow:0 1px 0 #b9f5f680}.month-year{display:block;font-size:10px;letter-spacing:4px;margin:9px 0 0 4px;font-weight:700}.month-name{padding-top:4px;text-align:right}.month-name h1{margin:0;font-size:14px;font-weight:600;letter-spacing:2px}.month-name p{font-size:10px;margin:10px 0 0;letter-spacing:1px;font-weight:500}.month-name small{font-size:9px;display:block;margin-top:5px;letter-spacing:1px;color:#0c6174}.timeline{position:relative}.pool-day{height:106px;position:relative}.date-tick{position:absolute;left:6px;top:0;width:48px;height:44px;display:flex;align-items:center;justify-content:center;background:transparent;font-size:17px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums;color:#596b68;z-index:4}.date-tick:after{content:"";position:absolute;right:-8px;top:21px;width:10px;height:1px;background:#597d7470}.date-tick.is-selected{color:#e75d43}.date-tick.is-selected:after{background:#e75d43;width:16px}.date-tick.is-selected:before{content:"";position:absolute;left:1px;width:3px;height:15px;border-radius:1px;background:#e75d43}.minor-ticks{position:absolute;left:47px;top:51px;display:flex;height:44px;width:11px;flex-direction:column;justify-content:space-between;pointer-events:none}.minor-ticks i{display:block;width:6px;height:1px;background:#7793855b}.minor-ticks i:nth-child(2){width:10px}.today-water{position:absolute;top:-26px;left:49%;width:126px;height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:transparent;color:#075368;font-size:11px;font-weight:500;letter-spacing:2px;z-index:4}.today-water:before,.today-water:after{content:"";position:absolute;inset:6px 13px 14px;border:1px solid #e5ffffa8;border-radius:50%;box-shadow:0 0 16px #d7ffff30,inset 0 0 15px #d7ffff20;transform:rotateX(18deg)}.today-water:after{inset:15px 24px 22px;border-color:#ffffff65}.today-water strong{position:relative;z-index:1;font-size:12px;font-weight:500;letter-spacing:2px}.today-water small{position:relative;z-index:1;font-size:8px;letter-spacing:1.2px;margin-top:7px}.water-whisper{position:absolute;top:84px;left:83px;color:#075f72;font-size:10px;letter-spacing:1px;line-height:1.8}.memory-print{position:absolute;top:-23px;width:154px;padding:8px 8px 13px;background:#fffdf6;box-shadow:1px 2px 0 #c4ceba,6px 16px 16px #06465745,15px 29px 27px #055a6733;transform:rotate(var(--tilt,-6deg));border-radius:1px;display:block;z-index:7;text-align:left;transition:box-shadow 160ms var(--ease),filter 160ms var(--ease);animation:print-buoy 13s ease-in-out infinite alternate;animation-delay:var(--delay,0s);transform-origin:50% 60%}.memory-print:after{content:"";position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 1px #fff8}.memory-print:hover{box-shadow:1px 2px 0 #c4ceba,8px 20px 18px #06465748,18px 34px 30px #055a672e}.memory-print svg{display:block;width:100%;aspect-ratio:1.18;height:auto;filter:saturate(.95)}.print-caption{display:flex;justify-content:space-between;align-items:baseline;gap:3px;margin:10px 2px 0}.print-caption strong{font-size:9px;letter-spacing:.2px;color:#325b5e;font-weight:500}.print-caption time{font-size:8px;color:#607c79;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}.print-stamp{font-size:6px;letter-spacing:1px;display:block;color:#8a9590;margin:5px 2px 0}.memory-print.right{right:28px;--tilt:7deg;--delay:-5s}.memory-print.left{left:92px;--tilt:-8deg;--delay:-1s}.memory-print.mid{right:36px;--tilt:4deg;--delay:-8s}.month-end{position:relative;margin:27px 24px max(120px,58dvh) 85px;padding:26px 0;border-top:1px solid #07536835;display:flex;justify-content:space-between;align-items:center;color:#075368}.month-end strong{font-size:14px;letter-spacing:2px}.month-end small{font-size:9px;letter-spacing:1px}.fixed-foot{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:77px;right:18px;display:flex;justify-content:space-between;align-items:flex-end;z-index:20;pointer-events:none}.foot-note{padding:8px 12px;border:1px solid #e5fff57a;border-radius:24px;background:#d8f8ecbb;backdrop-filter:blur(12px);color:#175f6b;font-size:9px;letter-spacing:.7px;pointer-events:none;box-shadow:0 3px 12px #07505d12}.foot-actions{display:flex;gap:8px;pointer-events:auto}.round-action{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#f8f6eff2;box-shadow:0 3px 12px #07505d1a;color:#125869;border:1px solid #fff9}.round-action iconify-icon{font-size:18px;width:18px;height:18px}.today-action{width:48px;height:48px;font-size:11px;flex-direction:column;gap:1px;letter-spacing:0;font-weight:600}.today-action iconify-icon{font-size:15px;width:15px;height:15px}.ripple-layer{position:absolute;inset:0;pointer-events:none;z-index:18;overflow:hidden}.touch-ripple{position:absolute;left:var(--x);top:var(--y);width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #f6ffff;border-radius:50%;box-shadow:0 0 0 9px #c8ffff20,0 0 20px #ffffff55;animation:contact-ripple 650ms ease-out forwards}.touch-ripple:after{content:"";position:absolute;inset:5px;border:1px solid #fff;border-radius:50%}.hint{position:absolute;right:21px;top:82px;z-index:25;color:#075368;pointer-events:none;font-size:9px;letter-spacing:1px;opacity:0;transition:opacity 180ms}.hint.visible{opacity:1}.sheet{position:absolute;inset:auto 0 0;width:100%;max-width:480px;border:0;border-radius:24px 24px 0 0;padding:0;background:#f9f8f2;color:#174f58;max-height:80dvh;overflow-y:auto;box-shadow:0 -14px 70px #003d4c44;margin:0 auto}.sheet::backdrop{background:#023e4b38;backdrop-filter:blur(3px)}.sheet-inner{padding:13px 26px 28px}.sheet-grip{display:block;width:31px;height:3px;background:#c5cec3;border-radius:3px;margin:0 auto 18px}.sheet-top{display:flex;align-items:center;justify-content:space-between;gap:16px}.sheet-top h2{font-size:20px;line-height:1.4;margin:0;font-weight:600}.sheet-close{width:44px;height:44px;border-radius:50%;background:#e9eee6;display:flex;align-items:center;justify-content:center;flex:none}.sheet-content{font-size:13px;line-height:1.9;margin-top:12px}.sheet-content p{margin:12px 0}.sheet-content small{font-size:11px;color:#69807a}.sheet-art{max-width:250px;margin:18px auto;padding:10px 10px 25px;background:#fffdf7;box-shadow:0 8px 25px #103c4812;transform:rotate(-3deg)}.sheet-art svg{display:block;width:100%;height:auto}.sheet-meta{font-size:10px;color:#72837d;letter-spacing:1px;text-transform:uppercase}.primary-action{display:block;width:100%;height:48px;background:#0a6877;color:white;border-radius:12px;margin-top:21px;font-size:13px}.status-detail{display:flex;align-items:center;gap:8px;color:#216c62;font-weight:600}.no-motion .water-photo,.no-motion .water-light,.no-motion .memory-print,.is-hidden .water-photo,.is-hidden .water-light,.is-hidden .memory-print{animation-play-state:paused}.no-motion .touch-ripple{animation:static-ripple 170ms ease-out forwards}.no-motion .memory-print{transform:rotate(var(--tilt,-6deg))}.sr-only{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}.live-date{position:absolute;top:88px;left:11px;font-size:8px;writing-mode:vertical-rl;letter-spacing:2px;color:#748177;font-weight:500;z-index:4;pointer-events:none}
+    @keyframes water-breathe{from{transform:scale(1.04) translate(0,0)}to{transform:scale(1.09) translate(-1.1%,.6%)}}
+    @keyframes caustics-drift{from{transform:translate(-1%,0) rotate(-12deg) scale(1);opacity:.27}to{transform:translate(3%,2%) rotate(-8deg) scale(1.08);opacity:.4}}
+    @keyframes print-buoy{from{transform:translateY(0) rotate(calc(var(--tilt,-6deg) - .65deg))}to{transform:translateY(-4px) rotate(calc(var(--tilt,-6deg) + .65deg))}}
+    @keyframes contact-ripple{0%{transform:scale(.5);opacity:1}70%{opacity:.8}100%{transform:scale(8);opacity:0}}
+    @keyframes static-ripple{from{transform:scale(2);opacity:1}to{transform:scale(2);opacity:0}}
+    @media (prefers-reduced-motion:reduce){.water-photo,.water-light,.memory-print{animation:none!important}.memory-print{transform:rotate(var(--tilt,-6deg))}.touch-ripple{animation:static-ripple 170ms ease-out forwards}.pool-scroll{scroll-behavior:auto}.sheet::backdrop{backdrop-filter:none}}
+    @media (max-width:360px){.utility{padding-left:10px;padding-right:10px}.nav-peer{gap:0}.memory-print{width:143px}.memory-print.left{left:86px}.memory-print.right{right:16px}.month-intro{padding-right:17px}.foot-note{font-size:8px;padding:7px 9px}.foot-actions{gap:6px}.fixed-foot{left:76px;right:12px}.month-name h1{font-size:13px}}
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded',()=>{
+      const root=document.getElementById('pool-app');
+      const scroll=document.getElementById('pool-scroll');
+      const timeline=document.getElementById('timeline');
+      const sheet=document.getElementById('info-sheet');
+      const reduce=window.matchMedia('(prefers-reduced-motion: reduce)');
+      const history={13:{kind:1,title:'一杯暖暖的日常'},11:{kind:4,title:'毛孩子的慢时光'},8:{kind:1,title:'一杯暖暖的日常'},5:{kind:3,title:'一点绿色的陪伴'},2:{kind:0,title:'有山的日子'}};
+      const art=[
+        '<rect width="120" height="100" fill="#e9e8da"/><circle cx="82" cy="25" r="10" fill="#c0ab73"/><path d="m0 76 42-42 35 27 18-15 25 30v24H0Z" fill="#9dada0"/><path d="m0 89 35-28 28 20 31-14 26 23v10H0Z" fill="#667d72"/><path d="m42 34 10 10-13-2-11 6Z" fill="#ecebe0"/>',
+        '<rect width="120" height="100" fill="#eddfcf"/><ellipse cx="61" cy="80" rx="36" ry="5" fill="#d0bba2"/><path d="M36 36h45v26c0 24-45 24-45 0Z" fill="#af795d"/><path d="M81 42h8c18 0 18 22-8 22" fill="none" stroke="#af795d" stroke-width="7"/><path d="M48 13c-8 7 8 11 0 17m18-19c-8 7 8 11 0 17" fill="none" stroke="#c5b49e" stroke-width="2" stroke-linecap="round"/>',
+        '<rect width="120" height="100" fill="#dbe4e0"/><circle cx="87" cy="27" r="12" fill="#d7c898"/><path d="M0 58q25-11 50 0t70 0v42H0" fill="#99b0aa"/><path d="M0 73q25-11 50 0t70 0" fill="none" stroke="#ecede0" stroke-width="2"/><path d="M0 88q25-11 50 0t70 0" fill="none" stroke="#7a9891" stroke-width="3"/>',
+        '<rect width="120" height="100" fill="#e8e6d8"/><path d="M60 87 65 23" stroke="#859372" stroke-width="2"/><path d="M64 53C24 44 25 13 64 53Z" fill="#a0ad89"/><path d="M62 67C26 68 28 38 62 67Z" fill="#87966f"/><path d="M64 46C98 51 102 19 64 46Z" fill="#798d73"/><path d="M65 31C45 14 50 2 65 31Z" fill="#b0b58d"/><path d="M44 74h33l-3 25H48Z" fill="#c4b99f"/>',
+        '<rect width="120" height="100" fill="#e6e2dc"/><path d="m38 33-8-20 22 10m19 1 21-11-7 22" fill="#b3a89b"/><ellipse cx="61" cy="51" rx="30" ry="30" fill="#c7bcad"/><path d="m49 44 1 1m23-1 1 1" stroke="#645d56" stroke-width="4" stroke-linecap="round"/><path d="m58 55 4 3 4-3m-4 3v5m-7 0q7 7 14 0M34 54l-17-3m17 11-17 4m72-12 17-3m-17 11 17 4" fill="none" stroke="#84796d" stroke-width="1.5"/><ellipse cx="60" cy="92" rx="37" ry="10" fill="#d5ccbc"/>'
+      ];
+      const svg=kind=>'<svg viewBox="0 0 120 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'+art[kind]+'</svg>';
+      let memoryIndex=0;
+      timeline.innerHTML=Array.from({length:15},(_,index)=>{
+        const day=15-index,record=history[day],position=['right','left','mid'][memoryIndex%3];
+        if(record) memoryIndex++;
+        return '<section class="pool-day" data-day="'+day+'" aria-label="2026年9月'+day+'日"><button class="date-tick'+(day===15?' is-selected':'')+'" data-date="'+day+'" aria-label="9月'+day+'日'+(day===15?'，今天':record?'，查看示例回忆':'，暂无记录')+'"'+(day===15?' aria-current="date"':'')+'>'+String(day).padStart(2,'0')+'</button><span class="minor-ticks" aria-hidden="true"><i></i><i></i><i></i></span>'+(day===15?'<button class="today-water" data-date="15" aria-label="今天，尚无已展示记录"><strong>今天</strong><small>留一点期待</small></button><span class="water-whisper">新的回忆，<br>会在展示后留下。</span>':'')+(record?'<button class="memory-print '+position+'" data-memory="'+day+'" aria-label="查看9月'+day+'日示例回忆，'+record.title+'">'+svg(record.kind)+'<span class="print-caption"><strong>'+record.title+'</strong><time datetime="2026-09-'+String(day).padStart(2,'0')+'">09.'+String(day).padStart(2,'0')+'</time></span><span class="print-stamp">示例回忆 · SEPTEMBER</span></button>':'')+'</section>';
+      }).join('');
+      let previousFocus=null;
+      function openSheet(title,body){
+        previousFocus=document.activeElement;
+        document.getElementById('sheet-title').textContent=title;
+        document.getElementById('sheet-content').innerHTML=body;
+        if(!sheet.open) sheet.showModal();
+      }
+      function closeSheet(){sheet.close();}
+      function openDate(day){
+        setActiveDay(day);
+        const record=history[day];
+        if(record){openSheet(record.title,'<p class="sheet-meta">2026.09.'+String(day).padStart(2,'0')+' · 示例回忆</p><div class="sheet-art">'+svg(record.kind)+'</div><p>留在这一天的一点美好。</p><small>这里使用插画演示回看体验，并非真实设备的展示记录。</small>');}
+        else if(day===15){openSheet('给今天留一点期待','<p>今天还没有已展示的回忆。照片墙展示后，它们会留在这里。</p><small>未来的内容保持留白。这是一版首页视觉演示。</small>');}
+        else{openSheet('9 月 '+day+' 日','<p>这一天暂无已展示记录。</p><small>有回忆的日子会留在水面上，空白的日子也值得被保留。</small>');}
+      }
+      function showRipple(event){
+        if(event.clientX===0&&event.clientY===0)return;
+        const rect=root.getBoundingClientRect(),ring=document.createElement('i');
+        ring.className='touch-ripple';ring.style.setProperty('--x',(event.clientX-rect.left)+'px');ring.style.setProperty('--y',(event.clientY-rect.top)+'px');
+        document.getElementById('ripple-layer').appendChild(ring);
+        ring.addEventListener('animationend',()=>ring.remove(),{once:true});
+      }
+      let hintTimeout;
+      function setHint(message){const hint=document.getElementById('hint');hint.textContent=message;hint.classList.add('visible');clearTimeout(hintTimeout);hintTimeout=setTimeout(()=>hint.classList.remove('visible'),2200);}
+      timeline.addEventListener('click',event=>{
+        const memory=event.target.closest('[data-memory]'),date=event.target.closest('[data-date]');
+        if(memory){showRipple(event);openDate(Number(memory.dataset.memory));}
+        else if(date){openDate(Number(date.dataset.date));}
+        else showRipple(event);
+      });
+      document.getElementById('status-button').addEventListener('click',()=>openSheet('客厅照片墙','<p class="status-detail"><span class="status-dot"></span>已连接 · 示例状态</p><p>连接状态会一直显示在首页左上角。设备与账户管理可以从右上角的设置进入。</p><small>本提案未连接真实设备。</small>'));
+      document.getElementById('preferences-button').addEventListener('click',()=>openSheet('偏好','<p>在正式产品中，这里进入现有的偏好管理。你可以调整想看到的内容与人物。</p><small>本次仅对比首页的视觉与时间体验，偏好页沿用已确认的结构。</small>'));
+      document.getElementById('settings-button').addEventListener('click',()=>openSheet('设置','<p>在正式产品中，这里进入现有的设备与账户设置。</p><p>设置与偏好各自独立；连接状态始终留在首页。</p><small>这版提案不会改动你的真实设备或账户。</small>'));
+      document.getElementById('close-sheet').addEventListener('click',closeSheet);
+      document.getElementById('sheet-done').addEventListener('click',closeSheet);
+      sheet.addEventListener('click',event=>{if(event.target===sheet){const r=sheet.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeSheet();}});
+      sheet.addEventListener('close',()=>{if(previousFocus&&previousFocus.isConnected)previousFocus.focus({preventScroll:true});});
+      document.getElementById('today-button').addEventListener('click',()=>{setActiveDay(15);scroll.scrollTo({top:0,behavior:reduce.matches?'instant':'smooth'});setHint('回到今天 · 9 月 15 日');});
+      let manuallyPaused=false;
+      function syncMotion(){const paused=manuallyPaused||reduce.matches;root.classList.toggle('no-motion',paused);const button=document.getElementById('motion-button');button.setAttribute('aria-pressed',String(paused));button.setAttribute('aria-label',reduce.matches?'系统已减少动态效果':paused?'播放水面动画':'暂停水面动画');button.innerHTML='<iconify-icon icon="lucide:'+(paused?'play':'pause')+'" aria-hidden="true"></iconify-icon>';}
+      document.getElementById('motion-button').addEventListener('click',()=>{if(reduce.matches){setHint('已跟随系统，减少动态效果');return;}manuallyPaused=!manuallyPaused;syncMotion();setHint(manuallyPaused?'水面已静止':'水面继续流动');});
+      reduce.addEventListener('change',syncMotion);syncMotion();
+      document.addEventListener('visibilitychange',()=>root.classList.toggle('is-hidden',document.hidden));
+      let pending=false,activeDay=15;
+      function setActiveDay(day){activeDay=day;document.querySelectorAll('.date-tick').forEach(button=>button.classList.toggle('is-selected',Number(button.dataset.date)===activeDay));document.getElementById('current-date').textContent='09.'+String(activeDay).padStart(2,'0');document.getElementById('date-announcement').textContent='正在回看2026年9月'+activeDay+'日';}
+      function updateDate(){pending=false;const focusY=scroll.scrollTop+36;let nextDay=15;timeline.querySelectorAll('.pool-day').forEach(day=>{if(timeline.offsetTop+day.offsetTop<=focusY)nextDay=Number(day.dataset.day);});if(nextDay!==activeDay)setActiveDay(nextDay);}
+      scroll.addEventListener('scroll',()=>{if(!pending){pending=true;requestAnimationFrame(updateDate);}},{passive:true});
+    });
+  </script>
+</head>
+<body>
+  <div id="pool-app">
+    <div class="environment" aria-hidden="true"><div class="water-photo"></div><div class="water-depth"></div><div class="water-light"></div><div class="water-light second"></div></div>
+    <div class="coping" aria-hidden="true"></div>
+    <header class="utility flex items-center justify-between">
+      <button id="status-button" class="status" aria-label="连接状态：已连接，示例"><span class="status-dot"></span><span>已连接</span><span class="example">示例</span></button>
+      <nav class="nav-peer flex items-center" aria-label="首页功能">
+        <button id="preferences-button" class="nav-button" aria-label="偏好"><iconify-icon icon="lucide:sliders-horizontal" aria-hidden="true"></iconify-icon><span>偏好</span></button>
+        <button id="settings-button" class="nav-button gear" aria-label="设置"><iconify-icon icon="lucide:settings" aria-hidden="true"></iconify-icon></button>
+      </nav>
+    </header>
+    <main class="pool-scroll" id="pool-scroll" tabindex="0" aria-label="九月回忆时间轴，向上滑动回看更早的日期">
+      <section class="month-intro">
+        <div><span class="month-number">09</span><span class="month-year">2026</span></div>
+        <div class="month-name"><h1>回忆日历</h1><p>日子，轻轻浮起。</p><small>5 天 · 示例回忆</small></div>
+      </section>
+      <div class="timeline" id="timeline"></div>
+      <div class="month-end"><strong>九月的起点</strong><small>让回忆慢慢浮现</small></div>
+    </main>
+    <span class="live-date" id="current-date" aria-hidden="true">09.15</span>
+    <div class="ripple-layer" id="ripple-layer" aria-hidden="true"></div>
+    <div class="hint" id="hint" role="status"></div>
+    <div class="fixed-foot">
+      <div class="foot-note">向上滑 · 回到那些日子</div>
+      <div class="foot-actions">
+        <button id="motion-button" class="round-action" aria-label="暂停水面动画" aria-pressed="false"><iconify-icon icon="lucide:pause" aria-hidden="true"></iconify-icon></button>
+        <button id="today-button" class="round-action today-action" aria-label="回到今天"><iconify-icon icon="lucide:arrow-up" aria-hidden="true"></iconify-icon><span>今天</span></button>
+      </div>
+    </div>
+    <span class="sr-only" id="date-announcement" role="status" aria-live="polite">正在回看2026年9月15日</span>
+    <dialog id="info-sheet" class="sheet" aria-labelledby="sheet-title"><div class="sheet-inner"><span class="sheet-grip"></span><div class="sheet-top"><h2 id="sheet-title"></h2><button id="close-sheet" class="sheet-close" aria-label="关闭"><iconify-icon icon="lucide:x" aria-hidden="true"></iconify-icon></button></div><div id="sheet-content" class="sheet-content"></div><button id="sheet-done" class="primary-action">回到水面</button></div></dialog>
+  </div>
+</body>
+</html>

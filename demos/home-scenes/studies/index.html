@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>首页，重新从影像开始。</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased;color:#191c20;background:#f7f8f9;color-scheme:light;--ink:#191c20;--secondary:#58606a;--rule:#dce0e5;--scale:1;--study-width:393px;--study-height:852px}
+    *{box-sizing:border-box}body{margin:0;min-width:280px}a{color:inherit;text-decoration:none}button{font:inherit;color:inherit;cursor:pointer}a,button{-webkit-tap-highlight-color:transparent}a:focus-visible,button:focus-visible{outline:2px solid #355073;outline-offset:4px}button{touch-action:manipulation}.canvas{max-width:1440px;margin:auto;padding:29px 35px 24px}.masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;padding-bottom:23px;border-bottom:1px solid var(--rule)}.eyebrow{margin:0 0 12px;font-size:10px;line-height:1.5;letter-spacing:.05em;color:var(--secondary)}.eyebrow span{font-variant-numeric:tabular-nums;margin-left:14px}h1{font-size:29px;line-height:1.35;letter-spacing:-.035em;font-weight:500;margin:0;text-wrap:balance}.archive-links{display:flex;align-items:center;gap:20px;padding-bottom:2px}.archive-links a{font-size:10px;color:var(--secondary);min-height:32px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}.arrow{width:11px;height:11px;stroke:currentColor;stroke-width:1.4;fill:none}.switcher{display:none}.studies{display:flex;justify-content:center;align-items:flex-start;gap:34px;margin:22px 0 0}.study{flex:0 0 var(--study-width);width:var(--study-width);min-width:0}.study-header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:38px;margin:0 0 11px}.study-header h2{font-size:15px;line-height:1.4;font-weight:500;white-space:nowrap;margin:0}.number{font-size:10px;font-variant-numeric:tabular-nums;color:var(--secondary);font-weight:400;margin-right:10px;vertical-align:1px}.open-link{display:inline-flex;align-items:center;gap:5px;font-size:10px;line-height:1.5;color:var(--secondary);min-height:32px;white-space:nowrap}.viewport{width:var(--study-width);height:var(--study-height);position:relative;overflow:hidden;background:#e7e9ec}.viewport iframe{display:block;width:393px;height:852px;border:0;transform:scale(var(--scale));transform-origin:top left;background:#e7e9ec;color-scheme:normal}.notes{margin:20px 0 0}.notes>div{display:grid;grid-template-columns:28px 1fr;gap:13px;margin:0 0 9px}.notes dt{font-size:10px;line-height:1.8;color:var(--secondary);padding-top:1px}.notes dd{font-size:11px;line-height:1.75;color:#363d47;margin:0;text-wrap:pretty}.reference{display:inline-block;font-size:10px;color:var(--secondary);margin-top:6px;line-height:1.6;text-decoration:underline;text-decoration-color:#aab1bc;text-underline-offset:3px}.footnote{display:flex;justify-content:space-between;align-items:flex-start;gap:25px;margin-top:28px;padding-top:16px;border-top:1px solid var(--rule);font-size:10px;line-height:1.75;color:var(--secondary)}.footnote p{margin:0}.footnote .constraints{max-width:650px}.footnote .sample{max-width:430px;text-align:right}
+    @media(hover:hover){a:hover{color:#10151e}.reference:hover{text-decoration-color:currentColor}.switcher button:hover{color:var(--ink);background:#e2e6ec}}
+    @media(min-width:1100px) and (max-width:1250px){.canvas{padding-right:28px;padding-left:28px}.studies{gap:26px}.archive-links{gap:12px}.archive-links a{font-size:9px}.study-header h2{font-size:14px}.open-link{font-size:9px}.notes>div{gap:10px}}
+    @media(max-width:1099px){
+      .canvas{max-width:520px;padding:22px 18px 22px}.masthead{display:block;padding-bottom:17px}.eyebrow{font-size:10px;margin-bottom:10px}h1{font-size:23px;line-height:1.4;letter-spacing:-.04em}.archive-links{gap:18px;flex-wrap:wrap;padding-bottom:0;margin-top:10px}.archive-links a{font-size:10px;min-height:28px;gap:5px}.switcher{display:flex;position:sticky;top:0;z-index:2;gap:3px;padding:4px;margin-top:17px;background:#e9edf2;border-radius:7px;box-shadow:0 7px 15px #f7f8f94d}.switcher button{flex:1;min-width:0;min-height:38px;border:0;border-radius:4px;background:transparent;color:var(--secondary);font-size:11px;white-space:nowrap}.switcher button[aria-pressed="true"]{background:#fff;color:var(--ink)}.studies{display:flex;margin-top:15px;gap:0}.study{display:block}.study:not(.is-active){display:none}.study-header{min-height:36px;margin-bottom:10px}.study-header h2{font-size:15px}.number{font-size:10px}.open-link{font-size:10px;min-height:34px}.notes{margin-top:19px}.notes>div{grid-template-columns:28px 1fr;gap:13px;margin-bottom:10px}.notes dt{font-size:10px}.notes dd{font-size:12px}.reference{font-size:10px;margin-top:6px}.footnote{display:block;margin-top:26px;padding-top:15px;font-size:10px}.footnote .sample{text-align:left;margin-top:9px;max-width:none}
+    }
+    @media(max-width:350px){.canvas{padding-right:12px;padding-left:12px}h1{font-size:21px}.archive-links{gap:13px}.archive-links a{font-size:9px}.switcher button{font-size:10px}.study-header h2{font-size:14px}.notes dd{font-size:11px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded',()=>{
+      const names=['immersive','split','focus'];
+      const buttons=[...document.querySelectorAll('[data-target]')];
+      const studies=[...document.querySelectorAll('[data-study]')];
+      const narrow=matchMedia('(max-width:1099px)');
+      let active=names.includes(location.hash.slice(1))?location.hash.slice(1):names[0];
+      function select(name,updateHash=true){
+        if(!names.includes(name))return;
+        active=name;
+        buttons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.target===name)));
+        studies.forEach(study=>{
+          const selected=study.dataset.study===name;
+          study.classList.toggle('is-active',selected);
+          study.inert=narrow.matches&&!selected;
+        });
+        if(updateHash)history.replaceState(null,'','#'+name);
+      }
+      buttons.forEach((button,index)=>{
+        button.addEventListener('click',()=>select(button.dataset.target));
+        button.addEventListener('keydown',event=>{
+          let next;
+          if(event.key==='ArrowRight')next=(index+1)%buttons.length;
+          else if(event.key==='ArrowLeft')next=(index+buttons.length-1)%buttons.length;
+          else if(event.key==='Home')next=0;
+          else if(event.key==='End')next=buttons.length-1;
+          else return;
+          event.preventDefault();buttons[next].focus();select(buttons[next].dataset.target);
+        });
+      });
+      function fit(){
+        select(active,false);
+        const canvas=document.querySelector('.canvas');
+        const style=getComputedStyle(canvas);
+        const inner=canvas.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight);
+        const gap=parseFloat(getComputedStyle(document.querySelector('.studies')).gap)||0;
+        const available=narrow.matches?inner:(inner-gap*2)/3;
+        const heightScale=narrow.matches?1:Math.max(.66,(innerHeight-228)/852);
+        const scale=Math.min(1,available/393,heightScale);
+        document.documentElement.style.setProperty('--scale',String(scale));
+        document.documentElement.style.setProperty('--study-width',`${393*scale}px`);
+        document.documentElement.style.setProperty('--study-height',`${852*scale}px`);
+      }
+      let resizeFrame;
+      window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(fit)},{passive:true});
+      window.addEventListener('hashchange',()=>select(location.hash.slice(1)||names[0],false));
+      select(active,false);fit();
+    });
+  </script>
+</head>
+<body>
+  <main class="canvas">
+    <header class="masthead">
+      <div><p class="eyebrow">设计研究<span>同一组摄影 · 三种浏览方式</span></p><h1>首页，重新从影像开始。</h1></div>
+      <nav class="archive-links" aria-label="查看此前首页提案">
+        <a href="../explorations/">星图 / 唱片 / 地层<svg class="arrow" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+        <a href="../interactions/">纸面 / 织毯 / 长卷<svg class="arrow" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+      </nav>
+    </header>
+
+    <nav class="switcher" aria-label="设计评审：切换首页方案">
+      <button type="button" data-target="immersive" aria-controls="study-immersive" aria-pressed="true">01 整屏摄影</button>
+      <button type="button" data-target="split" aria-controls="study-split" aria-pressed="false">02 连续分屏</button>
+      <button type="button" data-target="focus" aria-controls="study-focus" aria-pressed="false">03 多尺度浏览</button>
+    </nav>
+
+    <div class="studies">
+      <section class="study is-active" data-study="immersive" id="study-immersive" aria-labelledby="title-immersive">
+        <header class="study-header"><h2 id="title-immersive"><span class="number">01</span>整屏摄影</h2><a class="open-link" href="./immersive.html" target="_blank" rel="noopener" aria-label="单独体验整屏摄影">单独体验<svg class="arrow" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a></header>
+        <div class="viewport"><iframe src="./immersive.html" title="整屏摄影首页：纵向回看，以一张照片占据整屏" loading="eager"></iframe></div>
+        <dl class="notes">
+          <div><dt>意象</dt><dd>照片本身，就是首页。</dd></div>
+          <div><dt>构图</dt><dd>一张大图占满视野，日期与操作退到边缘。</dd></div>
+          <div><dt>手势</dt><dd>上下滑动回看，进入照片查看完整画面。</dd></div>
+        </dl>
+        <a class="reference" href="https://www.portorocha.com/quilo" target="_blank" rel="noopener noreferrer">构图参考 · QUILO</a>
+      </section>
+
+      <section class="study" data-study="split" id="study-split" aria-labelledby="title-split">
+        <header class="study-header"><h2 id="title-split"><span class="number">02</span>连续分屏</h2><a class="open-link" href="./split.html" target="_blank" rel="noopener" aria-label="单独体验连续分屏">单独体验<svg class="arrow" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a></header>
+        <div class="viewport"><iframe src="./split.html" title="连续分屏首页：移动画面边界，在组合与单张间切换" loading="eager"></iframe></div>
+        <dl class="notes">
+          <div><dt>意象</dt><dd>同一天的片段，在画面中相遇。</dd></div>
+          <div><dt>构图</dt><dd>不等比分屏直接相接，边界变化带出主次。</dd></div>
+          <div><dt>手势</dt><dd>拖动分界，点开单张；通过日期切换回忆。</dd></div>
+        </dl>
+        <a class="reference" href="https://www.portorocha.com/sundance/" target="_blank" rel="noopener noreferrer">画幅参考 · Sundance</a>
+      </section>
+
+      <section class="study" data-study="focus" id="study-focus" aria-labelledby="title-focus">
+        <header class="study-header"><h2 id="title-focus"><span class="number">03</span>多尺度浏览</h2><a class="open-link" href="./focus.html" target="_blank" rel="noopener" aria-label="单独体验多尺度浏览">单独体验<svg class="arrow" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a></header>
+        <div class="viewport"><iframe src="./focus.html" title="多尺度浏览首页：在月份、某一天与单张照片间连续聚焦" loading="eager"></iframe></div>
+        <dl class="notes">
+          <div><dt>意象</dt><dd>走近一张照片，也能退回整段时间。</dd></div>
+          <div><dt>构图</dt><dd>大图与小图保留位置，细节和全貌连续相接。</dd></div>
+          <div><dt>手势</dt><dd>缩放或点按聚焦，在月份、一天与单张间切换。</dd></div>
+        </dl>
+        <a class="reference" href="https://www.portorocha.com/church" target="_blank" rel="noopener noreferrer">动效参考 · Church</a>
+      </section>
+    </div>
+
+    <footer class="footnote">
+      <p class="constraints">三案均保留左上连接状态、右上偏好与设置，只回看历史。上方方案切换用于设计评审。</p>
+      <p class="sample">使用同一组演示摄影。照片记录与连接状态均为示例，首页没有底部 Tab。</p>
+    </footer>
+  </main>
+</body>
+</html>

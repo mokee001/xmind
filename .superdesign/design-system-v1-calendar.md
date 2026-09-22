@@ -1,0 +1,29 @@
+# Echooo calendar homepage: visual exploration
+
+## Product and scope
+Mobile companion to a physical photo wall. The system selects high-quality memories in the background. Home lets people revisit dates that have already appeared on the physical wall. Surprise belongs to the future. This task explores ONLY the existing #calendar home, not onboarding, preferences, settings, photo selection, wall generation, or templates.
+
+Structure locked: upper left connection status; upper right preferences (sliders icon + 偏好) and sibling settings gear; vertical continuous, Monday-first monthly calendar; date-detail sheet; Today shortcut. No tabs, marketing sections, feature cards, bottom navigation, upcoming wall previews, negative feedback, or person-selection UI here. There is no brand-logo position inside this mobile home. Do not add one. Source desktop guide and decorative phone frame are preview scaffolding, not the actual app surface.
+
+Use Chinese. Title 回忆日历. Caption 回看已经展示的日子，留住不经意的美好。 Connection example: 已连接 with small 示例. Current date for comparison September 15, 2026 (Tuesday), September 1 also Tuesday; render 30 days and correct weekdays. October is next in a vertically scrollable flow. Show the established illustrative demo history on September 2, 5, 8, 11, 13 only, labeled 5 天 · 示例记录. Those illustrations are sample history, not device receipts. Today and future have no preview thumbnails. Preserve the same content/date placement across visual proposals.
+
+Behavior: native vertical scrolling with sticky header, compact title and weekdays; Today brings current month back. Past illustrative dates open a date sheet; future dates explain they will be recorded after display. Header status can explain simulation. Preferences/settings remain separate same-level links; don't design these sibling pages for this task. Accessibility: readable labels, obvious focus, >=44px action hit areas, tabular numbers, no hover-only information, respect reduced motion.
+
+## Baseline profile — original paper calendar
+Reproduction only: use actual source style.css values. Paper #faf9f6, ink #262725, muted #85857e, line #e8e6df, accent #7a8068. Songti SC/STSong serif title 31px and month 26px; system/PingFang body. Horizontal inset 20–27px. Date cells minimum 68px high, number 12px, small 35×31px original SVG illustrations slightly rotated; today black circular number. Gear circular hairline button, preferences bare icon+label. Keep mobile viewport 390×844. No outer desktop guide, phone frame or marketing hero.
+
+## Exploration profile A — 轻盈日常
+Primary reference: Superdesign prompt library softly-digital-wellness-app, read September 15 2026. Adapt its rounded sans, pale coral, white space, low contrast surfaces to the functional mobile calendar. It owns type, accent and control shapes, not page structure.
+Tokens: canvas #FDFCF8; primary #292524; secondary #78716C; line #E7E5E4; coral #FFB7B2 only for today/selected-date surface, with dark text for contrast; semantic connected green #60836B; white #FFFFFF. Font Outfit for Latin/numbers, PingFang SC/system sans for Chinese (no cursive). Title 30px/600, month 27px/600, dates 14px/500, body 12px. Spacing 4/8/12/16/24/32. Controls rounded pill, tiles radius 12px. No shadow on month containers, at most soft thumbnail shadow. More generous dates and soft organic thumbnail framing; maintain strict seven columns.
+Preserve: lightness, friendly rounded type, coral current-day focus, quiet open calendar. Reject: marketing blobs, noise overlays, giant hero, handwritten accent words, wellness metrics, added cards, lavender, new onboarding. Same original illustrative history assets and dates, no stock photo imports.
+
+## Exploration profile B — 黑白印记
+Primary reference: Superdesign prompt library high-contrast-landing-page, read September 15 2026. Adapt Swiss typography, almost monochrome palette, sharp geometric media and structured rules to the functional calendar. It owns type, hierarchy, grid treatment; its landing-page structure is rejected.
+Tokens: canvas #F2F2F2; primary #111111; secondary #666666; rules #CFCFCF; white #FFFFFF. Tiny connected signal may keep semantic green #60836B. Font Arial/PingFang SC/system sans; headings 700, tabular date numerals 500. Title 34px, month 32px and compact year 11px; body 12px. Spacing 4/8/12/16/24/32. Controls and thumbnails 0–4px radius; today black filled square with white number; fine horizontal week rules with enough padding. Small original illustrative thumbnails grayscale; the calendar, not a decorative hero, carries the composition. No shadows or extra boxed month cards.
+Preserve: decisive type contrast, black current-day focus, crisp rules, precise date alignment. Reject: giant echo-stack lettering, marketing sections, decorative italic words, gradients, warm olive or peach leakage, circular artwork crops, dashboard metrics.
+
+## Reference / decision ledger
+Existing target/source is structural truth; all three profiles reuse its calendar order and actions. Refero bundled typography.md informs tabular dates, purposeful size hierarchy and readable body copy; anti-ai-slop.md informs no generic cards, no decorative gradients, no mixed-style averaging. Refero live search was unavailable; do not claim these are live Refero screenshots or official Apple guidance.
+Each branch uses exactly one profile. New style exploration is explicitly user-authorized, so baseline visual tokens may be replaced ONLY by the named profile tokens. Never blend profiles. Keep source icons. Reuse source SVG art as clearly labeled sample content, not as generated photography or factual device state.
+
+QA: compare all profiles at 390×844, top of September 2026. Check visible status/peer entries, readable seven-column calendar, weekday/date alignment, no future images, no tabs, no overflow, scroll to next month, working Today and sample-history sheet. No selection model or production App edits.

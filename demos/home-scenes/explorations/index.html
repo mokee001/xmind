@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>再打开三种时间 · 首页交互提案</title>
+  <!--
+    Reference lock: the supplied review-canvas brief owns the white / cool-gray canvas,
+    three equal live prototypes, independent links and mobile segmented selection.
+    Refero typography craft supplies neutral system type, restrained weights and legible copy.
+    NASA Eyes, TP-7 and USGS are bounded concept references, not copied product interfaces.
+    Existing interactions/index.html contributes only iframe fitting and selection logic.
+  -->
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-synthesis:none;-webkit-font-smoothing:antialiased;color:#171a1f;background:#f4f5f7;color-scheme:light;--ink:#171a1f;--secondary:#555d69;--muted:#68717e;--rule:#dce0e6;--paper:#fff;--scale:1;--phone-width:393px;--phone-height:852px}
+    *{box-sizing:border-box}body{margin:0;min-width:300px}a{color:inherit;text-decoration:none}button{font:inherit;color:inherit;cursor:pointer}a,button,summary{-webkit-tap-highlight-color:transparent}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid #344f73;outline-offset:4px}button,summary{touch-action:manipulation}.canvas{max-width:1380px;margin:auto;padding:32px 32px 28px}.masthead{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;border-bottom:1px solid var(--rule);padding-bottom:23px}.eyebrow{font-size:11px;line-height:1.5;color:var(--secondary);margin:0 0 10px;letter-spacing:.035em}.eyebrow::before{content:"";display:inline-block;width:5px;height:5px;background:#626c7a;vertical-align:2px;margin-right:8px}h1{font-size:30px;line-height:1.3;letter-spacing:-.035em;font-weight:600;margin:0;text-wrap:balance}.intro{font-size:13px;line-height:1.7;color:var(--secondary);margin:10px 0 0}.archive{font-size:12px;color:var(--secondary);min-height:44px;display:flex;align-items:center;gap:8px;white-space:nowrap}.archive svg,.open-link svg{width:12px;height:12px;stroke:currentColor;stroke-width:1.4;fill:none}.switcher{display:none}.proposals{display:flex;justify-content:center;align-items:flex-start;gap:30px;margin:27px 0 0}.proposal{width:var(--phone-width);flex:0 0 var(--phone-width);min-width:0}.proposal-header{margin-bottom:17px}.title-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.title-row h2{font-size:18px;line-height:1.4;font-weight:600;margin:0;white-space:nowrap}.number{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin-right:10px;font-weight:400;vertical-align:2px}.open-link{font-size:11px;color:var(--secondary);display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;min-height:32px;white-space:nowrap}.concept-line{font-size:13px;line-height:1.6;color:var(--secondary);margin:6px 0 0;text-wrap:pretty}.device{width:var(--phone-width);height:var(--phone-height);position:relative;overflow:hidden;border-radius:25px;background:#e8ebef;box-shadow:0 0 0 1px #bec6d15c,0 8px 18px #2835490d}.device iframe{display:block;width:393px;height:852px;border:0;transform:scale(var(--scale));transform-origin:top left;background:#e8ebef;color-scheme:normal}.scheme{margin:22px 0 0}.scheme>div{display:grid;grid-template-columns:32px 1fr;gap:12px;margin:0 0 12px}.scheme dt{font-size:11px;line-height:1.7;color:var(--muted);padding-top:1px}.scheme dd{font-size:12px;line-height:1.75;color:#37404d;margin:0;text-wrap:pretty}.scheme dd strong{font-weight:500;color:var(--ink)}.further{border-top:1px solid var(--rule);margin-top:17px}.further summary{font-size:11px;line-height:1.6;color:var(--secondary);min-height:44px;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer}.further summary::-webkit-details-marker{display:none}.further summary::after{content:"+";font-size:17px;font-weight:400;color:var(--muted)}.further[open] summary::after{content:"−"}.detail-copy{padding:0 0 4px}.detail-copy p{font-size:12px;line-height:1.75;margin:0 0 12px;color:var(--secondary);text-wrap:pretty}.detail-copy strong{font-weight:500;color:var(--ink)}.source-link{display:inline-block;text-decoration:underline;text-underline-offset:3px;text-decoration-color:#9ea7b4}.review-note{display:flex;align-items:flex-start;justify-content:space-between;gap:28px;margin-top:32px;padding-top:17px;border-top:1px solid var(--rule);font-size:11px;line-height:1.8;color:var(--muted)}.review-note p{margin:0}.review-note .invariant{max-width:700px}.review-note .sample-note{white-space:nowrap}
+    @media(hover:hover){a:hover{color:#121a29}.source-link:hover{text-decoration-color:currentColor}.further summary:hover{color:var(--ink)}.switcher button:hover{background:#e5e9ef;color:var(--ink)}}
+    @media(min-width:901px) and (max-width:1100px){.canvas{padding-right:24px;padding-left:24px}.proposals{gap:22px}.concept-line{font-size:12px}.title-row h2{font-size:16px}.scheme>div{gap:9px}.scheme dd{font-size:11px}}
+    @media(max-width:900px){
+      .canvas{max-width:520px;padding:21px 16px 23px}.masthead{align-items:flex-start;gap:12px;padding-bottom:0;border-bottom:0}.eyebrow{font-size:10px;margin-bottom:8px;letter-spacing:0}h1{font-size:23px}.intro{font-size:12px;margin-top:8px;max-width:27em}.archive{font-size:10px;min-height:32px;margin-top:1px;gap:5px}.archive svg{width:10px;height:10px}.switcher{display:flex;position:sticky;top:0;z-index:2;gap:3px;padding:5px;margin-top:19px;background:#e9edf2;border:1px solid #dce2ea;border-radius:10px;box-shadow:0 8px 18px #f4f5f76e}.switcher button{flex:1;min-width:0;min-height:39px;font-size:12px;border:0;border-radius:6px;background:transparent;color:var(--secondary);white-space:nowrap}.switcher button[aria-pressed="true"]{background:#fff;color:#1c2330;box-shadow:0 1px 4px #34445e12}.proposals{display:block;margin-top:17px}.proposal{width:100%;display:block}.proposal:not(.is-active){display:none}.proposal-header{margin:0 2px 13px}.title-row h2{font-size:17px}.number{font-size:11px;margin-right:8px}.concept-line{font-size:12px;margin-top:3px}.open-link{font-size:11px;min-height:32px}.device{width:100%;height:auto;aspect-ratio:393/852;min-height:620px;border-radius:21px}.device iframe{position:absolute;inset:0;width:100%;height:100%;transform:none}.scheme{margin:21px 3px 0}.scheme>div{grid-template-columns:32px 1fr;gap:13px;margin-bottom:13px}.scheme dt{font-size:11px}.scheme dd{font-size:13px}.further{margin:18px 3px 0}.further summary{font-size:12px;min-height:46px}.detail-copy p{font-size:12px}.review-note{display:block;margin-top:23px;padding-top:16px;font-size:10px}.review-note .sample-note{white-space:normal;margin-top:9px}
+    }
+    @media(max-width:360px){.canvas{padding-right:12px;padding-left:12px}h1{font-size:21px}.archive{font-size:9px;gap:3px}.intro{font-size:11px}.switcher button{font-size:11px}.concept-line{font-size:11px}.scheme dd{font-size:12px}.device{min-height:620px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important}}
+  </style>
+  <script>
+    document.addEventListener('DOMContentLoaded',()=>{
+      const names=['constellation','turntable','strata'];
+      const buttons=[...document.querySelectorAll('[data-target]')];
+      const proposals=[...document.querySelectorAll('[data-proposal]')];
+      const narrow=matchMedia('(max-width:900px)');
+      let active=names.includes(location.hash.slice(1))?location.hash.slice(1):names[0];
+      function select(name,updateHash=true){
+        if(!names.includes(name))return;
+        active=name;
+        buttons.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.target===name)));
+        proposals.forEach(proposal=>{
+          const selected=proposal.dataset.proposal===name;
+          proposal.classList.toggle('is-active',selected);
+          proposal.inert=narrow.matches&&!selected;
+        });
+        if(updateHash)history.replaceState(null,'','#'+name);
+      }
+      buttons.forEach((button,index)=>{
+        button.addEventListener('click',()=>select(button.dataset.target));
+        button.addEventListener('keydown',event=>{
+          let next;
+          if(event.key==='ArrowRight')next=(index+1)%buttons.length;
+          else if(event.key==='ArrowLeft')next=(index+buttons.length-1)%buttons.length;
+          else if(event.key==='Home')next=0;
+          else if(event.key==='End')next=buttons.length-1;
+          else return;
+          event.preventDefault();buttons[next].focus();select(buttons[next].dataset.target);
+        });
+      });
+      function fit(){
+        select(active,false);
+        if(narrow.matches)return;
+        const canvas=document.querySelector('.canvas');
+        const style=getComputedStyle(canvas);
+        const padding=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight);
+        const gap=parseFloat(getComputedStyle(document.querySelector('.proposals')).gap);
+        const columnWidth=(canvas.clientWidth-padding-gap*2)/3;
+        const scale=Math.min(1,columnWidth/393,Math.max(.65,(innerHeight-250)/852));
+        document.documentElement.style.setProperty('--scale',String(scale));
+        document.documentElement.style.setProperty('--phone-width',`${393*scale}px`);
+        document.documentElement.style.setProperty('--phone-height',`${852*scale}px`);
+      }
+      let resizeFrame;
+      window.addEventListener('resize',()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(fit)},{passive:true});
+      window.addEventListener('hashchange',()=>select(location.hash.slice(1)||names[0],false));
+      select(active,false);fit();
+    });
+  </script>
+</head>
+<body>
+  <main class="canvas">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">可操作首页提案 · 示例照片</p>
+        <h1>再打开三种时间</h1>
+        <p class="intro">三套都可操作；向下查看意象、界面与交互说明。</p>
+      </div>
+      <a class="archive" href="../interactions/">上一轮提案<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a>
+    </header>
+
+    <nav class="switcher" aria-label="切换首页提案">
+      <button type="button" data-target="constellation" aria-controls="proposal-constellation" aria-pressed="true">01 星图</button>
+      <button type="button" data-target="turntable" aria-controls="proposal-turntable" aria-pressed="false">02 唱片</button>
+      <button type="button" data-target="strata" aria-controls="proposal-strata" aria-pressed="false">03 地层</button>
+    </nav>
+
+    <div class="proposals">
+      <section class="proposal is-active" id="proposal-constellation" data-proposal="constellation" aria-labelledby="title-constellation">
+        <header class="proposal-header">
+          <div class="title-row"><h2 id="title-constellation"><span class="number">01</span>回忆星图</h2><a class="open-link" href="./constellation.html" target="_blank" rel="noopener" aria-label="独立打开回忆星图">独立打开<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a></div>
+          <p class="concept-line">散落的日子，构成自己的时间坐标。</p>
+        </header>
+        <div class="device"><iframe src="./constellation.html" title="回忆星图：平移月份星图，点亮某日并展开回忆" loading="eager"></iframe></div>
+        <dl class="scheme">
+          <div><dt>意象</dt><dd>每个日子是一颗星；一个月，形成一片可探索的星图。</dd></div>
+          <div><dt>界面</dt><dd>日期成为空间坐标。选中某天，回忆从星点中展开。</dd></div>
+          <div><dt>交互</dt><dd><strong>拖动探索 → 点亮日期 → 展开回忆。</strong> 用「回到全图」复位，也能直接查看今天。</dd></div>
+        </dl>
+        <details class="further">
+          <summary>适合场景、使用成本与灵感</summary>
+          <div class="detail-copy">
+            <p><strong>适合：</strong>没有特定目标，想在回看中偶遇一段记忆。</p>
+            <p><strong>使用成本：</strong>空间位置需要熟悉。日期与「今天」保留明确定位，避免在星图中迷路。</p>
+            <p><strong>灵感：</strong><a class="source-link" href="https://science.nasa.gov/eyes/" target="_blank" rel="noopener noreferrer">NASA Eyes 的空间探索</a>。借用浏览与聚焦的关系，让日期成为可走近的坐标。</p>
+          </div>
+        </details>
+      </section>
+
+      <section class="proposal" id="proposal-turntable" data-proposal="turntable" aria-labelledby="title-turntable">
+        <header class="proposal-header">
+          <div class="title-row"><h2 id="title-turntable"><span class="number">02</span>时光唱片</h2><a class="open-link" href="./turntable.html" target="_blank" rel="noopener" aria-label="独立打开时光唱片">独立打开<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a></div>
+          <p class="concept-line">把一天的距离，变成指尖的一次转动。</p>
+        </header>
+        <div class="device"><iframe src="./turntable.html" title="时光唱片：旋转日期圆盘，定位并回看某一天" loading="eager"></iframe></div>
+        <dl class="scheme">
+          <div><dt>意象</dt><dd>日子像刻在唱片上的纹路，沿着圆周有序流过。</dd></div>
+          <div><dt>界面</dt><dd>照片占据圆盘中心，日期在外圈。转动刻度，照片保持正向。</dd></div>
+          <div><dt>交互</dt><dd><strong>拨动圆盘 → 对准日期 → 查看照片。</strong> 也可点前后按钮，逐段回看。</dd></div>
+        </dl>
+        <details class="further">
+          <summary>适合场景、使用成本与灵感</summary>
+          <div class="detail-copy">
+            <p><strong>适合：</strong>一只手慢慢浏览，连续感受几天之间的变化。</p>
+            <p><strong>使用成本：</strong>旋转定位依靠吸附与日期按钮。这次演示一个月；长期使用需增加月份直达，避免反复转圈。</p>
+            <p><strong>灵感：</strong><a class="source-link" href="https://teenage.engineering/products/tp-7" target="_blank" rel="noopener noreferrer">teenage engineering TP–7 的转轮</a>。借用实体控件的直接感，把动作与时间变化对应起来。</p>
+          </div>
+        </details>
+      </section>
+
+      <section class="proposal" id="proposal-strata" data-proposal="strata" aria-labelledby="title-strata">
+        <header class="proposal-header">
+          <div class="title-row"><h2 id="title-strata"><span class="number">03</span>时间地层</h2><a class="open-link" href="./strata.html" target="_blank" rel="noopener" aria-label="独立打开时间地层">独立打开<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2h6v6M10 2 2 10"/></svg></a></div>
+          <p class="concept-line">一天叠着一天，让时间慢慢有了厚度。</p>
+        </header>
+        <div class="device"><iframe src="./strata.html" title="时间地层：纵向浏览，点开某层回忆并收起" loading="eager"></iframe></div>
+        <dl class="scheme">
+          <div><dt>意象</dt><dd>过去的日子连续沉积，每一层都保存一段已经发生的回忆。</dd></div>
+          <div><dt>界面</dt><dd>日期与照片融进层叠的断面。展开一层，前后的日子仍留在身边。</dd></div>
+          <div><dt>交互</dt><dd><strong>沿层浏览 → 点开一天 → 再点收起。</strong> 用展开和压缩切换细节与概览。</dd></div>
+        </dl>
+        <details class="further">
+          <summary>适合场景、使用成本与灵感</summary>
+          <div class="detail-copy">
+            <p><strong>适合：</strong>经常回看，希望迅速找到日期，又保留时间连续感。</p>
+            <p><strong>使用成本：</strong>操作接近日常浏览。层与层的日期入口需要足够清晰，展开时保持当前位置。</p>
+            <p><strong>灵感：</strong><a class="source-link" href="https://www.usgs.gov/educational-resources/find-feature-layers" target="_blank" rel="noopener noreferrer">USGS 的地层观察</a>。借用从整体到局部的阅读方式，表现记忆的积累与展开。</p>
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <footer class="review-note">
+      <p class="invariant">共同结构：连接状态常驻左上，偏好与设置在右上；无底部 Tab，只回看已经展示的历史。</p>
+      <p class="sample-note">照片、日期记录与连接状态均为演示示例。</p>
+    </footer>
+  </main>
+</body>
+</html>

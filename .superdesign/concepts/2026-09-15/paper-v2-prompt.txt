@@ -1,0 +1,5 @@
+Edit the attached LIGHT ON PAPER mobile homepage screenshot. Preserve the entire composition, typography positions, paper folds, September 15/14/13/11 sequence, and integrated seaside photograph. Correct the following defects ONLY:
+1. The upper 15% currently has transparent/missing black areas. Make the ENTIRE image FULLY OPAQUE. Restore a continuous clean white paper background behind the status bar, utility row and headings. No black patches, transparent pixels, smudges, erased areas, ragged cutout edges or glow around green status.
+2. Restore sharp dark charcoal upper text: "9:41", a small solid green dot then exact "已连接" upper left; exact "偏好" and an outlined gear upper right; "回忆日历" below left and "2026 / 09" below right. Plenty of white contrast behind them.
+3. Improve legibility of the embossed "15", "14" and "11" and their Chinese labels by rendering charcoal-gray lettering while preserving subtle paper emboss depth. Do not brighten/recolor the photograph or rearrange anything.
+Output a fully finished opaque single app screen with exactly the same tall portrait crop. This is a targeted repair, keep the calm sculptural paper design.

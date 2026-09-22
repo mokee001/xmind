@@ -1,0 +1,24 @@
+{
+  "createdAt": "2026-09-15T06:38:25.073469+00:00",
+  "assets": [
+    {
+      "name": "sky",
+      "sourcePath": ".superdesign/assets/scene-sky-v1.png",
+      "canvasNodeId": "1cf169d1-2ed4-4bc3-9d65-3a70af524d49",
+      "sha256": "4db7e1bc5e0f3465c6011c8ea6efa5f4a91c27ec66fc273d18fcb753613be2c5",
+      "generator": "ImageGen",
+      "designBrief": "Photoreal vertical open blue sky with soft white clouds around edges, clear central negative space for date typography; no text or UI.",
+      "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/scene-sky-v1/scene-sky-v1.png"
+    },
+    {
+      "name": "pool",
+      "sourcePath": ".superdesign/assets/scene-pool-v1.png",
+      "canvasNodeId": "73db082e-fe01-47a1-9f95-54d3b1664cc6",
+      "sha256": "5cf7c865b9388cc488b512b719f8164cdd93e7f5d4b09580b34b86caa8034e64",
+      "generator": "ImageGen",
+      "designBrief": "Photoreal vertical top-down turquoise swimming pool with sunlit caustics, submerged tile grid, narrow light stone coping along left edge; no people, text or UI.",
+      "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/scene-pool-v1/scene-pool-v1.png"
+    }
+  ],
+  "note": "Generated supporting backgrounds only; designBrief records art direction, not a verbatim generation log. No personal photographs used."
+}

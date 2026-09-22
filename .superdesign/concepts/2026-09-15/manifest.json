@@ -1,0 +1,49 @@
+{
+  "createdAt": "2026-09-15",
+  "state": "awaiting-user-choice",
+  "generator": "built-in image_gen.imagegen",
+  "comparisonUrl": "http://127.0.0.1:8096/concepts/",
+  "canvasUrl": "https://superdesign.dev/teams/f5e93be1-4266-468f-8adc-47001b30220e/projects/91a39332-1812-460c-b2a6-a9e59410c414",
+  "dimensions": {
+    "width": 853,
+    "height": 1844
+  },
+  "assets": [
+    {
+      "key": "paper",
+      "version": 2,
+      "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-paper-concept-v2/paper-v2.png",
+      "storagePath": "projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-paper-concept-v2/paper-v2.png",
+      "filename": "paper-v2.png",
+      "mimeType": "image/png",
+      "size": 2097400,
+      "purpose": "reference",
+      "contentHash": "a3ddb203fe7acc7551d696d8ade6d9cd6656edb8d0e9fbca4ae3afdabdf7e853",
+      "nodeId": "d9d3949b-f161-4782-b1c7-4c09ffc0484e"
+    },
+    {
+      "key": "weave",
+      "version": 1,
+      "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-weave-concept-v1/weave-v1.png",
+      "storagePath": "projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-weave-concept-v1/weave-v1.png",
+      "filename": "weave-v1.png",
+      "mimeType": "image/png",
+      "size": 3509078,
+      "purpose": "reference",
+      "contentHash": "b6dc59f44da2f90418157bc154480ce1733142232c8a9c8a0d37485503824448",
+      "nodeId": "561eef97-1177-4544-8e82-ab0375e2186c"
+    },
+    {
+      "key": "film",
+      "version": 1,
+      "url": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-film-concept-v1/film-v1.png",
+      "storagePath": "projects/91a39332-1812-460c-b2a6-a9e59410c414/reference-assets/home-film-concept-v1/film-v1.png",
+      "filename": "film-v1.png",
+      "mimeType": "image/png",
+      "size": 1967924,
+      "purpose": "reference",
+      "contentHash": "bf2d4874dfe92c56f93e31e1d315c9cf679bd09aac9690f9d51f6a95eeeaa0f8",
+      "nodeId": "6d68a3aa-628d-4f1d-a050-39d9f32e30bf"
+    }
+  ]
+}

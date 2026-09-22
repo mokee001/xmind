@@ -1,0 +1,43 @@
+{
+  "version": "home-explorations-v1.0.0",
+  "sampleDate": "2026-09-15",
+  "previewUrl": "http://127.0.0.1:8096/explorations/",
+  "projectId": "91a39332-1812-460c-b2a6-a9e59410c414",
+  "canvasUrl": "https://superdesign.dev/teams/f5e93be1-4266-468f-8adc-47001b30220e/projects/91a39332-1812-460c-b2a6-a9e59410c414",
+  "assetPath": "../interactions/assets/memory-scenes.png",
+  "assetPublicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/home-interaction-scenes-v1/memory-scenes.png",
+  "assetNodeId": "d51d0e8b-46b8-4c97-9475-48daeda44248",
+  "drafts": {
+    "constellation": {
+      "draftId": "d086c36a-9671-4634-88d7-564a276cfb4b",
+      "title": "04 · 回忆星图｜空间探索",
+      "visualDirection": "回忆星图：稳定月份坐标、有限平移与缩放，星点原位展开，返回恢复视角",
+      "sourcePath": "demos/home-scenes/explorations/constellation.html",
+      "sourceSha256": "71d409c62b2573ed289500cdbeae2ef9603dd750752631a075e256fd9e8e4c78",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/d086c36a-9671-4634-88d7-564a276cfb4b",
+      "status": "proposal-awaiting-user-selection"
+    },
+    "turntable": {
+      "draftId": "87478f79-2562-42f9-b2a3-0e490bd90492",
+      "title": "05 · 时光唱片｜圆周拨动",
+      "visualDirection": "时光唱片：冷银仪器面板，圆周拨动与六档吸附，盘心照片保持正向",
+      "sourcePath": "demos/home-scenes/explorations/turntable.html",
+      "sourceSha256": "c2c363333ca5fa4bfd8d92db0ab9f26082f412f97e26d6920e2c4545f0024ec6",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/87478f79-2562-42f9-b2a3-0e490bd90492",
+      "status": "proposal-awaiting-user-selection"
+    },
+    "strata": {
+      "draftId": "38c5d936-746e-47dd-9dde-4d2cfff2ee9c",
+      "title": "06 · 时间地层｜展开时间",
+      "visualDirection": "时间地层：连续波状截面，点按展开一层，其余日期压缩保留上下文",
+      "sourcePath": "demos/home-scenes/explorations/strata.html",
+      "sourceSha256": "af13a43a511cb58cdd96fc93ff667ae8927a8d1f94912555a7cba5e572406ec2",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/38c5d936-746e-47dd-9dde-4d2cfff2ee9c",
+      "status": "proposal-awaiting-user-selection"
+    }
+  },
+  "scope": "Homepage proposals only; sample imagery and device states; no production App or TestFlight changes"
+}

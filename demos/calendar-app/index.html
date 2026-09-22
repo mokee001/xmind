@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#faf9f6">
+  <title>Echooo · 日历版 Demo</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="panels.css">
+  <link rel="stylesheet" href="onboarding.css?v=0.3.0">
+</head>
+<body>
+  <div class="preview-layout">
+    <aside class="preview-guide">
+      <a class="wordmark" href="#calendar" aria-label="Echooo 日历主页">echooo<span>®</span></a>
+      <div class="guide-story"><span class="eyebrow">ANOTHER WAY TO REMEMBER</span><h1>日子向前，<br>回忆留在这里。</h1><p>从日历开始。<br>让偏好与设置，各归其位。</p></div>
+      <div class="structure" aria-label="日历首页直接进入同级的偏好和设置"><span data-level="calendar" class="active">日历</span><span class="structure-line"></span><span><span data-level="preferences">偏好</span> / <span data-level="settings">设置</span></span></div>
+      <div class="demo-info"><span class="demo-label">完整体验 DEMO · B v0.3.4</span><p>从第一次打开，到日历里的每一天。<br>授权、连接与展示记录均为本地模拟。</p><button id="experience-setup" class="text-link">从新用户流程体验 <span aria-hidden="true">↗</span></button><button id="experience-calendar" class="text-link">查看示例日历 <span aria-hidden="true">↗</span></button><a class="old-preview" href="http://127.0.0.1:8094/" target="_blank" rel="noopener">打开原版对照 ↗</a></div>
+    </aside>
+    <section class="phone" aria-label="日历版 App 预览">
+      <div class="phone-status" aria-hidden="true"><span id="status-time">9:41</span><span class="dynamic-island"></span><span class="status-symbols">▮▮▮ <svg width="15" height="12" viewBox="0 0 20 16"><path d="M2 5q8-7 16 0M5 9q5-4 10 0M8 13q2-2 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><i></i></span></div>
+      <header id="app-header" class="app-header"></header>
+      <main id="screen" tabindex="-1"></main>
+      <div class="home-indicator" aria-hidden="true"></div>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </section>
+    <aside class="preview-note"><span class="small-rule"></span><span class="eyebrow">A LITTLE SETUP.<br>A LOT TO REMEMBER.</span><p>授权照片 → 连接照片墙<br>完成后直接进入日历<br>偏好与更新，稍后再调整</p><div class="note-detail">首页左上 · 连接状态常驻<br>首页右上 · 偏好 / 设置<br>偏好与设置 · 都返回日历</div></aside>
+  </div>
+  <dialog id="sheet" aria-labelledby="sheet-title"></dialog>
+  <script type="module" src="app.js?v=0.3.4-background-selection"></script>
+</body>
+</html>

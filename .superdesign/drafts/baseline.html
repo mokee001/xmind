@@ -1,0 +1,297 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#faf9f6">
+  <title>Echooo · 回忆日历</title>
+  <link rel="icon" href="data:,">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      color: #262725;
+      background: #faf9f6;
+      font-synthesis: none;
+      --ink: #262725;
+      --muted: #85857e;
+      --line: #e8e6df;
+      --paper: #faf9f6;
+      --accent: #7a8068;
+      --white: #fff;
+      --serif: "Songti SC", "STSong", serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); }
+    button, a { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    h1, h2, p { margin: 0; }
+    svg { display: inline-block; flex-shrink: 0; vertical-align: middle; }
+    
+    .phone-status {
+      height: 45px;
+      padding: env(safe-area-inset-top) 28px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .status-symbols { display: flex; align-items: center; gap: 5px; font-size: 8px; letter-spacing: -1px; }
+    
+    .app-header {
+      height: 64px;
+      padding: 8px 24px 11px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      background: var(--paper);
+      z-index: 4;
+    }
+    .header-action { min-height: 42px; display: flex; align-items: center; gap: 7px; padding: 0 2px; font-size: 13px; white-space: nowrap; }
+    .header-action.icon-button { width: 42px; justify-content: center; border: 1px solid var(--line); border-radius: 50%; padding: 0; }
+    .status-pill { font-size: 12px; display: flex; align-items: center; gap: 7px; }
+    .status-pill i { width: 6px; height: 6px; border-radius: 50%; background: #879270; display: inline-block; }
+    .status-pill small { font-size: 9px; color: #aaa89d; font-weight: 400; margin-left: 1px; }
+    
+    #screen { height: calc(844px - 45px - 64px); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; scroll-behavior: smooth; position: relative; }
+    #screen::-webkit-scrollbar { display: none; }
+    
+    .calendar-hero {
+      padding: 12px 27px 22px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      background: var(--paper);
+    }
+    .calendar-hero .eyebrow { font-size: 9px; letter-spacing: 1.25px; color: #93958b; }
+    .calendar-hero h1 { font-family: var(--serif); font-size: 31px; line-height: 1.4; font-weight: 500; margin-top: 7px; letter-spacing: 1px; }
+    .calendar-hero p { font-size: 11px; line-height: 1.7; color: var(--muted); margin-top: 8px; }
+    .today-button { height: 35px; display: flex; align-items: center; gap: 5px; border: 1px solid #deded4; border-radius: 24px; padding: 0 12px; font-size: 11px; background: var(--paper); margin-bottom: 3px; }
+    
+    .calendar-weekdays {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      margin: 0 20px;
+      padding: 15px 0 12px;
+      font-size: 10px;
+      color: #aaa89e;
+      text-align: center;
+      border-bottom: 1px solid var(--line);
+      background: var(--paper);
+      position: sticky;
+      top: 118px; /* Approx hero height */
+      z-index: 3;
+    }
+    
+    .calendar-months { padding: 0 20px; }
+    .month-section { padding: 0 0 26px; border-bottom: 1px solid var(--line); scroll-margin-top: 42px; }
+    .month-header { display: flex; justify-content: space-between; align-items: center; padding: 27px 6px 21px; }
+    .month-name { display: flex; align-items: baseline; gap: 9px; }
+    .month-name h2 { font-family: var(--serif); font-size: 26px; font-weight: 500; letter-spacing: .6px; }
+    .month-name span { font-size: 10px; color: #a5a397; letter-spacing: .5px; }
+    .month-meta { font-size: 9px; color: #a29f93; letter-spacing: .5px; }
+    
+    .month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); column-gap: 2px; row-gap: 7px; }
+    .day {
+      position: relative;
+      min-height: 68px;
+      padding: 4px 2px 5px;
+      display: flex;
+      align-items: center;
+      flex-direction: column;
+      gap: 5px;
+      border-radius: 11px;
+      font-size: 13px;
+    }
+    .day-number { height: 26px; width: 26px; display: grid; place-items: center; font-size: 12px; line-height: 1; position: relative; z-index: 1; }
+    .day.future { color: #c4c0b5; }
+    .day.today .day-number { border-radius: 50%; background: var(--ink); color: #fff; }
+    .day.today:after { content: "今天"; font-size: 8px; color: #787e67; letter-spacing: .8px; position: absolute; bottom: 6px; }
+    
+    .day-art {
+      width: 35px;
+      height: 31px;
+      overflow: hidden;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      opacity: .9;
+      transform: rotate(-4deg);
+    }
+    .day:nth-child(2n) .day-art { transform: rotate(3deg); }
+    .day-art svg { width: 35px; height: 31px; display: block; }
+    .day-empty-marker { height: 4px; width: 4px; border-radius: 50%; background: #d7d3c8; margin-top: 9px; }
+    
+    .month-empty { text-align: center; padding: 14px 0 1px; font-size: 10px; color: #b3afa2; letter-spacing: 1px; }
+    .calendar-hint { padding: 21px 24px 0; display: flex; align-items: center; gap: 8px; font-size: 9px; color: #a6a395; line-height: 1.7; }
+    .calendar-hint .hint-line { height: 1px; flex: 1; background: var(--line); }
+    .calendar-bottom-note { padding: 18px 26px 28px; font-size: 9px; color: #aaa89e; text-align: center; line-height: 1.9; }
+    
+    .calendar-edge { width: 100%; padding: 19px 5px; color: #939586; font-size: 10px; display: flex; justify-content: center; align-items: center; gap: 7px; }
+  </style>
+</head>
+<body>
+  <div style="width: 390px; height: 844px; margin: 0 auto; background: var(--paper); display: flex; flex-direction: column; overflow: hidden; position: relative;" data-sd-id="1">
+    <div class="phone-status" aria-hidden="true" data-sd-id="2">
+      <span id="status-time" data-sd-id="3">9:41</span>
+      <span class="status-symbols" data-sd-id="4">▮▮▮ <svg width="15" height="12" viewBox="0 0 20 16" data-sd-id="5"><path d="M2 5q8-7 16 0M5 9q5-4 10 0M8 13q2-2 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg></span>
+    </div>
+    
+    <header class="app-header" data-sd-id="6">
+      <button class="header-action status-pill" data-sd-id="7">
+        <i></i>已连接<small>示例</small>
+      </button>
+      <div style="display: flex; gap: 15px; align-items: center;" data-sd-id="8">
+        <button class="header-action" style="gap:7px" data-sd-id="9">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-sd-id="10"><path d="M4 7h9m5 0h2M4 17h2m5 0h9"></path><circle cx="15" cy="7" r="2.5"></circle><circle cx="8.5" cy="17" r="2.5"></circle></svg>
+          <span data-sd-id="11">偏好</span>
+        </button>
+        <button class="header-action icon-button" data-sd-id="12">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-sd-id="13"><path d="m10 3-.5 2.2-2 .9-2-.7-2 3.4L5 10.4v2.2l-1.5 1.6 2 3.4 2-.7 2 .9L10 20h4l.5-2.2 2-.9 2 .7 2-3.4-1.5-1.6v-2.2l1.5-1.6-2-3.4-2 .7-2-.9L14 3Z"></path><circle cx="12" cy="11.5" r="3"></circle></svg>
+        </button>
+      </div>
+    </header>
+    
+    <main id="screen" data-sd-id="14">
+      <div class="calendar-hero" data-sd-id="15">
+        <div data-sd-id="16">
+          <span class="eyebrow" data-sd-id="17">THE DAYS WE KEEP</span>
+          <h1 data-sd-id="18">回忆日历</h1>
+          <p data-sd-id="19">回看已经展示的日子，留住不经意的美好。</p>
+        </div>
+        <button class="today-button" data-sd-id="20">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-sd-id="21"><rect x="4" y="5" width="16" height="16" rx="3"></rect><path d="M8 3v4m8-4v4M4 11h16m-11 4h.01M13 15h.01M9 18h.01"></path></svg>
+          今天
+        </button>
+      </div>
+      
+      <div class="calendar-weekdays" data-sd-id="22">
+        <span data-sd-id="23">一</span><span data-sd-id="24">二</span><span data-sd-id="25">三</span><span data-sd-id="26">四</span><span data-sd-id="27">五</span><span data-sd-id="28">六</span><span data-sd-id="29">日</span>
+      </div>
+      
+      <div class="calendar-months" data-sd-id="30">
+        <button class="calendar-edge" style="padding-top:6px; padding-bottom:11px" data-sd-id="31">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-sd-id="32"><path d="M12 19V5m-6 6 6-6 6 6"></path></svg>
+          更早的日子
+        </button>
+        
+        <!-- September 2026 -->
+        <section class="month-section" data-sd-id="33">
+          <div class="month-header" data-sd-id="34">
+            <div class="month-name" data-sd-id="35">
+              <h2 data-sd-id="36">九月</h2><span data-sd-id="37">2026</span>
+            </div>
+            <span class="month-meta" data-sd-id="38">5 天 · 示例记录</span>
+          </div>
+          <div class="month-grid" data-sd-id="39">
+            <span aria-hidden="true" data-sd-id="40"></span>
+            <button class="day" data-sd-id="41"><span class="day-number" data-sd-id="42">1</span><span class="day-empty-marker" data-sd-id="43"></span></button>
+            <button class="day historical" data-sd-id="44">
+              <span class="day-number" data-sd-id="45">2</span>
+              <span class="day-art" data-sd-id="46"><svg viewBox="0 0 120 100" data-sd-id="47"><rect width="120" height="100" fill="#dbe4e0"></rect><circle cx="87" cy="27" r="12" fill="#d7c898"></circle><path d="M0 58q25-11 50 0t70 0v42H0" fill="#99b0aa"></path><path d="M0 73q25-11 50 0t70 0" fill="none" stroke="#ecede0" stroke-width="2"></path><path d="M0 88q25-11 50 0t70 0" fill="none" stroke="#7a9891" stroke-width="3"></path></svg></span>
+            </button>
+            <button class="day" data-sd-id="48"><span class="day-number" data-sd-id="49">3</span><span class="day-empty-marker" data-sd-id="50"></span></button>
+            <button class="day" data-sd-id="51"><span class="day-number" data-sd-id="52">4</span><span class="day-empty-marker" data-sd-id="53"></span></button>
+            <button class="day historical" data-sd-id="54">
+              <span class="day-number" data-sd-id="55">5</span>
+              <span class="day-art" data-sd-id="56"><svg viewBox="0 0 120 100" data-sd-id="57"><rect width="120" height="100" fill="#e8e6d8"></rect><path d="M60 87 65 23" stroke="#859372" stroke-width="2"></path><path d="M64 53C24 44 25 13 64 53Z" fill="#a0ad89"></path><path d="M62 67C26 68 28 38 62 67Z" fill="#87966f"></path><path d="M64 46C98 51 102 19 64 46Z" fill="#798d73"></path><path d="M65 31C45 14 50 2 65 31Z" fill="#b0b58d"></path><path d="M44 74h33l-3 25H48Z" fill="#c4b99f"></path></svg></span>
+            </button>
+            <button class="day" data-sd-id="58"><span class="day-number" data-sd-id="59">6</span><span class="day-empty-marker" data-sd-id="60"></span></button>
+            <button class="day" data-sd-id="61"><span class="day-number" data-sd-id="62">7</span><span class="day-empty-marker" data-sd-id="63"></span></button>
+            <button class="day historical" data-sd-id="64">
+              <span class="day-number" data-sd-id="65">8</span>
+              <span class="day-art" data-sd-id="66"><svg viewBox="0 0 120 100" data-sd-id="67"><rect width="120" height="100" fill="#e6e2dc"></rect><path d="m38 33-8-20 22 10m19 1 21-11-7 22" fill="#b3a89b"></path><ellipse cx="61" cy="51" rx="30" ry="30" fill="#c7bcad"></ellipse><path d="m49 44 1 1m23-1 1 1" stroke="#645d56" stroke-width="4" stroke-linecap="round"></path><path d="m58 55 4 3 4-3m-4 3v5m-7 0q7 7 14 0M34 54l-17-3m17 11-17 4m72-12 17-3m-17 11 17 4" fill="none" stroke="#84796d" stroke-width="1.5"></path><ellipse cx="60" cy="92" rx="37" ry="10" fill="#d5ccbc"></ellipse></svg></span>
+            </button>
+            <button class="day" data-sd-id="68"><span class="day-number" data-sd-id="69">9</span><span class="day-empty-marker" data-sd-id="70"></span></button>
+            <button class="day" data-sd-id="71"><span class="day-number" data-sd-id="72">10</span><span class="day-empty-marker" data-sd-id="73"></span></button>
+            <button class="day historical" data-sd-id="74">
+              <span class="day-number" data-sd-id="75">11</span>
+              <span class="day-art" data-sd-id="76"><svg viewBox="0 0 120 100" data-sd-id="77"><rect width="120" height="100" fill="#e9e8da"></rect><circle cx="82" cy="25" r="10" fill="#c0ab73"></circle><path d="m0 76 42-42 35 27 18-15 25 30v24H0Z" fill="#9dada0"></path><path d="m0 89 35-28 28 20 31-14 26 23v10H0Z" fill="#667d72"></path><path d="m42 34 10 10-13-2-11 6Z" fill="#ecebe0"></path></svg></span>
+            </button>
+            <button class="day" data-sd-id="78"><span class="day-number" data-sd-id="79">12</span><span class="day-empty-marker" data-sd-id="80"></span></button>
+            <button class="day historical" data-sd-id="81">
+              <span class="day-number" data-sd-id="82">13</span>
+              <span class="day-art" data-sd-id="83"><svg viewBox="0 0 120 100" data-sd-id="84"><rect width="120" height="100" fill="#eddfcf"></rect><ellipse cx="61" cy="80" rx="36" ry="5" fill="#d0bba2"></ellipse><path d="M36 36h45v26c0 24-45 24-45 0Z" fill="#af795d"></path><path d="M81 42h8c18 0 18 22-8 22" fill="none" stroke="#af795d" stroke-width="7"></path><path d="M48 13c-8 7 8 11 0 17m18-19c-8 7 8 11 0 17" fill="none" stroke="#c5b49e" stroke-width="2" stroke-linecap="round"></path></svg></span>
+            </button>
+            <button class="day" data-sd-id="85"><span class="day-number" data-sd-id="86">14</span><span class="day-empty-marker" data-sd-id="87"></span></button>
+            <button class="day today" data-sd-id="88"><span class="day-number" data-sd-id="89">15</span></button>
+            <!-- Future days -->
+            <button class="day future" data-sd-id="90"><span class="day-number" data-sd-id="91">16</span></button>
+            <button class="day future" data-sd-id="92"><span class="day-number" data-sd-id="93">17</span></button>
+            <button class="day future" data-sd-id="94"><span class="day-number" data-sd-id="95">18</span></button>
+            <button class="day future" data-sd-id="96"><span class="day-number" data-sd-id="97">19</span></button>
+            <button class="day future" data-sd-id="98"><span class="day-number" data-sd-id="99">20</span></button>
+            <button class="day future" data-sd-id="100"><span class="day-number" data-sd-id="101">21</span></button>
+            <button class="day future" data-sd-id="102"><span class="day-number" data-sd-id="103">22</span></button>
+            <button class="day future" data-sd-id="104"><span class="day-number" data-sd-id="105">23</span></button>
+            <button class="day future" data-sd-id="106"><span class="day-number" data-sd-id="107">24</span></button>
+            <button class="day future" data-sd-id="108"><span class="day-number" data-sd-id="109">25</span></button>
+            <button class="day future" data-sd-id="110"><span class="day-number" data-sd-id="111">26</span></button>
+            <button class="day future" data-sd-id="112"><span class="day-number" data-sd-id="113">27</span></button>
+            <button class="day future" data-sd-id="114"><span class="day-number" data-sd-id="115">28</span></button>
+            <button class="day future" data-sd-id="116"><span class="day-number" data-sd-id="117">29</span></button>
+            <button class="day future" data-sd-id="118"><span class="day-number" data-sd-id="119">30</span></button>
+          </div>
+        </section>
+        
+        <!-- October 2026 -->
+        <section class="month-section" data-sd-id="120">
+          <div class="month-header" data-sd-id="121">
+            <div class="month-name" data-sd-id="122">
+              <h2 data-sd-id="123">十月</h2><span data-sd-id="124">2026</span>
+            </div>
+            <span class="month-meta" data-sd-id="125">留一点期待</span>
+          </div>
+          <div class="month-grid" data-sd-id="126">
+            <span aria-hidden="true" data-sd-id="127"></span><span aria-hidden="true" data-sd-id="128"></span><span aria-hidden="true" data-sd-id="129"></span>
+            <button class="day future" data-sd-id="130"><span class="day-number" data-sd-id="131">1</span></button>
+            <button class="day future" data-sd-id="132"><span class="day-number" data-sd-id="133">2</span></button>
+            <button class="day future" data-sd-id="134"><span class="day-number" data-sd-id="135">3</span></button>
+            <button class="day future" data-sd-id="136"><span class="day-number" data-sd-id="137">4</span></button>
+            <button class="day future" data-sd-id="138"><span class="day-number" data-sd-id="139">5</span></button>
+            <button class="day future" data-sd-id="140"><span class="day-number" data-sd-id="141">6</span></button>
+            <button class="day future" data-sd-id="142"><span class="day-number" data-sd-id="143">7</span></button>
+            <button class="day future" data-sd-id="144"><span class="day-number" data-sd-id="145">8</span></button>
+            <button class="day future" data-sd-id="146"><span class="day-number" data-sd-id="147">9</span></button>
+            <button class="day future" data-sd-id="148"><span class="day-number" data-sd-id="149">10</span></button>
+            <button class="day future" data-sd-id="150"><span class="day-number" data-sd-id="151">11</span></button>
+            <button class="day future" data-sd-id="152"><span class="day-number" data-sd-id="153">12</span></button>
+            <button class="day future" data-sd-id="154"><span class="day-number" data-sd-id="155">13</span></button>
+            <button class="day future" data-sd-id="156"><span class="day-number" data-sd-id="157">14</span></button>
+            <button class="day future" data-sd-id="158"><span class="day-number" data-sd-id="159">15</span></button>
+            <button class="day future" data-sd-id="160"><span class="day-number" data-sd-id="161">16</span></button>
+            <button class="day future" data-sd-id="162"><span class="day-number" data-sd-id="163">17</span></button>
+            <button class="day future" data-sd-id="164"><span class="day-number" data-sd-id="165">18</span></button>
+            <button class="day future" data-sd-id="166"><span class="day-number" data-sd-id="167">19</span></button>
+            <button class="day future" data-sd-id="168"><span class="day-number" data-sd-id="169">20</span></button>
+            <button class="day future" data-sd-id="170"><span class="day-number" data-sd-id="171">21</span></button>
+            <button class="day future" data-sd-id="172"><span class="day-number" data-sd-id="173">22</span></button>
+            <button class="day future" data-sd-id="174"><span class="day-number" data-sd-id="175">23</span></button>
+            <button class="day future" data-sd-id="176"><span class="day-number" data-sd-id="177">24</span></button>
+            <button class="day future" data-sd-id="178"><span class="day-number" data-sd-id="179">25</span></button>
+            <button class="day future" data-sd-id="180"><span class="day-number" data-sd-id="181">26</span></button>
+            <button class="day future" data-sd-id="182"><span class="day-number" data-sd-id="183">27</span></button>
+            <button class="day future" data-sd-id="184"><span class="day-number" data-sd-id="185">28</span></button>
+            <button class="day future" data-sd-id="186"><span class="day-number" data-sd-id="187">29</span></button>
+            <button class="day future" data-sd-id="188"><span class="day-number" data-sd-id="189">30</span></button>
+            <button class="day future" data-sd-id="190"><span class="day-number" data-sd-id="191">31</span></button>
+          </div>
+          <div class="month-empty" data-sd-id="192">下一段日常，会慢慢来到。</div>
+        </section>
+        
+        <button class="calendar-edge" data-sd-id="193">
+          再往后看看 
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-sd-id="194"><path d="m9 6 6 6-6 6"></path></svg>
+        </button>
+      </div>
+      
+      <div class="calendar-hint" data-sd-id="195">
+        <span class="hint-line" data-sd-id="196"></span>只回看已展示内容，未来保持留白<span class="hint-line" data-sd-id="197"></span>
+      </div>
+      <p class="calendar-bottom-note" data-sd-id="198">日期标记与插画均为示例，不是设备展示回执。</p>
+    </main>
+  </div>
+
+</body></html>

@@ -1,0 +1,62 @@
+{
+  "version": "home-image-studies-v1.0.0",
+  "createdAt": "2026-09-15T08:03:37.936056+00:00",
+  "scope": "Three alternative home page demos only. No App, backend, selection-engine or TestFlight change.",
+  "comparisonUrl": "http://127.0.0.1:8096/studies/",
+  "asset": {
+    "sourcePath": "demos/home-scenes/studies/assets/life-scenes.png",
+    "sha256": "041ed694f599f1f7689fb6eb8865d878e2525f54967bb84fea947c00c3c55f3c",
+    "width": 1330,
+    "height": 1182,
+    "grid": "3 columns by 2 rows",
+    "origin": "built-in ImageGen; fictional example people and scenes; no user photos",
+    "publicUrl": "https://vgbujcuwptvheqijyjbe.supabase.co/storage/v1/object/public/hmac-uploads/projects/91a39332-1812-460c-b2a6-a9e59410c414/content-assets/home-studies-life-scenes-v1/life-scenes.png",
+    "nodeId": "b5ad8d0e-6032-4621-983a-96ddf925fd0e"
+  },
+  "candidates": {
+    "immersive": {
+      "draftId": "defa1cf5-f097-4248-a294-c8a725f9cc65",
+      "title": "07 · 整屏摄影｜上下滑动",
+      "visualDirection": "整屏摄影、垂直位移切换日期、长按或按钮查看完整构图",
+      "sourcePath": "demos/home-scenes/studies/immersive.html",
+      "sourceSha256": "144e98f465eba9c69783b40bad319f34560d23f1e2ef5b5f668d9e24a7d9784a",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/defa1cf5-f097-4248-a294-c8a725f9cc65",
+      "status": "proposal-awaiting-user-selection"
+    },
+    "split": {
+      "draftId": "258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6",
+      "title": "08 · 连续分屏｜拖动画幅",
+      "visualDirection": "无边框动态分屏、直接拖动分界、展开后返回原比例",
+      "sourcePath": "demos/home-scenes/studies/split.html",
+      "sourceSha256": "9650f988facbedd112e965d78ab6efe7832560451062d4b83ca1009560849370",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/258eab2c-1ecb-4b0e-9c94-9cd888dbdcb6",
+      "status": "proposal-awaiting-user-selection"
+    },
+    "focus": {
+      "draftId": "8a9936ab-7667-49d0-919e-4261fb27d56b",
+      "title": "09 · 多尺度浏览｜从月到日",
+      "visualDirection": "稳定坐标的照片集合、连续缩放、月份与某天之间聚焦",
+      "sourcePath": "demos/home-scenes/studies/focus.html",
+      "sourceSha256": "469bd1ceb8b8c5db9e11acda0cf6c6928ac7b3398b67e983ed872bd7ccf5157d",
+      "currentVersion": 1,
+      "previewUrl": "https://p.superdesign.dev/draft/8a9936ab-7667-49d0-919e-4261fb27d56b",
+      "status": "proposal-awaiting-user-selection"
+    }
+  },
+  "verification": {
+    "browserViewports": [
+      "1440x1080",
+      "1100x900",
+      "393x852",
+      "320x740"
+    ],
+    "immersive": "Pointer drag 13→11; complete photo and return; readonly/edit states; today no image; narrow layout",
+    "split": "Pointer drag row57→37.2 and column48→71.7; full photo and exact ratio restoration; edit/save; today no image; narrow layout",
+    "focus": "Click month→day; slider keyboard End→100; full photo and return; preference selection saved readonly then restored; today world hidden; narrow layout",
+    "comparison": "Equal 393x852 frame scaling; 3 desktop columns; mobile hash/button switching; no horizontal overflow",
+    "superdesign": "All 3 v1 HTML exact-match refetched; focus public preview visually checked after image loaded",
+    "limits": "Physical iPhone multi-touch and production data are not validated. All photos/history/connection are demo data."
+  }
+}
