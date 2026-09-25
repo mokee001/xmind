@@ -11,7 +11,10 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_UNIFIED_SELECTION": "1"
+      }
     },
     "production-local": {
       "extends": "production",

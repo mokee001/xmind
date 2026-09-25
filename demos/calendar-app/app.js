@@ -1,3 +1,4 @@
+import { mountFirstWall } from './first-wall.js';
 import { mountPanel, resetPreferenceDraft } from './panels.js';
 import { createOnboarding } from './onboarding.js?v=0.3.0-final';
 
@@ -188,7 +189,7 @@ function showDay(key) {
 }
 
 function navigate(name) {
-  if (!['calendar', 'preferences', 'settings', ...Object.keys(FLOW_STAGES)].includes(name)) name = 'welcome';
+  if (!['calendar', 'preferences', 'settings', 'first-wall', ...Object.keys(FLOW_STAGES)].includes(name)) name = 'welcome';
   if (name === route) return;
   location.hash = name;
 }
@@ -196,7 +197,7 @@ function renderRoute() {
   const requested = location.hash.slice(1);
   const next = LEGACY_FLOW_ROUTES[requested] || requested;
   if (next !== requested) history.replaceState(null, '', `#${next}`);
-  const target = ['calendar', 'preferences', 'settings', ...Object.keys(FLOW_STAGES)].includes(next) ? next : state.onboarding.completed ? 'calendar' : 'welcome';
+  const target = ['calendar', 'preferences', 'settings', 'first-wall', ...Object.keys(FLOW_STAGES)].includes(next) ? next : state.onboarding.completed ? 'calendar' : 'welcome';
   if (route === 'calendar') calendarPosition = screen.scrollTop;
   cleanupPanel?.();
   cleanupPanel = null;
@@ -208,6 +209,7 @@ function renderRoute() {
   screen.scrollTop = 0;
   screen.classList.remove('screen-arrive');
   if (route === 'calendar') renderCalendar();
+  else if (route === 'first-wall') cleanupPanel = mountFirstWall({ host: screen, header, onDone: () => navigate('calendar') });
   else if (FLOW_STAGES[route]) onboarding.show(FLOW_STAGES[route]);
   else cleanupPanel = mountPanel(screen, route, {
     icon,
@@ -244,8 +246,7 @@ function completeOnboarding(result) {
   resetPreferenceDraft();
   previewHistory = false;
   calendarPosition = null;
-  navigate('calendar');
-  toast('设置已保存，欢迎来到回忆日历');
+  navigate('first-wall');
   return true;
 }
 header.addEventListener('click', event => {

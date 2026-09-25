@@ -111,3 +111,18 @@
 .flow-welcome .flow-preparation { margin-top: 17px; }
 .flow-access-link { min-height: 40px; font-size: 10px; color: #7a8469; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-height: 760px) { .flow-welcome-art { height: 104px; } .flow-welcome h1 { font-size: 25px; } }
+
+.first-wall .flow-scroll { display:flex; flex-direction:column; justify-content:center; text-align:center; }
+.first-wall h1 { font-size:27px; line-height:1.55; }
+.first-wall-art { width:180px; height:220px; margin:0 auto 42px; position:relative; }
+.first-wall-art i { position:absolute; width:92px; height:122px; border:7px solid #fffefb; background:#d4d9c6; box-shadow:0 8px 28px #68745514; left:44px; top:45px; animation:memory-breathe 3s ease-in-out infinite alternate; }
+.first-wall-art i:nth-child(1) { transform:translate(-24px,-14px) rotate(-15deg); background:#e1dacc; }
+.first-wall-art i:nth-child(2) { transform:translate(20px,-5px) rotate(13deg); animation-delay:-1s; }
+.first-wall-art i:nth-child(3) { transform:translate(-6px,20px) rotate(-5deg); background:#c4ccb5; animation-delay:-2s; }
+.first-wall-art i:nth-child(4) { transform:translate(8px,5px) rotate(5deg); background:linear-gradient(145deg,#e5e6da,#b9c3a8); }
+.first-wall-art.done i { animation:none; opacity:.65; }
+.first-wall-art.failed i { animation:none; }
+.first-wall-art span { position:absolute; left:76px; top:91px; color:#586749; font-size:36px; }
+#first-wall-scenario { margin-top:14px; width:100%; padding:10px; border:1px solid #d8d7cb; border-radius:8px; color:#586749; background:#fffefb; }
+@keyframes memory-breathe { to { translate:0 -9px; } }
+@media (prefers-reduced-motion:reduce) { .first-wall-art i { animation:none; } }

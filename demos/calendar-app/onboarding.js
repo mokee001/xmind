@@ -118,7 +118,7 @@ export function createOnboarding(api) {
       searching: { title: '正在寻找照片墙', copy: '请让手机靠近设备，稍等一下。', graphic: 'wifi', label: '正在查找…', action: 'search', disabled: true },
       found: { title: '发现附近的照片墙', copy: 'Echooo · 示例设备 01<br>选择这台设备，为它连接家庭网络。', graphic: 'device', label: '连接这台照片墙', action: 'connect-device' },
       network: { title: '为照片墙连接 Wi-Fi', copy: '选择家中的 2.4 GHz 网络。', graphic: 'wifi', label: '选择家庭 Wi-Fi', action: 'choose-network' },
-      connecting: { title: '正在连接家庭网络', copy: `${escapeHtml(draft.network)} · 示例网络<br>连接成功后，直接进入回忆日历。`, graphic: 'wifi', label: '正在连接…', action: 'choose-network', disabled: true },
+      connecting: { title: '正在连接家庭网络', copy: `${escapeHtml(draft.network)} · 示例网络<br>连接成功后，自动准备第一幅回忆。`, graphic: 'wifi', label: '正在连接…', action: 'choose-network', disabled: true },
       connected: { title: '连接成功', copy: `${escapeHtml(draft.deviceName)}已准备好。`, graphic: 'check', label: submitting ? '正在保存…' : '进入回忆日历', action: 'finish', disabled: submitting },
       'save-failed': { title: '已连接，设置还未保存', copy: '请重试保存，无需重新连接照片墙。', graphic: 'check', label: '重试保存', action: 'finish' },
       'not-found': { title: '暂时没有发现设备', copy: '确认照片墙已通电，让手机靠近后重试。', graphic: 'device', label: '重新查找', action: 'search' },
@@ -175,7 +175,7 @@ export function createOnboarding(api) {
     clearAsync(); closeSheet();
   }
   function demoInfo() {
-    openSheet({ title: '关于这次体验', body: '<p>只需授权照片、连接照片墙。偏好和更新时间可以之后再调整。</p><p>权限、设备发现与 Wi-Fi 均为本地模拟，不读取照片或操作真实设备。</p><p>完成后进入日历，已保存的偏好与更新时间保持不变。</p>' });
+    openSheet({ title: '关于这次体验', body: '<p>只需授权照片、连接照片墙。偏好和更新时间可以之后再调整。</p><p>权限、设备发现与 Wi-Fi 均为本地模拟，不读取照片或操作真实设备。</p><p>连接后自动准备并投送第一幅回忆，再进入日历。已保存的偏好与更新时间保持不变。</p>' });
   }
   function back() { if (active && stage === 'device') go('welcome'); }
   function bind() {

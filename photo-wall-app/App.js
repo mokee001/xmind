@@ -1,3 +1,4 @@
+import { runFirstWall } from './src/firstWall.cjs';
 import { WALL_TEMPLATES, PET_COLLAGE_TEMPLATE, currentTemplateId } from './src/templateCatalog';
 import WallExperience from './src/WallExperience';
 import MemoryCalendar from './src/MemoryCalendar';
@@ -1240,6 +1241,9 @@ function PhotoWallApp() {
   const [testDeviceBusy, setTestDeviceBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [deliveryPending, setDeliveryPending] = useState(false);
+  const [firstWall, setFirstWall] = useState(null);
+  const firstWallAttemptRef = useRef('');
+  const firstWallRunRef = useRef(null);
   const [operation, setOperation] = useState(EMPTY_OPERATION);
   const [lastAction, setLastAction] = useState(null);
   const [notice, setNotice] = useState('');
@@ -1303,6 +1307,8 @@ function PhotoWallApp() {
   latestWallSessionRef.current = session;
   useEffect(() => {
     setGeneratedWall(null);
+    setFirstWall(null);
+    firstWallAttemptRef.current = '';
     wallOperationRef.current = null;
     setPublishing(false);
     setDeliveryPending(false);
@@ -2448,12 +2454,13 @@ function PhotoWallApp() {
   };
 
   useEffect(() => {
-    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || !photoAllowed || !connected || needsOnboarding || !session?.accountToken) return undefined;
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || !photoAllowed || !connected || needsOnboarding || !session?.accountToken
+      || (session.firstWall?.state !== 'done' && !hasDisplayReceipt(session.device)) || (firstWall?.state && firstWall.state !== 'done')) return undefined;
     let mounted = true;
     const request = { ...wallRequestScopeRef.current };
     const active = () => mounted && request.bindingEpoch === wallRequestScopeRef.current.bindingEpoch;
     const resume = () => {
-      if (!active() || AppState.currentState !== 'active') return;
+      if (!active() || wallOperationRef.current || AppState.currentState !== 'active') return;
       syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken, album:photoSync, active})
         .then(async () => {
           if (!active()) return;
@@ -2465,7 +2472,80 @@ function PhotoWallApp() {
     const timer = setInterval(resume, 30000);
     const subscription = AppState.addEventListener('change', state => { if (state === 'active') resume(); });
     return () => { mounted = false; clearInterval(timer); subscription.remove(); };
-  }, [photoAllowed, connected, needsOnboarding, session?.accountToken, effectiveSession?.device?.device_id, photoSync]);
+  }, [photoAllowed, connected, needsOnboarding, session?.accountToken, effectiveSession?.device?.device_id, photoSync, session?.firstWall?.state, firstWall?.state]);
+
+  const startFirstWall = async (retryUncertain = false) => {
+    if (wallOperationRef.current || !session?.accountToken || !canPublish) return;
+    const request = { ...wallRequestScopeRef.current, sequence: ++wallRequestScopeRef.current.sequence };
+    wallOperationRef.current = request;
+    const controller = new AbortController();
+    const active = () => !controller.signal.aborted && isCurrentWallRequest(request, wallRequestScopeRef.current);
+    const stage = state => { if (active()) setFirstWall({ binding: wallBindingKey, state }); };
+    setFirstWall({ binding: wallBindingKey, state: 'preparing' });
+    const store = async patch => {
+      if (!active()) throw new Error('设备已切换，请重新开始。');
+      const next = { ...latestWallSessionRef.current, ...patch };
+      const stored = await updateDeviceSession(next);
+      if (!active()) return;
+      latestWallSessionRef.current = next;
+      setSession(next);
+      setDeviceSessions(stored.sessions.map(normalizeDeviceSession).filter(Boolean));
+    };
+    // A deadline aborts HTTP and stops the upload queue after its current native call.
+    let deadline;
+    const timeout = new Promise((_, reject) => {
+      deadline = setTimeout(() => { controller.abort(); reject(new Error('这次准备用时较长，请检查网络后继续。已完成的照片会保留。')); }, 10 * 60 * 1000);
+    });
+    try {
+      await Promise.race([timeout, runFirstWall({
+        active, stage, retryUncertain: retryUncertain === true,
+        load: async () => latestWallSessionRef.current?.firstWall,
+        save: firstWall => store({ firstWall }),
+        readDevice: async () => {
+          const device = await readDisplayStatus({ apiBase: DEFAULT_API_BASE, deviceId: request.deviceId, accountToken: session.accountToken, signal: controller.signal });
+          if (device.device_id !== request.deviceId) throw new Error('设备状态不匹配');
+          await store({ device });
+          return device;
+        },
+        prepare: async ({ additional = false } = {}) => {
+          const content = await refreshRecognizedContent({ apiBase: DEFAULT_API_BASE, accountToken: session.accountToken, selectionSources: selectionSources(photoSync) });
+          if (!additional && content.goodTotal >= 8) return;
+          await syncSelectionInBackground({ apiBase: DEFAULT_API_BASE, accountToken: session.accountToken, album: photoSync, firstWall: true, active });
+        },
+        generate: () => {
+          const { prefer, exclude } = modelFilters();
+          return generateWall({ apiBase: DEFAULT_API_BASE, accountToken: session.accountToken, template: 'auto', title: '今日精选', filters: prefer, excludeFilters: exclude, deviceId: request.deviceId, preferenceRevisionId: preferenceProfile?.activeRevisionId || '', selectionSources: selectionSources(photoSync), signal: controller.signal });
+        },
+        publish: async wall => {
+          try {
+            const result = await publishGeneratedWall({ apiBase: DEFAULT_API_BASE, deviceId: request.deviceId, accountToken: session.accountToken, wallId: wall.wall_id, signal: controller.signal });
+            const publishedWall = publicationFromResponse(request.deviceId, wall, result);
+            if (!publishedWall) throw new Error('设备返回的照片墙版本不匹配');
+            await store({ device: result.device, publishedWall });
+            return { device: result.device, revision: publishedWall.revision };
+          } catch (error) {
+            // A definite rejection did not publish. Transport errors stay uncertain.
+            if ([400,401,403,404,409,422].includes(error.status)) await store({ firstWall: { state: 'preparing' } });
+            throw error;
+          }
+        },
+      })]);
+      if (active()) setHistoryRefresh(value => value + 1);
+    } catch (caught) {
+      if (isCurrentWallRequest(request, wallRequestScopeRef.current)) setFirstWall({ binding: wallBindingKey, state: 'failed', message: caught.message, canRestart: caught.canRestart === true });
+    } finally {
+      clearTimeout(deadline); controller.abort();
+      if (wallOperationRef.current === request) wallOperationRef.current = null;
+    }
+  };
+  firstWallRunRef.current = startFirstWall;
+  useEffect(() => {
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || needsOnboarding || !preferenceProfileReady || !photoAllowed || !connected || !canPublish
+      || firstWallAttemptRef.current === wallBindingKey || session?.firstWall?.state === 'done' || hasDisplayReceipt(session?.device)) return;
+    firstWallAttemptRef.current = wallBindingKey;
+    firstWallRunRef.current();
+  }, [needsOnboarding, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey]);
+  const firstWallVisible = firstWall?.binding === wallBindingKey;
 
   const requestModelWall = async () => {
     const { prefer, exclude } = modelFilters();
@@ -3013,11 +3093,9 @@ function PhotoWallApp() {
     setFirstRunPreview(false);
     setOnboardingStep('complete');
     setActiveTab('calendar');
-    // Preserve the bounded first-run analysis, but it must not block entry or
-    // navigate away from the calendar when it eventually finishes.
-    if (!preferenceProfile?.onboardingCompleted) {
-      startInitialPreferencePreparation().catch(() => {});
-    }
+    // The unified first-wall effect starts after the saved profile is hydrated.
+    if (!UNIFIED_SELECTION && !preferenceProfile?.onboardingCompleted) startInitialPreferencePreparation().catch(() => {});
+
   };
 
   useEffect(() => {
@@ -3120,12 +3198,12 @@ function PhotoWallApp() {
           <View style={[styles.calendarConnectionDot, !deviceOnline && styles.offlineDot]} />
           <Text style={styles.calendarConnectionText}>{connectionLabel}</Text>
         </MotionPressable>}
-        {!needsOnboarding && activeTab === 'calendar' ? <View style={styles.headerEntries}>
+        {!firstWallVisible && !needsOnboarding && activeTab === 'calendar' ? <View style={styles.headerEntries}>
           <MotionPressable onPress={() => setActiveTab('preferences')} contentStyle={styles.headerLink}><Text style={styles.headerLinkText}>偏好</Text></MotionPressable>
           <MotionPressable onPress={() => setActiveTab('manage')} contentStyle={styles.headerLink} accessibilityLabel="设置"><Text style={styles.headerLinkText}>设置</Text></MotionPressable>
-        </View> : !needsOnboarding ? <MotionPressable onPress={() => setActiveTab(activeTab === 'current' ? 'manage' : 'calendar')} disabled={savingPreferenceRevision || editingPreferences} contentStyle={styles.headerLink}><Text style={[styles.headerLinkText, editingPreferences && styles.disabled]}>‹ {activeTab === 'current' ? '返回设置' : '返回日历'}</Text></MotionPressable> : null}
+        </View> : !firstWallVisible && !needsOnboarding ? <MotionPressable onPress={() => setActiveTab(activeTab === 'current' ? 'manage' : 'calendar')} disabled={savingPreferenceRevision || editingPreferences} contentStyle={styles.headerLink}><Text style={[styles.headerLinkText, editingPreferences && styles.disabled]}>‹ {activeTab === 'current' ? '返回设置' : '返回日历'}</Text></MotionPressable> : null}
       </View>
-      {!needsOnboarding && activeTab !== 'calendar' ? <View style={styles.panelHeader}>
+      {!firstWallVisible && !needsOnboarding && activeTab !== 'calendar' ? <View style={styles.panelHeader}>
         <View style={styles.flex}><Text style={styles.panelTitle}>{TABS.find(tab => tab.id === activeTab)?.label || '设置'}</Text>
         <Text style={styles.panelSubtitle}>{activeTab === 'preferences' ? editingPreferences ? '调整后保存，再回到日历。' : '自然安排，也可以更合你心意。' : activeTab === 'manage' ? '照片墙和日常安排，都在这里。' : '管理整面照片墙的展示。'}</Text></View>
         {activeTab === 'preferences' && preferenceProfileLoaded ? <MotionPressable onPress={editingPreferences ? saveManagedPreferences : beginPreferenceManagement} disabled={savingPreferenceRevision || (!editingPreferences && (!preferenceProfileReady || !canEditModelPreferences))} accessibilityLabel={savingPreferenceRevision ? '正在保存偏好' : editingPreferences ? '保存' : '管理偏好'} contentStyle={[styles.preferenceManageButton, editingPreferences && styles.preferenceSaveButton]}>
@@ -3133,7 +3211,15 @@ function PhotoWallApp() {
           <Text style={[styles.preferenceManageText, editingPreferences && styles.preferenceSaveText]}>{savingPreferenceRevision ? '保存中' : editingPreferences ? '保存' : '管理偏好'}</Text>
         </MotionPressable> : null}
       </View> : null}
-      {!needsOnboarding && preferenceProfileLoaded && activeTab === 'calendar' ? (
+      {firstWallVisible ? (
+        <ScrollView contentContainerStyle={[styles.landingContent, { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 24 }]}>
+          <View style={styles.calendarArtwork} accessibilityElementsHidden><View style={styles.calendarPaperBack} /><View style={styles.calendarPaper}><Text style={styles.calendarPaperDay}>{firstWall.state === 'done' ? '✓' : '·'}</Text></View></View>
+          {!['done','failed'].includes(firstWall.state) ? <ActivityIndicator color={C.muted} /> : null}
+          <Text style={styles.landingTitle}>{firstWall.state === 'done' ? '第一幅回忆，已在照片墙。' : firstWall.state === 'failed' ? '这次准备暂时停下了' : ['publishing','waiting'].includes(firstWall.state) ? '回忆即将抵达' : '正在准备第一幅回忆'}</Text>
+          <Text style={styles.landingLead}>{firstWall.state === 'failed' ? firstWall.message : firstWall.state === 'done' ? '以后的日子，也会有新的相遇。' : firstWall.state === 'waiting' ? '正在等待照片墙完成刷新。' : '从手机里已有的照片开始，不必等整个相册。'}</Text>
+          {firstWall.state === 'failed' ? <><ActionButton onPress={() => startFirstWall()}>继续准备 / 检查上屏</ActionButton>{firstWall.canRestart ? <ActionButton secondary onPress={() => startFirstWall(true)}>重新准备并发送</ActionButton> : null}<ActionButton secondary onPress={() => Linking.openSettings()}>调整照片权限</ActionButton></> : firstWall.state === 'done' ? <ActionButton onPress={() => { setFirstWall(null); setActiveTab('calendar'); }}>进入日历</ActionButton> : <Text style={styles.landingNote}>首次准备中，请暂时保持 App 打开。</Text>}
+        </ScrollView>
+      ) : !needsOnboarding && preferenceProfileLoaded && activeTab === 'calendar' ? (
         <MemoryCalendar key={wallBindingKey} records={historyBinding === wallBindingKey ? displayHistory : []} loading={historyLoading} error={historyError} onRetry={() => setHistoryRefresh(value => value + 1)} />
       ) : (
       <ScrollView ref={pageScrollRef} contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
@@ -3172,7 +3258,7 @@ function PhotoWallApp() {
                   <View style={styles.onboardingCard}>
                     <View style={styles.onboardingArtwork}><Text style={styles.onboardingArtworkText}>▧</Text></View>
                     <Text style={styles.onboardingCardTitle}>{connected ? '照片墙已连接' : onboardingDiscovery.state === 'searching' ? '正在寻找照片墙' : onboardingDiscovery.state === 'connecting' ? '正在连接照片墙' : onboardingDiscovery.state === 'found' ? '发现附近的照片墙' : '暂时没有发现设备'}</Text>
-                    <Text style={styles.onboardingCardDescription}>{connected ? savingPreferenceRevision ? '正在保存安排，随后进入回忆日历。' : !preferenceProfileReady ? '正在恢复已有设置，请稍等。' : '准备好了，即可进入回忆日历。' : onboardingDiscovery.message || '请确认照片墙已通电，并让手机靠近设备。'}</Text>
+                    <Text style={styles.onboardingCardDescription}>{connected ? savingPreferenceRevision ? '正在保存安排，随后自动准备第一幅回忆。' : !preferenceProfileReady ? '正在恢复已有设置，请稍等。' : '准备好了，即可进入回忆日历。' : onboardingDiscovery.message || '请确认照片墙已通电，并让手机靠近设备。'}</Text>
                     {onboardingDiscovery.state === 'searching' && !connected ? <ActivityIndicator color={C.muted} style={{ marginTop: 16 }} /> : null}
                     {connected ? <ActionButton onPress={completeFirstRun} loading={savingPreferenceRevision} disabled={!preferenceProfileReady || savingPreferenceRevision}>{error ? '重试保存' : '进入回忆日历'}</ActionButton> : onboardingDiscovery.state === 'not_found' ? <ActionButton onPress={restartOnboardingDeviceDiscovery}>重新搜索</ActionButton> : null}
                   </View>

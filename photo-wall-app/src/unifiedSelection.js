@@ -27,10 +27,13 @@ async function json(response) {
   return value;
 }
 
-export async function syncSelectionInBackground({ apiBase, accountToken, album, active = () => true }) {
+export async function syncSelectionInBackground({ apiBase, accountToken, album, active = () => true, firstWall = false }) {
   if (!UNIFIED_SELECTION || Platform.OS !== 'ios' || !accountToken) return;
   const permission = await MediaLibrary.getPermissionsAsync(false, ['photo']);
-  if (permission.status !== 'granted') return;
+  if (permission.status !== 'granted') {
+    if (firstWall) throw new Error('请允许访问照片后继续。');
+    return;
+  }
   const sources = selectionSources(album);
   const base = apiBase.replace(/\/+$/, '');
   const headers = { 'X-Account-Token': accountToken };
@@ -38,9 +41,13 @@ export async function syncSelectionInBackground({ apiBase, accountToken, album, 
     method: 'POST', headers: { ...headers, 'Content-Type':'application/json' }, body: JSON.stringify({sources}),
   });
   if (session.contract !== SELECTION_CONTRACT || !/^[a-zA-Z0-9_-]{1,100}$/.test(session.scope)) throw new Error('选片服务版本不匹配');
-  if (running.has(session.scope)) return;
+  if (running.has(session.scope)) {
+    if (firstWall) throw new Error('照片正在同步，请稍后重试。');
+    return;
+  }
   running.add(session.scope);
-  const isActive = () => active() && AppState.currentState === 'active';
+  const deadline = Date.now() + (firstWall ? 90000 : Infinity);
+  const isActive = () => active() && Date.now() < deadline && AppState.currentState === 'active';
   try {
     // One source at a time. Source-specific checkpoints avoid cursor collisions.
     for (let sourceIndex = 0; sourceIndex < sources.length && isActive(); sourceIndex++) {
@@ -49,6 +56,8 @@ export async function syncSelectionInBackground({ apiBase, accountToken, album, 
       const backupFile = new File(Paths.document, `selection-${session.scope}-${sourceIndex}.backup.json`);
       await runSelectionSync({
         active: isActive,
+        maxPages: firstWall ? 1 : 3,
+        maxUploads: firstWall ? 16 : 72,
         load: async () => {
           for (const file of [stateFile,backupFile]) {
             try { if (file.exists) return JSON.parse(await file.text()); } catch { /* Try last complete checkpoint. */ }
@@ -61,7 +70,7 @@ export async function syncSelectionInBackground({ apiBase, accountToken, album, 
           }
           stateFile.write(JSON.stringify(state));
         },
-        readPage: after => MediaLibrary.getAssetsAsync({ first:300, after:after || undefined,
+        readPage: after => MediaLibrary.getAssetsAsync({ first:firstWall ? 60 : 300, after:after || undefined,
           mediaType:[MediaLibrary.MediaType.photo], sortBy:[[MediaLibrary.SortBy.creationTime,false]],
           ...(source === 'all' ? {} : {album:source}),
         }),
@@ -87,7 +96,7 @@ export async function syncSelectionInBackground({ apiBase, accountToken, album, 
           form.append('files', {uri, name:asset.filename || `${asset.id}.jpg`, type:'image/jpeg'});
           form.append('metadata', JSON.stringify([{local_engine:'apple-vision-local-v1',vision}]));
           form.append('sources', JSON.stringify(sources));
-          const result = await request(base+'/api/selection/upload', {method:'POST',headers,body:form}, 120000);
+          const result = await request(base+'/api/selection/upload', {method:'POST',headers,body:form}, firstWall ? 20000 : 120000);
           if (result.contract !== SELECTION_CONTRACT || result.saved !== 1) throw new Error('照片上传未确认');
         },
       });

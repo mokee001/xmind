@@ -526,8 +526,10 @@ export async function generateWall({
   deviceId = '',
   preferenceRevisionId = '',
   selectionSources = ['all'],
+  signal,
 }) {
   const response = await fetch(`${baseUrl(apiBase)}/api/generate`, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}),
       ...(UNIFIED_SELECTION ? {'X-Selection-Contract':SELECTION_CONTRACT} : {}) },
@@ -595,10 +597,11 @@ export async function activateDevicePreferenceRevision({
   return responseJson(response);
 }
 
-export async function publishGeneratedWall({ apiBase, deviceId, accountToken, wallId }) {
+export async function publishGeneratedWall({ apiBase, deviceId, accountToken, wallId, signal }) {
   const response = await fetch(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/publish-last-wall`,
     {
+      signal,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Account-Token': accountToken },
       body: JSON.stringify({ wall_id: wallId || '' }),
@@ -854,8 +857,9 @@ export async function publishJulyCalendar({ apiBase, deviceId, accountToken }) {
   return responseJson(response);
 }
 
-export async function listDisplays({ apiBase, accountToken }) {
+export async function listDisplays({ apiBase, accountToken, signal }) {
   const response = await fetch(`${baseUrl(apiBase)}/api/devices`, {
+    signal,
     headers: { 'X-Account-Token': accountToken },
   });
   return responseJson(response);
@@ -884,8 +888,8 @@ export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, acco
   return responseJson(response);
 }
 
-export async function readDisplayStatus({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
-  const result = await listDisplays({ apiBase, accountToken });
+export async function readDisplayStatus({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal }) {
+  const result = await listDisplays({ apiBase, accountToken, signal });
   const device = (result.devices || []).find(item => item.device_id === deviceId);
   if (!device) {
     throw Object.assign(new Error('线上服务中没有找到已绑定的设备'), {
