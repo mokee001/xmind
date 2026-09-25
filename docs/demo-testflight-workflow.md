@@ -61,3 +61,12 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 手机从 TestFlight → Echooo 更新。没有自动安装到具体手机，也没有修改固件。
 - 独立后端网关已部署，新契约流量进入 8001，其余请求仍保留原 8000；固定模型完整运行仅使用三张公开测试图。详情及回滚见 `docs/unified-selection-rollout-20260922.md`，不将此结果当作私人图库质量或实体上屏验收。
 - 主项目配置已同步为构建 30，冻结的构建源码仍保留 EAS 远程递增前的 buildNumber 29；以实际签名包及 Apple 为准，不修改发布快照。
+
+## 2026-09-26 · 首次自动上屏 App 1.3.8（31）
+
+- 用户授权连接成功后自动进行有限首批选片、生成、投送及真实回执确认；实现与回归说明见 `docs/first-wall-native-20260925.md`。
+- 独立源码快照 `02cffefa77058a4ba8d81c2d389144bc04f643a8`，归档 `outputs/first-wall-20260925/`。按锁文件安装依赖并通过本机 Xcode Release 归档和 App Store 导出；EAS 云构建月额度耗尽，未购买套餐。
+- IPA `photo-wall-first-wall.ipa`，SHA-256 `8a6799b339036a90d9ee712da7643b1be456c447c7bdf098f0bbcee2a2e16abc`；版本、构建号、iOS 17.0、正式签名和两个照片处理原生模块通过核验。包内 Hermes sourceHash 对应实际 Metro JS，统一选片开关为 true，首次上屏函数及调用已包含。
+- 本机 Apple 上传工具完成分析和两个分段后因网络卡住；使用 Apple 官方 buildUploadFiles 接口补传同一安装包剩余分段，并提交完成标记。上传任务及最终构建 ID 均为 `aa0d51b6-1bd3-467d-92a7-20bde9758d53`，没有成功的 EAS 提交任务，不用失败的工具退出状态冒充上传成功。
+- 00:54（上海）核对 Apple 为 VALID / IN_BETA_TESTING、未过期，且精确关联原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。手机从 TestFlight → Echooo 更新至 1.3.8（31）。
+- 41 项 Node 与 7 项 Python 接口回归通过；未进行私人图库真实推理或实体设备上屏验收。主项目 buildNumber 同步为 31，独立快照保持冻结；临时签名材料已清理。

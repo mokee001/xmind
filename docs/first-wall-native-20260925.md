@@ -1,4 +1,4 @@
-# 首次自动上屏 · App 1.3.8 待发布
+# 首次自动上屏 · App 1.3.8（31）已发布
 
 2026-09-25 用户确认将本次 Demo 合入 App 并上传供手机测试，无需再次确认发布。
 
@@ -18,10 +18,17 @@
 - 7项Python接口回归通过（unittest discover）：网关真实模板渲染/候选夹具、选片上传协议。没有将夹具当作私人照片质量验收。
 - JSX解析与git diff --check通过，iOS Hermes导出通过。独立iOS prebuild通过，deploymentTarget为17.0。
 - 根选片基准校验发现6处既有差异（backend/dedup.py、selection_lab/server.py、selection_lab/static/index.html及三个旧测试文件）。这些文件不在本次修改内；未运行本机真实模型推理、未改变固定精选基线。
-- 本机依赖安装版本与锁定发布版本可能不同，最终发布必须从独立快照重新按锁文件安装，不能使用本机旧ios工程（缺少LocalPhotoCuration且部署目标过旧）。
-- Expo API连接超时，EAS构建请求失败，未获得构建ID。线上照片API也超时。原生依赖安装阻塞于Maven校验文件网络请求；未完成原生编译、签名或实体屏幕验收。
-- 已准备版本1.3.8；构建号尚未由EAS分配，app.json保留上次实际号30，不代表1.3.8(30)已发布。
+- 独立快照按锁文件完成 npm ci，使用 Expo 57.0.19 / React Native 0.86.3；未使用本机旧 ios 工程。Expo Doctor 20/21 项通过，剩余项为六个依赖有更新的补丁版本，本次保持已提交的锁文件。
+- 2026-09-26，本机 Xcode Release 归档及 App Store 导出成功。IPA 为 1.3.8（31），最低 iOS 17.0；签名、LocalPhotoCurationModule、PetCutoutModule、observeFileAsync 均通过核验。包内 Hermes sourceHash 与实际 Metro JS 一致，确认统一选片开关为 true，并包含首次上屏函数和调用。
+- EAS 已分配构建号 31，但免费云构建月额度耗尽，因此改用本机 Xcode 和现有正式分发凭据。下载的六份原生依赖与官方 Maven SHA1 逐一匹配；仅在本机缓存复用。未购买套餐、未修改系统 VPN 或关闭证书校验。
+- 线上 capabilities 已核对 ready=true，契约为 unified-recollections-v1，基准为 c1c5683eb00c232123832a47f25ddd0d5e3e6e56。未进行本机真实模型或实体屏幕验收。
 
-## 继续发布
+## 发布记录
 
-独立快照与日志：`outputs/first-wall-20260925/`。网络恢复后从其中source目录运行EAS production构建（云端按锁文件安装，排除本机ios/node_modules）；成功后核验IPA、统一选片开关、两个原生模块，提交App Store Connect应用6808087330，再核对现有Team (Expo)组。当前没有新TestFlight包，不可通知用户已可更新。
+独立快照与日志：`outputs/first-wall-20260925/`，快照提交 `02cffefa77058a4ba8d81c2d389144bc04f643a8`。签名包 `photo-wall-first-wall.ipa` 的 SHA-256 为 `8a6799b339036a90d9ee712da7643b1be456c447c7bdf098f0bbcee2a2e16abc`。
+
+2026-09-26 00:50（上海）上传完成。Apple 上传任务 `aa0d51b6-1bd3-467d-92a7-20bde9758d53` 的三个文件均为 COMPLETE，任务为 PROCESSING，无错误或警告。本机 altool 已完成分析与两个分段；最后一段因连接中断，使用 Apple 官方 buildUploadFiles 接口、原上传任务和同一文件校验值补传并提交完成标记。
+
+2026-09-26 00:54（上海）确认构建 `aa0d51b6-1bd3-467d-92a7-20bde9758d53` 为 VALID / IN_BETA_TESTING、未过期，且精确关联原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。手机可从 TestFlight → Echooo 更新至 1.3.8（31）。此结论不代表手机已经安装，也不代表实体屏幕已验收。
+
+主项目 buildNumber 同步为实际发布号 31，冻结源码快照保留远程递增前的配置。签名 IPA、Apple 构建及组关联证据见归档内 release-status.json、ipa-verification.json、apple-state.json；临时签名钥匙串与凭据已清理。
