@@ -70,3 +70,12 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 本机 Apple 上传工具完成分析和两个分段后因网络卡住；使用 Apple 官方 buildUploadFiles 接口补传同一安装包剩余分段，并提交完成标记。上传任务及最终构建 ID 均为 `aa0d51b6-1bd3-467d-92a7-20bde9758d53`，没有成功的 EAS 提交任务，不用失败的工具退出状态冒充上传成功。
 - 00:54（上海）核对 Apple 为 VALID / IN_BETA_TESTING、未过期，且精确关联原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。手机从 TestFlight → Echooo 更新至 1.3.8（31）。
 - 41 项 Node 与 7 项 Python 接口回归通过；未进行私人图库真实推理或实体设备上屏验收。主项目 buildNumber 同步为 31，独立快照保持冻结；临时签名材料已清理。
+
+## 2026-10-09 · 首次上传兼容性 App 1.3.9（32）
+
+- 修复 Expo fetch 不支持 URI-only multipart 文件导致首次准备反复失败的问题；说明见 `docs/native-upload-fix-20261009.md`。
+- 独立源码快照 `ea8d5d5b3fe7da670de4466c04c015bf1b5006c9`，归档 `outputs/native-upload-20261009/`。
+  IPA SHA256 为 `a1f4fa661f734f0988ecf159777d796c4a7bb458a5da30e95be9c56b78d2cb95`。
+- 28 项相关回归、本机 Release 归档、签名、版本及 Hermes 修复代码核验通过；仍须在用户手机核对真实上传和实体上屏。
+- 20:36:59（上海）Apple 上传成功。构建 `b9a73cdd-8815-4133-b39f-183c0db77185` 已处理为 VALID / IN_BETA_TESTING、未过期，精确关联原 Team (Expo) 组。
+- TestFlight → Echooo 更新至 1.3.9（32）。未部署后端或修改屏幕固件；临时发布凭据已清理。

@@ -42,3 +42,8 @@
 实际 Apple 处理及现有 Team (Expo) 测试组关联状态，以该目录
 `release-status.json` 和 `apple-state.json` 为准。上传、处理完成和测试组可见性分别核对。
 本次发布沿用首次自动上屏的用户授权，不修改设备固件或部署线上后端。
+
+2026-10-09 20:36:59（上海），Apple 确认上传成功，无错误；上传任务及构建 ID
+`b9a73cdd-8815-4133-b39f-183c0db77185`。随后核对为 VALID / IN_BETA_TESTING、
+未过期，并精确关联原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。
+测试者从 TestFlight → Echooo 更新至 1.3.9（32）。临时分发钥匙串及发布密钥已清理。
