@@ -3,6 +3,7 @@ import { UNIFIED_SELECTION, SELECTION_CONTRACT } from './unifiedSelection';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
+import { appendLocalFetchFile } from './fetchUpload';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { cutoutPet, isPetCutoutAvailable, removePetCutout } from '../modules/pet-cutout';
 import {
@@ -146,7 +147,7 @@ export async function publishLocalDisplayPhoto({
     const blob = await (await fetch(asset.uri)).blob();
     photoForm.append('file', blob, asset.fileName || 'photo.jpg');
   } else {
-    photoForm.append('file', {
+    appendLocalFetchFile(photoForm, 'file', {
       uri: asset.uri,
       name: asset.fileName || `photo-${Date.now()}.jpg`,
       type: asset.mimeType || 'image/jpeg',

@@ -1,6 +1,8 @@
 import { Platform, AppState } from 'react-native';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { File, Paths } from 'expo-file-system';
+import { fetch as expoFetch } from 'expo/fetch';
+import { appendLocalFetchFile } from './fetchUpload';
 import { curateLocalPhotos, observeLocalPhotoFile } from '../modules/local-photo-curation';
 import { runSelectionSync } from './selectionSync.cjs';
 
@@ -11,7 +13,7 @@ const running = new Set();
 async function request(url, options, timeout = 60000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
-  try { return await json(await fetch(url, {...options, signal:controller.signal})); }
+  try { return await json(await expoFetch(url, {...options, signal:controller.signal})); }
   finally { clearTimeout(timer); }
 }
 
@@ -93,7 +95,7 @@ export async function syncSelectionInBackground({ apiBase, accountToken, album, 
           const vision = await observeLocalPhotoFile(uri);
           if (!isActive()) throw new Error('Selection suspended');
           const form = new FormData();
-          form.append('files', {uri, name:asset.filename || `${asset.id}.jpg`, type:'image/jpeg'});
+          appendLocalFetchFile(form, 'files', {uri, name:asset.filename || `${asset.id}.jpg`, type:'image/jpeg'});
           form.append('metadata', JSON.stringify([{local_engine:'apple-vision-local-v1',vision}]));
           form.append('sources', JSON.stringify(sources));
           const result = await request(base+'/api/selection/upload', {method:'POST',headers,body:form}, firstWall ? 20000 : 120000);
