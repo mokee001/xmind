@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import logging
 import math
 import os
 from pathlib import Path
@@ -9,6 +10,34 @@ from pathlib import Path
 from fastapi import File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import Response
 from .. import unified_selection as selection
+
+logger = logging.getLogger(__name__)
+
+
+def normalized_region(region):
+    """Intersect a real detection with the visible image, retaining its source box."""
+    def reject(reason):
+        logger.warning('Vision observation region rejected: %s', reason)
+        raise ValueError('Invalid observation region')
+
+    if not isinstance(region, dict):
+        reject('not_object')
+    box, score = region.get('box'), region.get('confidence')
+    if (not isinstance(box, list) or len(box) != 4
+            or not all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                       and math.isfinite(x) for x in box)):
+        reject('invalid_coordinates')
+    if not box[0] < box[2] or not box[1] < box[3]:
+        reject('empty_or_reversed_box')
+    if (not isinstance(score, (int, float)) or isinstance(score, bool)
+            or not math.isfinite(score) or not 0 <= score <= 1):
+        reject('invalid_confidence')
+    visible = [max(0, box[0]), max(0, box[1]), min(1, box[2]), min(1, box[3])]
+    if not visible[0] < visible[2] or not visible[1] < visible[3]:
+        reject('outside_image')
+    if visible == box:
+        return region
+    return {**region, 'box': visible, 'source_box': box}
 
 
 def validate_observation(value):
@@ -23,17 +52,14 @@ def validate_observation(value):
             raise ValueError('Invalid Vision label')
     if not isinstance(value.get('faces'), int) or not 0 <= value['faces'] <= 500:
         raise ValueError('Invalid face observation count')
+    normalized = dict(value)
     for key in ('face_regions','humans'):
         regions = value.get(key, [])
         if not isinstance(regions,list) or len(regions)>500:
             raise ValueError('Invalid observation regions')
-        for region in regions:
-            box, score = region.get('box'), region.get('confidence')
-            if (not isinstance(box,list) or len(box)!=4 or not all(isinstance(x,(int,float)) and math.isfinite(x) for x in box)
-                    or not 0<=box[0]<box[2]<=1 or not 0<=box[1]<box[3]<=1
-                    or not isinstance(score,(int,float)) or not math.isfinite(score) or not 0<=score<=1):
-                raise ValueError('Invalid observation region')
-    return value
+        if key in value:
+            normalized[key] = [normalized_region(region) for region in regions]
+    return normalized
 
 
 def register(app, account_scope, account_authorized=None):
@@ -61,7 +87,7 @@ def register(app, account_scope, account_authorized=None):
             for item in values:
                 if item.get('local_engine') != 'apple-vision-local-v1':
                     raise ValueError('Local strong-rule filtering required')
-                validate_observation(item.get('vision'))
+                item['vision'] = validate_observation(item.get('vision'))
         except (ValueError, TypeError, AttributeError) as e:
             raise HTTPException(422, str(e))
         try:

@@ -1,6 +1,7 @@
 """Contract tests with isolated synthetic metadata, not inference accuracy tests."""
 import asyncio
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -10,7 +11,7 @@ from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
-from backend.routers.selection import register
+from backend.routers.selection import register, validate_observation
 
 
 class SelectionApiTests(unittest.TestCase):
@@ -73,6 +74,47 @@ class SelectionApiTests(unittest.TestCase):
                 data={'metadata':json.dumps([{'local_engine':'apple-vision-local-v1','vision':observation}])})
         self.assertEqual(r.status_code,422)
         ingest.assert_not_called()
+
+    def test_partial_edge_detections_upload_without_changing_classification_evidence(self):
+        from PIL import Image
+        from selection_lab.collections import classify
+        observation = {'version':1, 'labels':[{'identifier':'people', 'confidence':0.9}], 'faces':1,
+                       'face_regions':[{'box':[-0.0000001,0.1,0.5,0.9], 'confidence':0.95}],
+                       'humans':[{'box':[0.1,0.1,1.02,1.001], 'confidence':0.8}]}
+        normalized = validate_observation(observation)
+        self.assertEqual(normalized['face_regions'][0]['box'], [0,0.1,0.5,0.9])
+        self.assertEqual(normalized['humans'][0]['box'], [0.1,0.1,1,1])
+        self.assertEqual(normalized['face_regions'][0]['source_box'], observation['face_regions'][0]['box'])
+        self.assertEqual(normalized['faces'], observation['faces'])
+        self.assertEqual(normalized['labels'], observation['labels'])
+        self.assertEqual(classify(normalized), classify(observation))
+        self.assertEqual(observation['face_regions'][0]['box'][0], -0.0000001)
+        image = io.BytesIO()
+        Image.new('RGB',(16,16),'white').save(image,format='JPEG')
+        with patch('backend.unified_selection.ingest', return_value='revision') as ingest:
+            r = self.request('POST','/api/selection/upload',headers={'X-Account-Token':'test-owner'},
+                files={'files':('test.jpg',image.getvalue(),'image/jpeg')},
+                data={'metadata':json.dumps([{'local_engine':'apple-vision-local-v1','vision':observation}])})
+        self.assertEqual(r.status_code,200)
+        self.assertEqual(r.json()['saved'],1)
+        self.assertEqual(ingest.call_args.args[1][0]['vision'],normalized)
+
+    def test_in_bounds_observations_are_preserved(self):
+        observation = {'version':1, 'labels':[{'identifier':'people', 'confidence':0.9}], 'faces':1,
+                       'face_regions':[{'box':[0.1,0.2,0.8,0.9], 'confidence':0.8}]}
+        self.assertEqual(validate_observation(observation), observation)
+
+    def test_empty_outside_reversed_and_nonfinite_regions_remain_invalid(self):
+        regions = [None, {'box':[0,0,0,1],'confidence':0.8},
+                   {'box':[0.8,0,0.1,1],'confidence':0.8},
+                   {'box':[1.1,0,1.2,1],'confidence':0.8},
+                   {'box':[0,0,float('nan'),1],'confidence':0.8},
+                   {'box':[0,0,1,1],'confidence':float('inf')},
+                   {'box':[0,0,1,1],'confidence':1.2}]
+        for region in regions:
+            with self.subTest(region=region), self.assertRaisesRegex(ValueError,'Invalid observation region'):
+                validate_observation({'version':1,'labels':[{'identifier':'people','confidence':0.9}],
+                                      'faces':1,'face_regions':[region]})
 
 
 if __name__=='__main__':unittest.main()
