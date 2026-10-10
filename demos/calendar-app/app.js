@@ -1,6 +1,6 @@
 import { mountFirstWall } from './first-wall.js';
 import { mountPanel, resetPreferenceDraft } from './panels.js';
-import { createOnboarding } from './onboarding.js?v=0.3.0-final';
+import { createOnboarding } from './onboarding.js?v=0.3.6-recovery';
 
 const STORAGE_KEY = 'echooo-calendar-demo-v1';
 const DEFAULT = {

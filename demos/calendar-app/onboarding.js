@@ -4,7 +4,7 @@ const NETWORKS = ['Home_2.4G', 'Echooo_Demo'];
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 
 function freshDraft(state) {
-  return { version: 2, photoAccess: 'none', bluetooth: false, localNetwork: false, connected: false, permissionDenied: '', deviceName: state.settings?.deviceName?.trim()?.slice(0, 24) || '客厅照片墙', network: NETWORKS[0] };
+  return { version: 2, photoAccess: 'none', bluetooth: false, localNetwork: false, connected: false, wifiConnected: false, permissionDenied: '', deviceName: state.settings?.deviceName?.trim()?.slice(0, 24) || '客厅照片墙', network: NETWORKS[0] };
 }
 function loadDraft(state) {
   const draft = freshDraft(state);
@@ -15,6 +15,7 @@ function loadDraft(state) {
     draft.bluetooth = saved.bluetooth === true;
     draft.localNetwork = saved.localNetwork === true;
     draft.connected = saved.connected === true && draft.photoAccess !== 'none' && draft.bluetooth && draft.localNetwork;
+    draft.wifiConnected = (saved.wifiConnected === true || draft.connected) && draft.photoAccess !== 'none' && draft.bluetooth && draft.localNetwork;
     draft.permissionDenied = ['photo', 'bluetooth', 'network'].includes(saved.permissionDenied) ? saved.permissionDenied : '';
     draft.network = NETWORKS.includes(saved.network) ? saved.network : draft.network;
   } catch { /* Invalid or unavailable storage starts a neutral walkthrough. */ }
@@ -41,6 +42,9 @@ export function createOnboarding(api) {
   let epoch = 0;
   let submitting = false;
   let storageWarningShown = false;
+  const scenarioFromUrl = new URLSearchParams(location.search).get('connection');
+  let connectionScenario = ['cloud-offline', 'cloud-temporary', 'wrong-password'].includes(scenarioFromUrl) ? scenarioFromUrl : 'success';
+  let cloudAttempt = 0;
   const timers = new Set();
 
   function persistDraft() {
@@ -103,7 +107,7 @@ export function createOnboarding(api) {
       draft[field] = choice.value;
       const denied = choice.value === false || choice.value === 'none';
       draft.permissionDenied = denied ? key : '';
-      if (denied) draft.connected = false;
+      if (denied) { draft.connected = false; draft.wifiConnected = false; }
       closeSheet(); persistDraft();
       if (key === 'photo') { if (denied) renderWelcome(); else go('device'); }
       else if (denied) { phase = 'permissions'; renderDevice(); }
@@ -119,13 +123,20 @@ export function createOnboarding(api) {
       found: { title: '发现附近的照片墙', copy: 'Echooo · 示例设备 01<br>选择这台设备，为它连接家庭网络。', graphic: 'device', label: '连接这台照片墙', action: 'connect-device' },
       network: { title: '为照片墙连接 Wi-Fi', copy: '选择家中的 2.4 GHz 网络。', graphic: 'wifi', label: '选择家庭 Wi-Fi', action: 'choose-network' },
       connecting: { title: '正在连接家庭网络', copy: `${escapeHtml(draft.network)} · 示例网络<br>连接成功后，自动准备第一幅回忆。`, graphic: 'wifi', label: '正在连接…', action: 'choose-network', disabled: true },
+      'cloud-connecting': { title: '正在连接服务', copy: '照片墙已连上 Wi-Fi。<br>正在完成最后的连接。', graphic: 'wifi', label: '正在连接服务…', disabled: true },
+      'cloud-retrying': { title: '正在重新连接服务', copy: 'Wi-Fi 连接已保留。<br>稍等一下，我们会自动再试。', graphic: 'wifi', label: '正在自动重试…', disabled: true },
+      'cloud-unreachable': { title: '暂时连不上服务', copy: '照片墙仍连接着 Wi-Fi。<br>可以直接重试，不用重新输入密码。', graphic: 'wifi', label: '重试连接服务', action: 'retry-cloud' },
       connected: { title: '连接成功', copy: `${escapeHtml(draft.deviceName)}已准备好。`, graphic: 'check', label: submitting ? '正在保存…' : '进入回忆日历', action: 'finish', disabled: submitting },
       'save-failed': { title: '已连接，设置还未保存', copy: '请重试保存，无需重新连接照片墙。', graphic: 'check', label: '重试保存', action: 'finish' },
       'not-found': { title: '暂时没有发现设备', copy: '确认照片墙已通电，让手机靠近后重试。', graphic: 'device', label: '重新查找', action: 'search' },
-      failed: { title: '这次连接没有成功', copy: '检查家庭网络，再试一次。', graphic: 'wifi', label: '重新连接', action: 'choose-network' },
+      failed: { title: 'Wi-Fi 没有连接成功', copy: '请检查网络是否可用，再试一次。', graphic: 'wifi', label: '重新连接 Wi-Fi', action: 'choose-network' },
+      'wrong-password': { title: 'Wi-Fi 密码不正确', copy: '请检查 Wi-Fi 密码后重新连接。', graphic: 'wifi', label: '重新输入密码', action: 'choose-network' },
     };
     const current = states[phase];
-    host.innerHTML = `<div class="flow-shell"><div class="flow-scroll">${progress()}<h1>连接你的<br>照片墙。</h1><p class="flow-lead">让手机靠近已通电的照片墙。<br>连好后，就可以开始了。</p><div class="flow-device-card" role="status"><span class="flow-device-symbol${['searching', 'connecting'].includes(phase) ? ' is-searching' : ''}${draft.connected ? ' is-connected' : ''}">${icon(current.graphic, 34)}</span><strong>${current.title}</strong><p>${current.copy}</p><span class="flow-simulation-pill">模拟设备状态</span></div>${draft.permissionDenied && phase === 'permissions' ? `<p class="flow-inline-note flow-warning" role="status">尚未允许${permissionName}，准备好后可再次允许。</p>` : ''}<p class="flow-inline-note">${arrangementNote()}</p><details class="flow-device-help"><summary>连接帮助${icon('chevron-right', 15)}</summary><p>确认照片墙已通电，手机靠近设备，家中网络可用。</p><div class="flow-help-actions"><button type="button" data-flow-action="demo-not-found">演示找不到设备</button><button type="button" data-flow-action="demo-failed">演示连接失败</button></div><p class="flow-sheet-note">只切换本地模拟状态。</p></details></div>${footer(primary(current.label, current.action, current.disabled))}</div>`;
+    const cloudPhase = phase.startsWith('cloud-');
+    const connectionStatus = draft.wifiConnected ? `<p class="flow-connection-status">${icon('check', 13)} Wi-Fi 已连接 · ${escapeHtml(draft.network)}</p>` : '';
+    const demoActions = ready() ? `<button type="button" data-flow-action="demo-cloud-temporary">演示自动恢复</button><button type="button" data-flow-action="demo-cloud-offline">演示服务不可达</button><button type="button" data-flow-action="demo-wrong-password">演示密码错误</button>${cloudPhase ? '<button type="button" data-flow-action="demo-service-restored">模拟服务恢复</button>' : ''}${phase === 'wrong-password' ? '<button type="button" data-flow-action="demo-password-corrected">模拟密码已更正</button>' : ''}` : '';
+    host.innerHTML = `<div class="flow-shell${cloudPhase ? ' flow-recovery' : ''}"><div class="flow-scroll">${progress()}<h1>${cloudPhase ? '连接照片墙。' : '连接你的<br>照片墙。'}</h1><p class="flow-lead">${cloudPhase ? '连接完成后，自动准备第一幅回忆。' : '让手机靠近已通电的照片墙。<br>连好后，就可以开始了。'}</p><div class="flow-device-card" role="status" aria-live="polite"><span class="flow-device-symbol${['searching', 'connecting', 'cloud-connecting', 'cloud-retrying'].includes(phase) ? ' is-searching' : ''}${draft.connected ? ' is-connected' : ''}">${icon(current.graphic, 34)}</span><strong>${current.title}</strong><p>${current.copy}</p>${connectionStatus}<span class="flow-simulation-pill">模拟设备状态</span></div>${draft.permissionDenied && phase === 'permissions' ? `<p class="flow-inline-note flow-warning" role="status">尚未允许${permissionName}，准备好后可再次允许。</p>` : ''}<p class="flow-inline-note">${arrangementNote()}</p><details class="flow-device-help"><summary>连接帮助${icon('chevron-right', 15)}</summary><p>${cloudPhase ? '照片墙已经连上所选 Wi-Fi。服务连接暂时中断时，直接重试即可；无需删除设备。' : '确认照片墙已通电，手机靠近设备，所选网络可用。'}</p><div class="flow-help-actions"><button type="button" data-flow-action="demo-not-found">演示找不到设备</button><button type="button" data-flow-action="demo-failed">演示 Wi-Fi 断开</button>${demoActions}</div><p class="flow-sheet-note">仅为本地模拟，演示重试时间已缩短。服务恢复由演示控制决定，不代表实体屏幕连接成功。</p></details></div>${footer(primary(current.label, current.action || '', current.disabled) + (phase === 'cloud-unreachable' ? '<button type="button" class="flow-secondary" data-flow-action="choose-network">选择其他 Wi-Fi</button>' : ''))}</div>`;
   }
   function advanceDevice() {
     clearAsync();
@@ -134,12 +145,13 @@ export function createOnboarding(api) {
     const permission = nextConnectionPermission();
     if (permission) { phase = 'permissions'; renderDevice(); later(() => askPermission(permission), 100); }
     else if (draft.connected) { phase = 'connected'; renderDevice(); later(submit, 300); }
+    else if (draft.wifiConnected) { phase = 'cloud-unreachable'; renderDevice(); }
     else search();
   }
   function search() {
     if (!active || stage !== 'device' || ['searching', 'connecting'].includes(phase)) return;
     if (!ready()) { advanceDevice(); return; }
-    clearAsync(); draft.connected = false; phase = 'searching'; persistDraft(); renderDevice();
+    clearAsync(); draft.connected = false; draft.wifiConnected = false; phase = 'searching'; persistDraft(); renderDevice();
     later(() => { phase = 'found'; renderDevice(); }, 550);
   }
   function connectDevice() {
@@ -147,20 +159,38 @@ export function createOnboarding(api) {
     phase = 'network'; renderDevice(); chooseNetwork();
   }
   function chooseNetwork() {
-    if (stage !== 'device' || !['network', 'failed'].includes(phase)) return;
+    if (stage !== 'device' || !['network', 'failed', 'wrong-password', 'cloud-unreachable'].includes(phase)) return;
     if (!ready()) { advanceDevice(); return; }
     const ownEpoch = epoch;
     const sheet = openSheet({ title: '连接家庭 Wi-Fi', body: `<p>为照片墙选择一个 2.4 GHz 网络。</p><fieldset class="flow-network-list"><legend class="flow-sr-only">示例家庭网络</legend>${NETWORKS.map(network => `<label><span>${icon('wifi', 20)}<span>${network}<small>示例网络 · 2.4 GHz</small></span></span><input type="radio" name="flow-network" value="${network}"${draft.network === network ? ' checked' : ''}></label>`).join('')}</fieldset><p class="flow-sheet-note">使用已准备的示例凭证，无需填写真实 Wi-Fi 密码。</p>`, actions: [{ label: '连接并开始使用', primary: true, onClick: () => {
-      if (!active || stage !== 'device' || epoch !== ownEpoch || !['network', 'failed'].includes(phase)) return;
+      if (!active || stage !== 'device' || epoch !== ownEpoch || !['network', 'failed', 'wrong-password', 'cloud-unreachable'].includes(phase)) return;
       const network = sheet.dialog.querySelector('[name="flow-network"]:checked')?.value;
       if (!NETWORKS.includes(network)) { api.toast('请选择一个示例网络'); return; }
       draft.network = network; closeSheet(); connect();
     } }] });
   }
   function connect() {
-    if (!active || stage !== 'device' || !ready() || !['network', 'failed'].includes(phase)) return;
-    clearAsync(); phase = 'connecting'; draft.connected = false; persistDraft(); renderDevice();
-    later(() => { draft.connected = true; phase = 'connected'; persistDraft(); renderDevice(); later(submit, 400); }, 900);
+    if (!active || stage !== 'device' || !ready() || !['network', 'failed', 'wrong-password', 'cloud-unreachable'].includes(phase)) return;
+    clearAsync(); phase = 'connecting'; draft.connected = false; draft.wifiConnected = false; persistDraft(); renderDevice();
+    later(() => {
+      if (connectionScenario === 'wrong-password') { phase = 'wrong-password'; persistDraft(); renderDevice(); return; }
+      draft.wifiConnected = true; persistDraft(); retryCloud();
+    }, 900);
+  }
+  function retryCloud() {
+    if (!active || stage !== 'device' || !ready() || !draft.wifiConnected) return;
+    clearAsync(); cloudAttempt = 0; draft.connected = false; persistDraft(); attemptCloud();
+  }
+  function attemptCloud() {
+    phase = 'cloud-connecting'; cloudAttempt++; renderDevice();
+    later(() => {
+      if (!draft.wifiConnected) { phase = 'failed'; renderDevice(); return; }
+      if (connectionScenario === 'success' || (connectionScenario === 'cloud-temporary' && cloudAttempt === 3)) {
+        draft.connected = true; phase = 'connected'; persistDraft(); renderDevice(); later(submit, 400);
+      } else if (cloudAttempt < 3) {
+        phase = 'cloud-retrying'; renderDevice(); later(attemptCloud, cloudAttempt === 1 ? 1000 : 1800);
+      } else { phase = 'cloud-unreachable'; persistDraft(); renderDevice(); }
+    }, 700);
   }
   function submit() {
     if (!active || stage !== 'device' || submitting) return;
@@ -193,9 +223,21 @@ export function createOnboarding(api) {
       else if (action === 'search') search();
       else if (action === 'connect-device') connectDevice();
       else if (action === 'choose-network') chooseNetwork();
+      else if (action === 'retry-cloud' && phase === 'cloud-unreachable') retryCloud();
       else if (action === 'finish') submit();
+      else if (action === 'demo-service-restored' && phase.startsWith('cloud-')) {
+        connectionScenario = 'success'; api.toast('已模拟服务恢复。点击重试可继续；正在重试时会自动继续。');
+      }
+      else if (action === 'demo-password-corrected' && phase === 'wrong-password') {
+        connectionScenario = 'success'; api.toast('已更正示例凭证，可以重新连接 Wi-Fi。');
+      }
+      else if (['demo-cloud-temporary', 'demo-cloud-offline', 'demo-wrong-password'].includes(action) && stage === 'device' && ready()) {
+        clearAsync(); closeSheet(); connectionScenario = action.slice(5); draft.connected = false;
+        draft.wifiConnected = connectionScenario !== 'wrong-password'; persistDraft();
+        if (draft.wifiConnected) retryCloud(); else { phase = 'wrong-password'; renderDevice(); }
+      }
       else if (['demo-not-found', 'demo-failed'].includes(action) && stage === 'device') {
-        clearAsync(); closeSheet(); draft.connected = false;
+        clearAsync(); closeSheet(); draft.connected = false; draft.wifiConnected = false;
         phase = action === 'demo-not-found' ? 'not-found' : 'failed'; persistDraft(); renderDevice();
       }
     };
