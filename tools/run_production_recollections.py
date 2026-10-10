@@ -112,7 +112,8 @@ def main():
                     'photos':{k:v for k,v in cached.get('photos',{}).items() if k in allowed}})
     # This runs the pinned Rust ML + upstream Dart recognition harness, NOT any
     # previous export. Each input job has its own caches, history and result path.
-    subprocess.run([sys.executable, str(runtime/'tools/run_ente_lab.py'),
+    subprocess.run([sys.executable, str(Path(__file__).with_name('run_baseline_ente.py')),
+                    '--runtime', str(runtime),
                     '--cache-dir', str(cache), '--state-dir', str(state)], cwd=runtime, check=True, timeout=3000)
     atomic_json(ml_cache, json.loads((state/'ente/ml-index.json').read_text()))
     result = build_feed(lab)
