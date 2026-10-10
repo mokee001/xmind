@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -124,6 +125,8 @@ def enqueue(scope):
             return
         _running.add(scope)
     def work():
+        processed_revision = None
+        failed = False
         try:
             # Read a new snapshot after each completed batch; don't mutate an
             # in-flight source set, or lose uploads arriving during inference.
@@ -131,12 +134,15 @@ def enqueue(scope):
                 with _guard:
                     library = read(root/'library.json')
                     status = read(root/'status.json', {})
+                    processed_revision = (library or {}).get('revision')
                     if not library or len(library['photos']) < 8 or status.get('completed_revision') == library['revision']:
                         return
                     revision = library['revision']
+                    if status.get('state') == 'awaiting_photos' and status.get('revision') == revision:
+                        return
                     job = root/'jobs'/revision
                     atomic(job/'input.json', library)
-                atomic(root/'status.json', {'state':'running', 'revision':revision})
+                atomic(root/'status.json', {'state':'running', 'phase':'provisional', 'revision':revision})
                 cmd = [os.environ.get('PHOTOWALL_RECOLLECTION_PYTHON', sys.executable),
                        str(Path(__file__).resolve().parents[1]/'tools/run_production_recollections.py'),
                        '--runtime', str(runtime()), '--job', str(job), '--scope', scope]
@@ -145,16 +151,44 @@ def enqueue(scope):
                     # Model runtime is large and its generated harness is shared.
                     # Serialize across accounts; input/output directories stay isolated.
                     with _inference:
-                        run_inference(cmd, log)
+                        run_inference([*cmd, '--phase', 'provisional'], log)
+                    quick = provisional_snapshot(scope, library, revision)
+                    if quick is None:
+                        raise SelectionUnavailable('初筛快照与账户、规则或输入不符')
+                    atomic(root/'provisional-current.json', {'scope':scope, 'revision':revision})
+                    with _guard:
+                        latest = read(root/'library.json', {})
+                        # Auto currently selects template_1. Below both its real
+                        # size and the baseline's 12-photo album minimum, running
+                        # the full album engine cannot unblock the initial wall.
+                        from .template_packages import required_photo_count
+                        initial_count = min(required_photo_count('template_1'), 12)
+                        if len(quick['photos']) < initial_count:
+                            if latest.get('revision') != revision:
+                                continue
+                            atomic(root/'status.json', {'state':'awaiting_photos', 'phase':'provisional', 'revision':revision})
+                            return
+                    # Once a first wall can be made, let this immutable input
+                    # finish even as uploads continue; do not starve formal albums.
+                    with _inference:
+                        atomic(root/'status.json', {'state':'running', 'phase':'canonical', 'revision':revision})
+                        run_inference([*cmd, '--phase', 'canonical'], log)
                 result = read(job/'result.json')
                 publish(scope, result, library)
                 atomic(root/'status.json', {'state':'ready', 'revision':revision, 'completed_revision':revision})
         except Exception as error:
+            failed = True
             # Keep the last valid snapshot; never pretend old features are new.
             atomic(root/'status.json', {'state':'failed', 'error':str(error), 'retry_after':time.time()+60})
         finally:
             with _guard:
                 _running.discard(scope)
+                # An upload can race the decision to wait/finish. Hand it off
+                # after releasing ownership instead of losing its enqueue call.
+                latest = read(root/'library.json', {})
+                follow_up = not failed and latest.get('revision') not in (None, processed_revision)
+            if follow_up:
+                enqueue(scope)
     threading.Thread(target=work, daemon=True, name='recollection-worker').start()
 
 
@@ -223,6 +257,46 @@ def attach_people(root, result):
             'photos':[{**p,'tags':sorted(set(p.get('tags',[])) | set(tags.get(p['sha256'],[])))} for p in result['photos']]}
 
 
+def provisional_snapshot(scope, library, revision):
+    """Read only verified members of the immutable job's original input."""
+    if (not isinstance(revision, str) or not re.fullmatch(r'[a-f0-9]{64}', revision)
+            or not isinstance(library, dict) or library.get('scope') != scope
+            or not isinstance(library.get('photos'), dict)):
+        return None
+    root = directory(scope)
+    try:
+        quick = read(root/'jobs'/revision/'provisional.json')
+        source = read(root/'jobs'/revision/'input.json', {})
+    except (OSError, ValueError):
+        return None
+    if (not isinstance(quick, dict) or not isinstance(source, dict) or quick.get('scope') != scope
+            or quick.get('input_revision') != revision or quick.get('baseline_commit') != BASELINE
+            or quick.get('engine') != 'strong-rules-provisional-v1'
+            or source.get('scope') != scope or source.get('revision') != revision
+            or not isinstance(quick.get('photos'), list) or quick.get('albums') != []
+            or not isinstance(source.get('photos'), dict)
+            or hashlib.sha256(json.dumps(source['photos'], sort_keys=True).encode()).hexdigest() != revision):
+        return None
+    originals, current = source.get('photos', {}), library.get('photos', {})
+    ids, hashes, photos = set(), set(), []
+    for photo in quick['photos']:
+        if not isinstance(photo, dict):
+            return None
+        sha, pid, path = photo.get('sha256'), photo.get('id'), photo.get('path')
+        quality = photo.get('quality')
+        if (not isinstance(sha, str) or not re.fullmatch(r'[a-f0-9]{64}', sha)
+                or not isinstance(pid, str) or not pid or not isinstance(path, str)
+                or not isinstance(quality, (int, float)) or not math.isfinite(quality) or quality <= 0
+                or pid in ids or sha in hashes or sha not in originals
+                or not isinstance(originals[sha], dict)
+                or path != originals[sha].get('path') or root.resolve() not in Path(path).resolve().parents):
+            return None
+        ids.add(pid); hashes.add(sha)
+        if isinstance(current.get(sha), dict) and path == current[sha].get('path') and Path(path).is_file():
+            photos.append(photo)
+    return {**quick, 'photos':photos, 'snapshot_id':'provisional-'+revision, 'phase':'provisional'}
+
+
 def candidates(scope):
     root = directory(scope)
     library = read(root/'library.json', {})
@@ -240,17 +314,14 @@ def candidates(scope):
     # Before the first formal feed is ready, use only the worker's verified
     # strong-rule candidates. This is a provisional wall, not a 12-photo album.
     status = read(root/'status.json', {})
-    revision = status.get('revision') or library.get('revision')
-    if re.fullmatch(r'[a-f0-9]{64}', revision or ''):
-        quick = read(root/'jobs'/revision/'provisional.json')
-        if (quick and quick.get('scope') == scope and quick.get('input_revision') == revision
-                and quick.get('baseline_commit') == BASELINE
-                and quick.get('engine') == 'strong-rules-provisional-v1'):
-            quick = {**quick,'photos':[p for p in quick['photos']
-                if p.get('sha256') in library['photos']
-                and p.get('path') == library['photos'][p['sha256']]['path']
-                and Path(p['path']).is_file()]}
-            return {**quick, 'snapshot_id':'provisional-'+revision, 'phase':'provisional'}
+    pointer = read(root/'provisional-current.json', {})
+    revisions = [status.get('revision') or library.get('revision')]
+    if pointer.get('scope') == scope:
+        revisions.append(pointer.get('revision'))
+    for revision in dict.fromkeys(r for r in revisions if isinstance(r, str)):
+        quick = provisional_snapshot(scope, library, revision)
+        if quick and quick['photos']:
+            return quick
     raise SelectionUnavailable('照片尚未完成初筛，请稍后重试')
 
 

@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--job', type=Path, required=True)
     parser.add_argument('--scope', required=True)
+    parser.add_argument('--phase', choices=('all', 'provisional', 'canonical'), default='all')
     args = parser.parse_args()
     runtime, job = args.runtime.resolve(), args.job.resolve()
     # Serialize even across API restarts: Flutter's generated harness is shared.
@@ -100,6 +101,9 @@ def main():
     common = {'scope':args.scope, 'input_revision':source['revision'], 'baseline_commit':BASELINE_COMMIT}
     atomic_json(job/'provisional.json', {**common, 'engine':'strong-rules-provisional-v1',
                                        'albums':[], 'photos':eligible})
+    if args.phase == 'provisional':
+        print(json.dumps({**common, 'phase':'provisional', 'photos':len(eligible)}))
+        return
     model_runtime = json.loads((runtime/'outputs/selection-lab/ente/runtime.json').read_text())
     ml_cache = job.parents[1]/'ml-features.json'
     cached = json.loads(ml_cache.read_text()) if ml_cache.exists() else {}
