@@ -131,5 +131,11 @@
 .first-wall-art.failed i { animation:none; }
 .first-wall-art span { position:absolute; left:76px; top:91px; color:#586749; font-size:36px; }
 #first-wall-scenario { margin-top:14px; width:100%; padding:10px; border:1px solid #d8d7cb; border-radius:8px; color:#586749; background:#fffefb; }
+.first-wall-debug { margin-top:26px; padding-top:18px; border-top:1px solid #deded4; color:#7a8068; font-size:10px; line-height:1.9; }
+.first-wall-debug strong { font-size:10px; font-weight:500; }
+.first-wall-debug p { margin-top:9px; font-size:10px; line-height:1.9; }
+.first-wall-debug details { margin-top:12px; }
+.first-wall-debug summary { cursor:pointer; }
+.first-wall-debug pre { margin-top:10px; white-space:pre-wrap; font:inherit; color:#85857e; }
 @keyframes memory-breathe { to { translate:0 -9px; } }
 @media (prefers-reduced-motion:reduce) { .first-wall-art i { animation:none; } }

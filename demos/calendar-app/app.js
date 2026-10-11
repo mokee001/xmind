@@ -1,6 +1,6 @@
-import { mountFirstWall } from './first-wall.js';
+import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS } from './first-wall.js?v=0.3.7';
 import { mountPanel, resetPreferenceDraft } from './panels.js';
-import { createOnboarding } from './onboarding.js?v=0.3.6-recovery';
+import { createOnboarding } from './onboarding.js?v=0.3.7';
 
 const STORAGE_KEY = 'echooo-calendar-demo-v1';
 const DEFAULT = {
@@ -32,11 +32,39 @@ let calendarPosition = null;
 let firstMonth = -3;
 let lastMonth = 3;
 let onboarding;
+let firstWallJourney;
 let previewHistory = false;
 const FLOW_STAGES = { welcome: 'welcome', 'setup-device': 'device' };
 const LEGACY_FLOW_ROUTES = { setup: 'welcome', 'setup-permissions': 'welcome', 'setup-preferences': 'setup-device', 'setup-schedule': 'setup-device' };
 let toastTimer;
 let sheetController;
+const requestedFirstWallScenario = new URLSearchParams(location.search).get('firstWall');
+if (FIRST_WALL_SCENARIOS.includes(requestedFirstWallScenario)) document.querySelector('#first-wall-scenario').value = requestedFirstWallScenario;
+
+function showFirstWallEvents(snapshot) {
+  const element = document.querySelector('#first-wall-events');
+  if (!element) return;
+  const names = { local: '本地准备', upload: '首批上传', candidates: '服务候选', remaining: '其余上传', generation: '生成', publish: '投送', receipt: '回执' };
+  const labels = { started: '开始', ready: '就绪', failed: '模拟失败', retry: '仅重试本步', authorization: '照片授权', connected: '保存连接完成', paused: '离开后暂停', resumed: '继续已有任务' };
+  element.textContent = snapshot.events.slice(-7).map(event => `${names[event.stage] || ''}${labels[event.type]}${event.type === 'authorization' ? ` · ${event.stage}` : ''}`).join('\n') || '等待照片授权。';
+  const summary = document.querySelector('#first-wall-coordination');
+  const generated = snapshot.events.findIndex(event => event.type === 'started' && event.stage === 'generation');
+  const remainder = snapshot.events.findIndex(event => event.type === 'ready' && event.stage === 'remaining');
+  if (summary) summary.textContent = snapshot.work.receipt === 'ready'
+    ? '这轮模拟：照片墙回执已到达，才继续其余上传。'
+    : generated >= 0 && (remainder < 0 || generated < remainder)
+    ? '这轮模拟：先生成首幅，其余上传在照片墙回执后继续。'
+    : snapshot.work.local === 'ready' && !snapshot.connected
+      ? '本地准备已在连接期间完成，稍后直接复用。'
+      : '授权后即开始本地准备，与设备连接并行。尚未完成时会继续等待。';
+}
+function firstJourney() {
+  if (!firstWallJourney) {
+    firstWallJourney = createFirstWallJourney({ scenario: document.querySelector('#first-wall-scenario')?.value });
+    firstWallJourney.subscribe(showFirstWallEvents);
+  }
+  return firstWallJourney;
+}
 
 const paths = {
   'chevron-left': '<path d="m14 6-6 6 6 6"/>',
@@ -198,10 +226,15 @@ function renderRoute() {
   const next = LEGACY_FLOW_ROUTES[requested] || requested;
   if (next !== requested) history.replaceState(null, '', `#${next}`);
   const target = ['calendar', 'preferences', 'settings', 'first-wall', ...Object.keys(FLOW_STAGES)].includes(next) ? next : state.onboarding.completed ? 'calendar' : 'welcome';
+  if (target === 'first-wall' && (!state.settings.connected || !['all', 'limited'].includes(state.settings.photoAccess))) {
+    location.replace('#welcome'); return;
+  }
   if (route === 'calendar') calendarPosition = screen.scrollTop;
   cleanupPanel?.();
   cleanupPanel = null;
   onboarding?.destroy();
+  if (target === 'first-wall' || FLOW_STAGES[target] || firstWallJourney?.snapshot().work.receipt === 'ready') firstWallJourney?.resume();
+  else firstWallJourney?.pause();
   if (dialog.open) dialog.close();
   route = target;
   renderHeader();
@@ -209,7 +242,11 @@ function renderRoute() {
   screen.scrollTop = 0;
   screen.classList.remove('screen-arrive');
   if (route === 'calendar') renderCalendar();
-  else if (route === 'first-wall') cleanupPanel = mountFirstWall({ host: screen, header, onDone: () => navigate('calendar') });
+  else if (route === 'first-wall') {
+    const journey = firstJourney();
+    journey.authorize(state.settings.photoAccess); journey.connect();
+    cleanupPanel = mountFirstWall({ host: screen, header, journey, onDone: () => navigate('calendar') });
+  }
   else if (FLOW_STAGES[route]) onboarding.show(FLOW_STAGES[route]);
   else cleanupPanel = mountPanel(screen, route, {
     icon,
@@ -225,6 +262,7 @@ function renderRoute() {
   requestAnimationFrame(() => screen.classList.add('screen-arrive'));
 }
 function restartOnboarding() {
+  firstWallJourney?.destroy(); firstWallJourney = null;
   onboarding.reset();
   if (route === 'welcome') renderRoute();
   else navigate('welcome');
@@ -244,6 +282,7 @@ function completeOnboarding(result) {
     return false;
   }
   resetPreferenceDraft();
+  firstJourney().connect();
   previewHistory = false;
   calendarPosition = null;
   navigate('first-wall');
@@ -270,7 +309,9 @@ screen.addEventListener('click', event => {
   }
   if (button.dataset.action === 'later') screen.querySelector('#months').insertAdjacentHTML('beforeend', monthHtml(++lastMonth));
 });
-onboarding = createOnboarding({ host: screen, header, icon, openSheet, toast, getState: () => clone(state), onComplete: completeOnboarding });
+onboarding = createOnboarding({ host: screen, header, icon, openSheet, toast, getState: () => clone(state), onComplete: completeOnboarding,
+  onPhotoAccess: access => firstJourney().authorize(access),
+});
 document.querySelector('#experience-setup').addEventListener('click', restartOnboarding);
 document.querySelector('#experience-calendar').addEventListener('click', () => {
   previewHistory = true;

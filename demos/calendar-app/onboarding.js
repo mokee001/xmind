@@ -109,7 +109,10 @@ export function createOnboarding(api) {
       draft.permissionDenied = denied ? key : '';
       if (denied) { draft.connected = false; draft.wifiConnected = false; }
       closeSheet(); persistDraft();
-      if (key === 'photo') { if (denied) renderWelcome(); else go('device'); }
+      if (key === 'photo') {
+        api.onPhotoAccess?.(draft.photoAccess);
+        if (denied) renderWelcome(); else go('device');
+      }
       else if (denied) { phase = 'permissions'; renderDevice(); }
       else advanceDevice();
     } })) });
@@ -250,6 +253,7 @@ export function createOnboarding(api) {
     draft.deviceName = freshDraft(api.getState()).deviceName;
     stage = requested === 'device' && draft.photoAccess !== 'none' ? 'device' : 'welcome';
     if (requested !== stage) { location.replace(ROUTES[stage]); return; }
+    api.onPhotoAccess?.(draft.photoAccess);
     bind(); renderHeader(); host.scrollTop = 0;
     if (stage === 'welcome') renderWelcome();
     else { phase = 'permissions'; advanceDevice(); }
