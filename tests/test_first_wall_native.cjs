@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { runFirstWall } = require('../photo-wall-app/src/firstWall.cjs');
+const { runFirstWall, needsFirstWallRun } = require('../photo-wall-app/src/firstWall.cjs');
 function fixture(saved = {}, device = {device_id:'d', revision:''}) {
   const calls=[]; let state=structuredClone(saved), live=device;
   return { calls, state:()=>state, setDevice:v=>live=v, deps:{
@@ -50,4 +50,21 @@ test('failed intent persistence prevents publication',async()=>{
 test('explicit recovery from device failure prepares a new wall rather than rereading the failed revision forever',async()=>{
  const f=fixture({state:'waiting',revision:'old'},{revision:'old',state:'failed',error:'download'});
  await runFirstWall({...f.deps,retryUncertain:true});assert.ok(f.calls.includes('publish'));assert.equal(f.state().state,'done');
+});
+test('background receipt reconciles a paused visible attempt instead of leaving its spinner mounted',async()=>{
+ const device={revision:'r',displayed_revision:'r'};
+ assert.equal(needsFirstWallRun({visibleState:'waiting',savedState:'waiting',device}),true);
+ const f=fixture({state:'waiting',revision:'r'},device);await runFirstWall(f.deps);
+ assert.equal(f.calls.at(-1),'done');assert.equal(f.state().state,'done');assert.ok(!f.calls.includes('publish'));
+ assert.equal(needsFirstWallRun({visibleState:'done',savedState:'done',device}),false);
+});
+test('persisted completion converges paused UI without republishing; unrelated receipt still fails exact revision check',async()=>{
+ const device={revision:'r',displayed_revision:'r'};
+ assert.equal(needsFirstWallRun({visibleState:'preparing',savedState:'done',device}),true);
+ const done=fixture({state:'done',revision:'r'},device);await runFirstWall(done.deps);
+ assert.equal(done.calls.at(-1),'done');assert.ok(!done.calls.includes('publish'));
+ const unrelated={revision:'other',displayed_revision:'other'};
+ assert.equal(needsFirstWallRun({visibleState:'waiting',savedState:'waiting',device:unrelated}),true);
+ const waiting=fixture({state:'waiting',revision:'r'},unrelated);await assert.rejects(runFirstWall(waiting.deps),/画面已变化/);
+ assert.ok(!waiting.calls.includes('done'));
 });

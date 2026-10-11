@@ -1,5 +1,6 @@
 import { requireCurrentWall } from './templateCatalog';
 import { UNIFIED_SELECTION, SELECTION_CONTRACT } from './unifiedSelection';
+import { generationPayload } from './selectionReadiness.cjs';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
@@ -534,15 +535,7 @@ export async function generateWall({
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}),
       ...(UNIFIED_SELECTION ? {'X-Selection-Contract':SELECTION_CONTRACT} : {}) },
-    body: JSON.stringify({
-      template,
-      title,
-      filters,
-      exclude_filters: excludeFilters,
-      device_id: deviceId,
-      preference_revision_id: preferenceRevisionId,
-      ...(UNIFIED_SELECTION ? {selection_contract:SELECTION_CONTRACT, selection_sources:selectionSources} : {}),
-    }),
+    body: JSON.stringify(generationPayload({template,title,filters,excludeFilters,deviceId,preferenceRevisionId,selectionSources}, UNIFIED_SELECTION)),
   });
   return responseJson(response);
 }

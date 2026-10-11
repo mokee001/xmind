@@ -1,11 +1,13 @@
 // Dependency-injected foreground queue. No UI, rendering, tokens, or fake timers.
 // iOS suspension stops work; the next active session resumes confirmed progress.
-async function runSelectionSync({ readPage, curate, upload, load, save, active, maxPages = 3, maxUploads = 72 }) {
+async function runSelectionSync({ readPage, curate, upload, load, save, active, shouldStop = () => false,
+  maxPages = 3, maxUploads = 72 }) {
   const state = await load() || { after: null, pending: null, completed: false, seen: {} };
   state.seen ||= {};
   if (state.completed) { state.after = null; state.completed = false; }
   let uploaded = 0;
   for (let pageNumber = 0; pageNumber < maxPages && active(); pageNumber++) {
+    if (shouldStop()) return;
     if (!state.pending) {
       const page = await readPage(state.after);
       if (!active()) return;
@@ -23,6 +25,7 @@ async function runSelectionSync({ readPage, curate, upload, load, save, active, 
       await save(state);
     }
     while (state.pending.index < state.pending.assets.length && active()) {
+      if (shouldStop()) return;
       const asset = state.pending.assets[state.pending.index];
       const confirmed = await upload(asset);
       // Commit only a server-confirmed upload. Interrupted requests may retry;
@@ -30,6 +33,7 @@ async function runSelectionSync({ readPage, curate, upload, load, save, active, 
       state.pending.index++;
       if (confirmed !== false) state.seen[asset.id] = asset.modificationTime || asset.creationTime || 0;
       await save(state);
+      if (shouldStop()) return;
       if (++uploaded >= maxUploads) return;
     }
     if (!active()) return;

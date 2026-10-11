@@ -33,3 +33,20 @@ test('temporarily unavailable original does not block later photos or become con
   assert.deepEqual(f.sent,['b']); assert.equal(f.state().seen.a,undefined);
   await runSelectionSync(f.deps); assert.deepEqual(f.sent,['b','a']);
 });
+test('server readiness stops only after confirmed upload checkpoint; later sync resumes pending',async()=>{
+  const f=fixture();let ready=false;
+  await runSelectionSync({...f.deps,upload:async a=>{f.sent.push(a.id);ready=true},shouldStop:()=>ready});
+  assert.deepEqual(f.sent,['a']);assert.equal(f.state().pending.index,1);assert.equal(f.state().completed,false);
+  await runSelectionSync(f.deps);assert.deepEqual(f.sent,['a','b']);assert.equal(f.state().completed,true);
+});
+test('terminal readiness cannot mark current pending asset uploaded',async()=>{
+  const f=fixture();let checks=0;
+  await assert.rejects(runSelectionSync({...f.deps,shouldStop:()=>{if(++checks===2)throw Object.assign(Error('unauthorized'),{status:401});return false}}),{status:401});
+  assert.equal(f.state().pending.index,0);assert.deepEqual(f.sent,[]);
+});
+test('readiness never skips a failed checkpoint write',async()=>{
+  const f=fixture();let ready=false;
+  await assert.rejects(runSelectionSync({...f.deps,upload:async()=>{ready=true},shouldStop:()=>ready,
+    save:async s=>{if(s.pending?.index===1)throw Error('disk full');return f.deps.save(s)}}),/disk full/);
+  assert.equal(f.state().pending.index,0);
+});

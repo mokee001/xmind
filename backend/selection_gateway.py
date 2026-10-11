@@ -34,35 +34,85 @@ class GenerateRequest(BaseModel):
     preference_revision_id: str = ''
 
 
-@app.post('/api/generate')
-async def generate(req: GenerateRequest, x_account_token: str = Header(default='')):
-    global _generation_lock
-    if _generation_lock is None:
-        _generation_lock = asyncio.Lock()
+def _selection_request(req, token):
     if req.selection_contract != selection.CONTRACT:
         raise HTTPException(409, '不支持的选片链路版本')
     device = existing._devices().get(req.device_id)
     auth = getattr(existing, '_device_publish_auth', existing._account_auth)
-    if not device or not auth(device, x_account_token):
+    if not device or not auth(device, token):
         raise HTTPException(403, '设备授权无效')
-    if not (selection.runtime()/'production-ready.json').is_file():
+    try:
+        ready = (selection.runtime()/'production-ready.json').is_file()
+    except selection.SelectionUnavailable as error:
+        raise HTTPException(503, str(error)) from error
+    if not ready:
         raise HTTPException(503, '正式选片服务尚未完成验收')
-    account = existing._account_scope(x_account_token)
-    scope = selection.library_scope(account, req.selection_sources)
+    account = existing._account_scope(token)
+    try:
+        scope = selection.library_scope(account, req.selection_sources)
+    except selection.SelectionUnavailable as error:
+        raise HTTPException(422, str(error)) from error
     template = 'template_1' if req.template == 'auto' else req.template
     # No retired layouts, minimum-count fallbacks, or placeholder cutouts.
     if template not in ('template_1','template_2','template_3'):
         raise HTTPException(409, '模板不适用于此生成链路')
     if not existing.template_packages.is_package(template):
         raise HTTPException(503, '当前服务器尚未部署此模板')
+    return account, scope, template
+
+
+def _select_requested_wall(req, account, scope, template, snapshot=None):
+    count = existing.template_packages.required_photo_count(template)
+    if snapshot is None:
+        snapshot = selection.candidates(scope)
+    history_key = existing._scoped_store_name('recent_shown', account)
+    recent = existing.store.load(history_key, [])
+    chosen, provenance = selection.select(scope, count, prefer=req.filters,
+        exclude=req.exclude_filters, avoid=recent, snapshot=snapshot)
+    return chosen, provenance, history_key, recent, count
+
+
+@app.post('/api/selection/readiness')
+def readiness(req: GenerateRequest, x_account_token: str = Header(default='')):
+    """Check the real generation selector, without rendering or publishing.
+
+    Ready is advisory: generation validates again after any intervening library
+    or preference changes. A raw candidate count cannot prove filter readiness.
+    """
+    account, scope, template = _selection_request(req, x_account_token)
+    snapshot = None
+    try:
+        snapshot = selection.candidates(scope)
+        _, provenance, _, _, _ = _select_requested_wall(req, account, scope, template, snapshot)
+    except selection.SelectionUnavailable as error:
+        reason = str(error)
+        # Only these known lack-of-data cases can be resolved by more uploads.
+        # Provisional snapshots can precede identity clustering. Wait for the
+        # canonical result without dropping a saved person preference.
+        pending = reason in {
+            '尚无当前账户的合格照片',
+            '照片尚未完成初筛，请稍后重试',
+            '当前展示范围内合格照片不足；不会补入未入选或被排除的照片',
+        }
+        if (reason == '人物识别分组已变化或尚未完成，请重新确认人物偏好；未忽略原有范围'
+                and snapshot and snapshot.get('phase') == 'provisional'):
+            pending = True
+        return {'contract': selection.CONTRACT, 'ready': False,
+                'retryable': pending, 'reason': reason}
+    return {'contract': selection.CONTRACT, 'ready': True,
+            'snapshot_id': provenance.get('snapshot_id'),
+            'input_revision': provenance.get('input_revision')}
+
+
+@app.post('/api/generate')
+async def generate(req: GenerateRequest, x_account_token: str = Header(default='')):
+    global _generation_lock
+    if _generation_lock is None:
+        _generation_lock = asyncio.Lock()
+    account, scope, template = _selection_request(req, x_account_token)
     async with _generation_lock:
         try:
-            count = existing.template_packages.required_photo_count(template)
-            snapshot = selection.candidates(scope)
-            history_key = existing._scoped_store_name('recent_shown', account)
-            recent = existing.store.load(history_key, [])
-            chosen, provenance = selection.select(scope, count, prefer=req.filters,
-                exclude=req.exclude_filters, avoid=recent, snapshot=snapshot)
+            chosen, provenance, history_key, recent, count = _select_requested_wall(req, account, scope, template)
             image = await asyncio.to_thread(existing.template_packages.render, template,
                 [p['path'] for p in chosen], {'title':req.title,'date':req.date,'nickname':req.title})
         except (selection.SelectionUnavailable, ValueError, FileNotFoundError) as error:

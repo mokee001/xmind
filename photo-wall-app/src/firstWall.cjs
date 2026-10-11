@@ -1,5 +1,12 @@
 const { hasDisplayReceipt } = require('./wallExperienceState.cjs');
 
+function needsFirstWallRun({ visibleState, savedState, device }) {
+  // A suspended visible attempt must reconcile its persisted revision even if
+  // regular device polling received a display receipt while it was paused.
+  if (visibleState && !['done','failed'].includes(visibleState)) return true;
+  return savedState !== 'done' && !hasDisplayReceipt(device);
+}
+
 // A failed/uncertain publish is reconciled before any further write. Persist its
 // intent before dispatch so terminating the app cannot silently duplicate it.
 async function runFirstWall({ load, save, readDevice, prepare, generate, publish, stage,
@@ -61,4 +68,4 @@ async function runFirstWall({ load, save, readDevice, prepare, generate, publish
   }
   throw new Error('照片已送出，但还未收到屏幕完成刷新的回应。请检查设备电源和网络后重新检查。');
 }
-module.exports = { runFirstWall };
+module.exports = { runFirstWall, needsFirstWallRun };

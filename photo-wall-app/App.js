@@ -1,8 +1,10 @@
-import { runFirstWall } from './src/firstWall.cjs';
+import { runFirstWall, needsFirstWallRun } from './src/firstWall.cjs';
 import { WALL_TEMPLATES, PET_COLLAGE_TEMPLATE, currentTemplateId } from './src/templateCatalog';
 import WallExperience from './src/WallExperience';
 import MemoryCalendar from './src/MemoryCalendar';
-import { UNIFIED_SELECTION, selectionSources, syncSelectionInBackground } from './src/unifiedSelection';
+import { UNIFIED_SELECTION, selectionSources, syncSelectionInBackground, prewarmPhotoSelection,
+  invalidatePhotoPrewarm, createFirstWallReadiness } from './src/unifiedSelection';
+import { createPrewarmOwner } from './src/photoPrewarm.cjs';
 import { publicationFromResponse, hasDisplayReceipt, nativeWallPresentation, isCurrentWallRequest } from './src/wallExperienceState.cjs';
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -1244,6 +1246,17 @@ function PhotoWallApp() {
   const [firstWall, setFirstWall] = useState(null);
   const firstWallAttemptRef = useRef('');
   const firstWallRunRef = useRef(null);
+  const firstWallAbortRef = useRef(null);
+  const [photoWorkRevision, setPhotoWorkRevision] = useState(0);
+  const photoWorkEpochRef = useRef(0);
+  const photoWorkMountedRef = useRef(true);
+  const prewarmOwnerRef = useRef(null);
+  if (!prewarmOwnerRef.current) prewarmOwnerRef.current = createPrewarmOwner();
+  const prewarmAccount = accountSession?.accessToken && session?.accountToken && accountSession.accessToken !== session.accountToken
+    ? JSON.stringify([accountSession.accessToken,session.accountToken]) : accountSession?.accessToken || session?.accountToken || '';
+  const prewarmOwner = prewarmOwnerRef.current(prewarmAccount);
+  const photoSourceKey = JSON.stringify(selectionSources(photoSync));
+  const photoPermissionKey = JSON.stringify([permission?.status, permission?.accessPrivileges || 'unknown']);
   const [operation, setOperation] = useState(EMPTY_OPERATION);
   const [lastAction, setLastAction] = useState(null);
   const [notice, setNotice] = useState('');
@@ -1306,6 +1319,7 @@ function PhotoWallApp() {
   const latestWallSessionRef = useRef(session);
   latestWallSessionRef.current = session;
   useEffect(() => {
+    firstWallAbortRef.current?.controller.abort();
     setGeneratedWall(null);
     setFirstWall(null);
     firstWallAttemptRef.current = '';
@@ -2095,6 +2109,49 @@ function PhotoWallApp() {
     return () => subscription.remove();
   }, []);
 
+  useEffect(() => {
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW) return undefined;
+    photoWorkMountedRef.current = true;
+    const invalidate = () => {
+      photoWorkEpochRef.current++;
+      invalidatePhotoPrewarm();
+      firstWallAttemptRef.current = '';
+      if (firstWallAbortRef.current) {
+        firstWallAbortRef.current.resume = true;
+        firstWallAbortRef.current.controller.abort();
+      }
+    };
+    const library = MediaLibrary.addListener(() => {
+      // Includes limited-access additions/removals, edits, and nonincremental changes.
+      invalidate(); setPhotoWorkRevision(value => value + 1);
+    });
+    const lifecycle = AppState.addEventListener('change', state => {
+      if (state !== 'active') invalidate();
+      else setPhotoWorkRevision(value => value + 1);
+    });
+    return () => { photoWorkMountedRef.current = false; library.remove(); lifecycle.remove(); invalidate(); };
+  }, []);
+
+  useEffect(() => {
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW) return;
+    photoWorkEpochRef.current++;
+    invalidatePhotoPrewarm();
+    firstWallAttemptRef.current = '';
+    if (firstWallAbortRef.current) {
+      firstWallAbortRef.current.resume = true;
+      firstWallAbortRef.current.controller.abort();
+    }
+    setPhotoWorkRevision(value => value + 1);
+  }, [prewarmOwner, photoSourceKey, photoPermissionKey]);
+
+  useEffect(() => {
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || !photoAllowed || !needsOnboarding || AppState.currentState !== 'active') return undefined;
+    let mounted = true;
+    prewarmPhotoSelection({owner:prewarmOwner, album:photoSync, active:() => mounted})
+      .catch(() => { /* Optional work: the foreground queue retries the same native processing. */ });
+    return () => { mounted = false; };
+  }, [prewarmOwner, photoSourceKey, photoPermissionKey, photoAllowed, needsOnboarding, photoWorkRevision]);
+
   const createPetCollagePreview = async () => {
     if (!session || publishing) return;
     const request = { ...wallRequestScopeRef.current };
@@ -2475,11 +2532,18 @@ function PhotoWallApp() {
   }, [photoAllowed, connected, needsOnboarding, session?.accountToken, effectiveSession?.device?.device_id, photoSync, session?.firstWall?.state, firstWall?.state]);
 
   const startFirstWall = async (retryUncertain = false) => {
-    if (wallOperationRef.current || !session?.accountToken || !canPublish) return;
+    if (wallOperationRef.current || !session?.accountToken || !canPublish || AppState.currentState !== 'active') return;
     const request = { ...wallRequestScopeRef.current, sequence: ++wallRequestScopeRef.current.sequence };
     wallOperationRef.current = request;
     const controller = new AbortController();
-    const active = () => !controller.signal.aborted && isCurrentWallRequest(request, wallRequestScopeRef.current);
+    const attempt = {controller,resume:false};
+    firstWallAbortRef.current = attempt;
+    const photoEpoch = photoWorkEpochRef.current;
+    const active = () => photoWorkMountedRef.current && !controller.signal.aborted && AppState.currentState === 'active'
+      && photoEpoch === photoWorkEpochRef.current && isCurrentWallRequest(request, wallRequestScopeRef.current);
+    const { prefer, exclude } = modelFilters();
+    const generateOptions = {template:'auto', title:'今日精选', filters:prefer, excludeFilters:exclude,
+      deviceId:request.deviceId, preferenceRevisionId:preferenceProfile?.activeRevisionId || '', selectionSources:selectionSources(photoSync)};
     const stage = state => { if (active()) setFirstWall({ binding: wallBindingKey, state }); };
     setFirstWall({ binding: wallBindingKey, state: 'preparing' });
     const store = async patch => {
@@ -2507,15 +2571,18 @@ function PhotoWallApp() {
           await store({ device });
           return device;
         },
-        prepare: async ({ additional = false } = {}) => {
-          const content = await refreshRecognizedContent({ apiBase: DEFAULT_API_BASE, accountToken: session.accountToken, selectionSources: selectionSources(photoSync) });
-          if (!additional && content.goodTotal >= 8) return;
-          await syncSelectionInBackground({ apiBase: DEFAULT_API_BASE, accountToken: session.accountToken, album: photoSync, firstWall: true, active });
+        prepare: async () => {
+          const readiness = createFirstWallReadiness({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
+            options:generateOptions, active, signal:controller.signal});
+          try {
+            if (await readiness.refresh()) return;
+            await syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
+              album:photoSync, firstWall:true, prewarmOwner, active, signal:controller.signal, shouldStop:readiness.poll});
+            await readiness.refresh();
+          } finally { readiness.close(); }
         },
-        generate: () => {
-          const { prefer, exclude } = modelFilters();
-          return generateWall({ apiBase: DEFAULT_API_BASE, accountToken: session.accountToken, template: 'auto', title: '今日精选', filters: prefer, excludeFilters: exclude, deviceId: request.deviceId, preferenceRevisionId: preferenceProfile?.activeRevisionId || '', selectionSources: selectionSources(photoSync), signal: controller.signal });
-        },
+        generate: () => generateWall({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
+          ...generateOptions, signal:controller.signal}),
         publish: async wall => {
           try {
             const result = await publishGeneratedWall({ apiBase: DEFAULT_API_BASE, deviceId: request.deviceId, accountToken: session.accountToken, wallId: wall.wall_id, signal: controller.signal });
@@ -2532,19 +2599,23 @@ function PhotoWallApp() {
       })]);
       if (active()) setHistoryRefresh(value => value + 1);
     } catch (caught) {
-      if (isCurrentWallRequest(request, wallRequestScopeRef.current)) setFirstWall({ binding: wallBindingKey, state: 'failed', message: caught.message, canRestart: caught.canRestart === true });
+      if (!attempt.resume && isCurrentWallRequest(request, wallRequestScopeRef.current)) setFirstWall({ binding: wallBindingKey, state: 'failed', message: caught.message, canRestart: caught.canRestart === true });
     } finally {
       clearTimeout(deadline); controller.abort();
+      if (firstWallAbortRef.current === attempt) firstWallAbortRef.current = null;
       if (wallOperationRef.current === request) wallOperationRef.current = null;
+      if (attempt.resume && photoWorkMountedRef.current && AppState.currentState === 'active') setPhotoWorkRevision(value => value + 1);
     }
   };
   firstWallRunRef.current = startFirstWall;
   useEffect(() => {
     if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || needsOnboarding || !preferenceProfileReady || !photoAllowed || !connected || !canPublish
-      || firstWallAttemptRef.current === wallBindingKey || session?.firstWall?.state === 'done' || hasDisplayReceipt(session?.device)) return;
+      || AppState.currentState !== 'active' || wallOperationRef.current || firstWallAttemptRef.current === wallBindingKey
+      || !needsFirstWallRun({visibleState:firstWall?.binding === wallBindingKey ? firstWall.state : '', savedState:session?.firstWall?.state, device:session?.device})) return;
     firstWallAttemptRef.current = wallBindingKey;
     firstWallRunRef.current();
-  }, [needsOnboarding, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey]);
+  }, [needsOnboarding, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey, photoWorkRevision,
+    firstWall?.state, session?.firstWall?.state, session?.device?.revision, session?.device?.state]);
   const firstWallVisible = firstWall?.binding === wallBindingKey;
 
   const requestModelWall = async () => {
