@@ -1,0 +1,157 @@
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -1204,7 +1204,8 @@
+     public = {
+         key: value
+         for key, value in device.items()
+-        if key not in ("device_token", "account_token")
++        if key not in ("device_token", "account_token",
++                       "reprovision_setup_token_digest", "reprovision_setup_token_expires_at")
+     }
+     if hub.connected(str(device.get("device_id", ""))):
+         public["last_seen"] = time.time()
+@@ -1292,20 +1293,23 @@
+     return JSONResponse(status_code=202, content=job)
+ 
+ 
+-def _queue_reprovision(device: dict[str, Any]) -> None:
+-    """Retain device auth until the display acknowledges an unbind command."""
++def _queue_reprovision(device: dict[str, Any], preserve_binding: bool = False) -> None:
++    """Keep DELETE semantics; explicit Wi-Fi reconfiguration retains ownership."""
+     device["pending_command"] = {
+         "type": "reprovision",
+-        "preserve_binding": False,
++        "preserve_binding": bool(preserve_binding),
+         "created_at": time.time(),
+     }
+-    device["claimed"] = False
+-    device["account_token"] = ""
+     device["state"] = "reprovision_pending"
+     device["progress"] = 0.0
+     device["error"] = ""
+-    device.pop("setup_token_digest", None)
+-    device.pop("setup_token_expires_at", None)
++    device.pop("reprovision_setup_token_digest", None)
++    device.pop("reprovision_setup_token_expires_at", None)
++    if not preserve_binding:
++        device["claimed"] = False
++        device["account_token"] = ""
++        device.pop("setup_token_digest", None)
++        device.pop("setup_token_expires_at", None)
+ 
+ 
+ def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
+@@ -1442,8 +1446,24 @@
+             pending.get("type") == "reprovision" and
+             not pending.get("preserve_binding")
+         )
++        setup_token = req.setup_token.strip()
++        retained_reset_is_authorized = (
++            not req.device_token and
++            len(setup_token) >= 24 and
++            existing.get("claimed") and existing.get("account_token") and
++            isinstance(pending, dict) and
++            pending.get("type") == "reprovision" and
++            pending.get("preserve_binding") is True and
++            float(existing.get("reprovision_setup_token_expires_at", 0)) >= time.time() and
++            secrets.compare_digest(
++                str(existing.get("reprovision_setup_token_digest", "")),
++                hashlib.sha256(setup_token.encode()).hexdigest(),
++            )
++        )
+         if reset_is_pending:
+             existing = None
++        elif retained_reset_is_authorized:
++            existing["device_token"] = secrets.token_urlsafe(32)
+         else:
+             return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
+ 
+@@ -1468,6 +1488,20 @@
+         "error": "",
+     })
+     setup_token = req.setup_token.strip()
++    pending = device.get("pending_command")
++    if (len(setup_token) >= 24 and device.get("claimed") and device.get("account_token")
++            and isinstance(pending, dict) and pending.get("type") == "reprovision"
++            and pending.get("preserve_binding") is True
++            and float(device.get("reprovision_setup_token_expires_at", 0)) >= now
++            and secrets.compare_digest(
++                str(device.get("reprovision_setup_token_digest", "")),
++                hashlib.sha256(setup_token.encode()).hexdigest(),
++            )):
++        # Only the proof registered by the owner immediately before new Wi-Fi
++        # setup completes this command. A normal reboot may carry an old proof.
++        device.pop("pending_command", None)
++        device.pop("reprovision_setup_token_digest", None)
++        device.pop("reprovision_setup_token_expires_at", None)
+     if not device.get("claimed") and setup_token:
+         token_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+         if device.get("setup_token_digest") != token_digest:
+@@ -1554,6 +1588,37 @@
+     devices_data = _devices()
+     visible = [_public_device(d) for d in devices_data.values() if _account_auth(d, x_account_token)]
+     return JSONResponse({"devices": visible})
++
++
++class DeviceReprovisionReq(BaseModel):
++    setup_token: str = ""
++
++
++@app.post("/api/devices/{device_id}/reprovision")
++def device_reprovision(
++    device_id: str,
++    req: DeviceReprovisionReq | None = None,
++    x_account_token: str = Header(default=""),
++) -> Response:
++    """Legacy owner-only Wi-Fi change, never an implicit DELETE or new claim."""
++    devices_data = _devices()
++    device = devices_data.get(device_id)
++    if not device or not device.get("claimed") or not _account_auth(device, x_account_token):
++        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
++    if _device_family(device) == DEVICE_FAMILY_WALNUTPI_19IN:
++        return JSONResponse(status_code=400, content={"error": "19 寸屏无需重新配网"})
++    setup_token = req.setup_token.strip() if req else ""
++    if setup_token and not 24 <= len(setup_token) <= 256:
++        return JSONResponse(status_code=400, content={"error": "设备配网凭据无效"})
++    _queue_reprovision(device, preserve_binding=True)
++    if setup_token:
++        device["reprovision_setup_token_digest"] = hashlib.sha256(setup_token.encode()).hexdigest()
++        device["reprovision_setup_token_expires_at"] = time.time() + 600
++    devices_data[device_id] = device
++    store.save("eink_devices", devices_data)
++    return JSONResponse(status_code=202, content={
++        "device": _public_device(device), "reprovision_required": True,
++    })
+ 
+ 
+ @app.delete("/api/devices/{device_id}")
+@@ -1778,7 +1843,7 @@
+     if isinstance(pending, dict) and pending.get("type") == "reprovision":
+         return JSONResponse({
+             "command": "reprovision",
+-            "preserve_binding": False,
++            "preserve_binding": bool(pending.get("preserve_binding")),
+         })
+     target = str(device.get("revision", ""))
+     if not target or target == revision:
+@@ -1820,11 +1885,19 @@
+         return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+     pending = device.get("pending_command")
+     if req.state == "unbound":
+-        if not isinstance(pending, dict) or pending.get("type") != "reprovision":
++        if (not isinstance(pending, dict) or pending.get("type") != "reprovision"
++                or pending.get("preserve_binding")):
+             return JSONResponse(status_code=409, content={"error": "设备没有待执行的删除命令"})
+         devices_data.pop(device_id, None)
+         store.save("eink_devices", devices_data)
+         return JSONResponse({"ok": True, "removed": True})
++    if req.state == "reprovisioning":
++        if (not isinstance(pending, dict) or pending.get("type") != "reprovision"
++                or pending.get("preserve_binding") is not True):
++            return JSONResponse(status_code=409, content={"error": "设备没有待执行的重新配网命令"})
++        device.pop("pending_command", None)
++        device.pop("reprovision_setup_token_digest", None)
++        device.pop("reprovision_setup_token_expires_at", None)
+     device.update({
+         "state": req.state[:24],
+         "progress": max(0.0, min(float(req.progress), 100.0)),
