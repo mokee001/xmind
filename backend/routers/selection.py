@@ -14,6 +14,53 @@ from .. import unified_selection as selection
 logger = logging.getLogger(__name__)
 
 
+def validated_photo_suffix(data, filename, content_type):
+    """Validate encoded bytes; an asset's display name is not its file format."""
+    from PIL import Image
+
+    suffix = Path(filename or '').suffix.lower()
+    supported = {'JPEG': ('.jpg', '.jpeg'), 'PNG': ('.png',), 'HEIF': ('.heic', '.heif')}
+    # Log format categories only: never filenames, asset IDs, bytes or EXIF.
+    safe_suffix = suffix if suffix in {
+        '.jpg', '.jpeg', '.png', '.heic', '.heif', '.gif', '.webp', '.dng',
+        '.tif', '.tiff', '.bmp', '.avif', '.jxl', '',
+    } else '[other]'
+    safe_mime = content_type if content_type in {
+        'image/jpeg', 'image/png', 'image/heic', 'image/heif', 'image/gif',
+        'image/webp', 'image/tiff', 'image/bmp', 'image/avif', 'application/octet-stream',
+    } else '[other]'
+    detected = 'unknown'
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            detected = image.format
+            if detected not in supported:
+                raise HTTPException(422, '不支持的照片格式', headers={
+                    'X-Photo-Error-Code': 'unsupported_photo_format',
+                })
+            image.verify()
+        # JPEG verify() only checks headers; decode before accepting a file that
+        # would otherwise stop the asynchronous worker with a truncated stream.
+        with Image.open(io.BytesIO(data)) as image:
+            image.load()
+    except HTTPException:
+        safe_format = detected if detected in {'GIF', 'WEBP', 'TIFF', 'BMP', 'AVIF', 'JPEG2000'} else '[other]'
+        logger.warning('Photo upload rejected: code=unsupported_photo_format suffix=%s mime=%s format=%s',
+                       safe_suffix, safe_mime, safe_format)
+        raise
+    except Exception:
+        logger.warning('Photo upload rejected: code=unreadable_photo suffix=%s mime=%s format=%s',
+                       safe_suffix, safe_mime, detected if detected in supported else 'unknown')
+        raise HTTPException(422, '照片文件损坏或无法读取', headers={
+            'X-Photo-Error-Code': 'unreadable_photo',
+        })
+    allowed_suffixes = supported[detected]
+    if suffix in allowed_suffixes:
+        return suffix
+    logger.info('Photo upload filename normalized: suffix=%s mime=%s format=%s',
+                safe_suffix, safe_mime, detected)
+    return allowed_suffixes[0]
+
+
 def normalized_region(region):
     """Intersect a real detection with the visible image, retaining its source box."""
     def reject(reason):
@@ -104,15 +151,7 @@ def register(app, account_scope, account_authorized=None):
                 raise HTTPException(413, '照片大小不符合要求')
             sha = hashlib.sha256(data).hexdigest()
             # Content addressing avoids filename collisions across cameras/phones.
-            suffix = Path(file.filename or '').suffix.lower()
-            if suffix not in {'.jpg','.jpeg','.heic','.heif','.png'}:
-                raise HTTPException(422, '不支持的照片格式')
-            from PIL import Image
-            try:
-                with Image.open(io.BytesIO(data)) as image:
-                    image.verify()
-            except Exception:
-                raise HTTPException(422, '照片文件损坏或无法读取')
+            suffix = validated_photo_suffix(data, file.filename, file.content_type)
             path = photo_dir/(sha+suffix)
             if not path.exists():
                 with path.open('xb') as stream:

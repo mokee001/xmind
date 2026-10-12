@@ -90,7 +90,9 @@ async function json(response) {
   let value;
   try { value = await response.json(); }
   catch (error) { if (response.ok) throw error; }
-  if (!response.ok) throw Object.assign(new Error(value?.detail || value?.error || `HTTP ${response.status}`), {status:response.status});
+  if (!response.ok) throw Object.assign(new Error(value?.detail || value?.error || `HTTP ${response.status}`), {
+    status:response.status, photoErrorCode:response.headers?.get('X-Photo-Error-Code') || '',
+  });
   return value;
 }
 
@@ -182,10 +184,20 @@ export async function syncSelectionInBackground({ apiBase, accountToken, album, 
           // Leave this asset pending instead of sending an unnecessary upload.
           if (shouldStop()) throw Object.assign(new Error('First wall ready'), {code:'SELECTION_READY'});
           const form = new FormData();
-          appendLocalFetchFile(form, 'files', {uri, name:asset.filename || `${asset.id}.jpg`, type:'image/jpeg'});
+          appendLocalFetchFile(form, 'files', {uri, name:asset.filename});
           form.append('metadata', JSON.stringify([{local_engine:'apple-vision-local-v1',vision}]));
           form.append('sources', JSON.stringify(sources));
-          const result = await request(base+'/api/selection/upload', {method:'POST',headers,body:form,signal}, firstWall ? 20000 : 120000);
+          let result;
+          try {
+            result = await request(base+'/api/selection/upload', {method:'POST',headers,body:form,signal}, firstWall ? 20000 : 120000);
+          } catch (error) {
+            const unavailablePhoto = error.photoErrorCode
+              ? ['unsupported_photo_format','unreadable_photo'].includes(error.photoErrorCode)
+              : ['不支持的照片格式','照片文件损坏或无法读取'].includes(error.message);
+            // Leave this asset unconfirmed; later photos can still reach the wall.
+            if (error.status === 422 && unavailablePhoto) return false;
+            throw error;
+          }
           if (result.contract !== SELECTION_CONTRACT || result.saved !== 1) throw new Error('照片上传未确认');
         },
       });

@@ -82,3 +82,28 @@ test('a missing original fails serialization instead of silently uploading an em
   });
   await assert.rejects(convertFormDataAsync(form), { code: 'ENOENT' });
 });
+
+test('file MIME and original extension describe unchanged multipart bytes without JPEG coercion', async () => {
+  const bytes = Uint8Array.from([1, 2, 3, 4]);
+  for (const item of [
+    {fileName:'local.bin',original:'original.JPG',nativeType:'image/png',expected:'image/png'},
+    {fileName:'local.HEIC',original:'original.HEIC',nativeType:'',expected:'image/heic'},
+    {fileName:'local.png',original:'original.png',nativeType:'application/octet-stream',expected:'image/png'},
+    {fileName:'local',original:'original.JPEG',nativeType:'',expected:'image/jpeg'},
+    {fileName:'png',original:'no-extension',nativeType:'',expected:'application/octet-stream'},
+  ]) {
+    class NativeFile {
+      constructor() { this.name=item.fileName; this.type=item.nativeType; }
+      async bytes() { return bytes; }
+    }
+    const upload=load(path.join(app,'src/fetchUpload.js'),{'expo-file-system':{File:NativeFile}});
+    const form=new FormData();
+    upload.appendLocalFetchFile(form,'files',{uri:'file:///synthetic',name:item.original});
+    const {body,boundary}=await convertFormDataAsync(form);
+    const decoded=await new Response(body,{headers:{'Content-Type':`multipart/form-data; boundary=${boundary}`}}).formData();
+    const photo=decoded.get('files');
+    assert.equal(photo.name,item.original);
+    assert.equal(photo.type,item.expected);
+    assert.deepEqual(new Uint8Array(await photo.arrayBuffer()),bytes);
+  }
+});
