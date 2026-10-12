@@ -5,11 +5,14 @@ device/BLE/Wi-Fi/publish handlers remain in the deployed service unchanged.
 Both lanes use the same account resolver, renderer, output and last-wall store.
 """
 import asyncio
+import json
+import logging
 import os
 from pathlib import Path
 import time
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import server as existing
@@ -20,6 +23,42 @@ app = FastAPI(title='PhotoWall unified selection rollout')
 register(app, existing._account_scope,
          lambda token:any(existing._account_auth(device,token) for device in existing._devices().values()))
 _generation_lock = None
+logger = logging.getLogger(__name__)
+
+
+def _selection_failure(error, phase):
+    reason = str(error)
+    pending = {
+        '尚无当前账户的合格照片': 'selection_pending',
+        '照片尚未完成初筛，请稍后重试': 'selection_pending',
+        '当前展示范围内合格照片不足；不会补入未入选或被排除的照片': 'insufficient_candidates',
+    }
+    if reason in pending:
+        return {'code': pending[reason], 'retryable': True}
+    if reason == '人物识别分组已变化或尚未完成，请重新确认人物偏好；未忽略原有范围':
+        waiting = phase == 'provisional'
+        return {'code': 'people_pending' if waiting else 'people_selection_changed', 'retryable': waiting}
+    return {'code': 'selection_invalid', 'retryable': False}
+
+
+def _generation_rejection(req, detail, failure, diagnostics, template):
+    """Log categories/counts only; never include the request or error text."""
+    counts = {
+        'code': failure['code'], 'retryable': failure['retryable'],
+        'phase': diagnostics.get('phase', 'unknown'),
+        'stage': diagnostics.get('stage', 'selection'),
+        'template': template if template in ('auto', 'template_1', 'template_2', 'template_3') else 'other',
+        'candidate_count': diagnostics.get('candidate_count'),
+        'required_count': diagnostics.get('required_count'),
+        'source_type': 'all' if 'all' in req.selection_sources else 'scoped',
+        'source_count': 1 if 'all' in req.selection_sources else len(set(req.selection_sources)),
+        'preferred_count': len(req.filters),
+        'preferred_person_count': sum(tag.startswith('person_') for tag in req.filters),
+        'excluded_count': len(req.exclude_filters),
+        'excluded_person_count': sum(tag.startswith('person_') for tag in req.exclude_filters),
+    }
+    logger.warning('Generation rejected: %s', json.dumps(counts, sort_keys=True))
+    return JSONResponse(status_code=409, content={'detail': detail, **failure})
 
 
 class GenerateRequest(BaseModel):
@@ -61,10 +100,15 @@ def _selection_request(req, token):
     return account, scope, template
 
 
-def _select_requested_wall(req, account, scope, template, snapshot=None):
+def _select_requested_wall(req, account, scope, template, snapshot=None, diagnostics=None):
     count = existing.template_packages.required_photo_count(template)
+    if diagnostics is not None:
+        diagnostics['required_count'] = count
     if snapshot is None:
         snapshot = selection.candidates(scope)
+    if diagnostics is not None:
+        diagnostics['phase'] = snapshot.get('phase') if snapshot.get('phase') in ('provisional', 'canonical') else 'unknown'
+        diagnostics['candidate_count'] = len(snapshot['photos'])
     history_key = existing._scoped_store_name('recent_shown', account)
     recent = existing.store.load(history_key, [])
     chosen, provenance = selection.select(scope, count, prefer=req.filters,
@@ -85,20 +129,9 @@ def readiness(req: GenerateRequest, x_account_token: str = Header(default='')):
         snapshot = selection.candidates(scope)
         _, provenance, _, _, _ = _select_requested_wall(req, account, scope, template, snapshot)
     except selection.SelectionUnavailable as error:
-        reason = str(error)
-        # Only these known lack-of-data cases can be resolved by more uploads.
-        # Provisional snapshots can precede identity clustering. Wait for the
-        # canonical result without dropping a saved person preference.
-        pending = reason in {
-            '尚无当前账户的合格照片',
-            '照片尚未完成初筛，请稍后重试',
-            '当前展示范围内合格照片不足；不会补入未入选或被排除的照片',
-        }
-        if (reason == '人物识别分组已变化或尚未完成，请重新确认人物偏好；未忽略原有范围'
-                and snapshot and snapshot.get('phase') == 'provisional'):
-            pending = True
+        failure = _selection_failure(error, snapshot.get('phase') if snapshot else None)
         return {'contract': selection.CONTRACT, 'ready': False,
-                'retryable': pending, 'reason': reason}
+                'reason': str(error), **failure}
     return {'contract': selection.CONTRACT, 'ready': True,
             'snapshot_id': provenance.get('snapshot_id'),
             'input_revision': provenance.get('input_revision')}
@@ -109,14 +142,29 @@ async def generate(req: GenerateRequest, x_account_token: str = Header(default='
     global _generation_lock
     if _generation_lock is None:
         _generation_lock = asyncio.Lock()
-    account, scope, template = _selection_request(req, x_account_token)
+    diagnostics = {'stage': 'request'}
+    try:
+        account, scope, template = _selection_request(req, x_account_token)
+    except HTTPException as error:
+        if error.status_code != 409:
+            raise
+        code = ('selection_contract_invalid' if error.detail == '不支持的选片链路版本'
+                else 'template_unavailable')
+        return _generation_rejection(req, error.detail, {'code': code, 'retryable': False}, diagnostics, req.template)
     async with _generation_lock:
+        diagnostics['stage'] = 'selection'
         try:
-            chosen, provenance, history_key, recent, count = _select_requested_wall(req, account, scope, template)
+            chosen, provenance, history_key, recent, count = _select_requested_wall(req, account, scope, template, diagnostics=diagnostics)
+            diagnostics['stage'] = 'render'
             image = await asyncio.to_thread(existing.template_packages.render, template,
                 [p['path'] for p in chosen], {'title':req.title,'date':req.date,'nickname':req.title})
         except (selection.SelectionUnavailable, ValueError, FileNotFoundError) as error:
-            raise HTTPException(409, str(error))
+            if isinstance(error, selection.SelectionUnavailable):
+                failure = _selection_failure(error, diagnostics.get('phase'))
+            else:
+                code = 'render_dependency_missing' if isinstance(error, FileNotFoundError) else 'render_failed'
+                failure = {'code': code, 'retryable': False}
+            return _generation_rejection(req, str(error), failure, diagnostics, template)
         wall_id = f'{account}_{template}_{time.time_ns()}'
         filename = wall_id+'.png'
         await asyncio.to_thread(image.save, Path(existing.OUTPUT_DIR)/filename)
