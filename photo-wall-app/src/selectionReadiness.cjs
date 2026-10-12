@@ -21,7 +21,8 @@ function createReadinessProbe({ check, active = () => true, intervalMs = 2000, n
       }
       if (result.ready) ready = true;
       else if (result.retryable === false) {
-        throw Object.assign(new Error(result.reason || '当前照片范围暂时不能生成，请检查偏好。'), { terminal:true });
+        throw Object.assign(new Error(result.reason || '当前照片范围暂时不能生成，请检查偏好。'),
+          { terminal:true, code:result.code, retryable:false, data:{code:result.code, retryable:false} });
       } else if (result.retryable !== true) {
         throw Object.assign(new Error('选片服务返回了无效状态'), { terminal:true });
       }

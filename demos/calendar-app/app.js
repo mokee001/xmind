@@ -1,5 +1,5 @@
-import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS } from './first-wall.js?v=0.3.7';
-import { mountPanel, resetPreferenceDraft } from './panels.js';
+import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS, DEMO_STALE_PERSON_ID } from './first-wall.js?v=0.3.8';
+import { mountPanel, resetPreferenceDraft } from './panels.js?v=0.3.8';
 import { createOnboarding } from './onboarding.js?v=0.3.7';
 
 const STORAGE_KEY = 'echooo-calendar-demo-v1';
@@ -33,6 +33,8 @@ let firstMonth = -3;
 let lastMonth = 3;
 let onboarding;
 let firstWallJourney;
+let preferenceRecovery = null;
+let previewSettingsBeforeOverlay = null;
 let previewHistory = false;
 const FLOW_STAGES = { welcome: 'welcome', 'setup-device': 'device' };
 const LEGACY_FLOW_ROUTES = { setup: 'welcome', 'setup-permissions': 'welcome', 'setup-preferences': 'setup-device', 'setup-schedule': 'setup-device' };
@@ -40,12 +42,18 @@ let toastTimer;
 let sheetController;
 const requestedFirstWallScenario = new URLSearchParams(location.search).get('firstWall');
 if (FIRST_WALL_SCENARIOS.includes(requestedFirstWallScenario)) document.querySelector('#first-wall-scenario').value = requestedFirstWallScenario;
+// A direct recovery preview overlays connection/authorization in memory only.
+if (requestedFirstWallScenario === 'people' && location.hash === '#first-wall') {
+  previewSettingsBeforeOverlay = { ...state.settings };
+  state = { ...state, settings: { ...state.settings, connected: true,
+    photoAccess: ['all', 'limited'].includes(state.settings.photoAccess) ? state.settings.photoAccess : 'all' } };
+}
 
 function showFirstWallEvents(snapshot) {
   const element = document.querySelector('#first-wall-events');
   if (!element) return;
-  const names = { local: '本地准备', upload: '首批上传', candidates: '服务候选', remaining: '其余上传', generation: '生成', publish: '投送', receipt: '回执' };
-  const labels = { started: '开始', ready: '就绪', failed: '模拟失败', retry: '仅重试本步', authorization: '照片授权', connected: '保存连接完成', paused: '离开后暂停', resumed: '继续已有任务' };
+  const names = { local: '本地准备', upload: '首批上传', candidates: '服务候选', remaining: '其余上传', generation: '生成', publish: '投送', receipt: '回执', people: '人物偏好' };
+  const labels = { started: '开始', ready: '就绪', failed: '模拟失败', retry: '仅重试本步', authorization: '照片授权', connected: '保存连接完成', paused: '离开后暂停', resumed: '继续已有任务', rechecked: '仍需重新确认', 'preferences-saved': '已保存，继续准备' };
   element.textContent = snapshot.events.slice(-7).map(event => `${names[event.stage] || ''}${labels[event.type]}${event.type === 'authorization' ? ` · ${event.stage}` : ''}`).join('\n') || '等待照片授权。';
   const summary = document.querySelector('#first-wall-coordination');
   const generated = snapshot.events.findIndex(event => event.type === 'started' && event.stage === 'generation');
@@ -102,8 +110,11 @@ function toast(message) {
 }
 function updateState(patch) {
   const next = { preferences: { ...state.preferences, ...patch.preferences }, settings: { ...state.settings, ...patch.settings }, onboarding: { ...state.onboarding, ...patch.onboarding } };
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); }
+  const stored = previewSettingsBeforeOverlay
+    ? { ...next, settings: { ...previewSettingsBeforeOverlay, ...patch.settings } } : next;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stored)); }
   catch { return false; }
+  if (previewSettingsBeforeOverlay) previewSettingsBeforeOverlay = stored.settings;
   state = next;
   renderHeader();
   return true;
@@ -141,7 +152,7 @@ function renderHeader() {
   if (route === 'calendar') {
     header.innerHTML = `<button class="header-action status-pill${state.settings.connected ? '' : ' offline'}" data-action="connection" aria-label="连接状态：${state.settings.connected ? '已连接' : '未连接'}，示例"><i></i>${state.settings.connected ? '已连接' : '未连接'}<small>示例</small></button><div class="header-entries"><button class="header-action preference-entry" data-route="preferences" aria-label="偏好">${icon('sliders', 19)}<span>偏好</span></button><button class="header-action icon-button" data-route="settings" aria-label="设置" title="设置">${icon('settings', 19)}</button></div>`;
   } else if (route === 'preferences') {
-    header.innerHTML = `<button class="header-action back" data-route="calendar" aria-label="返回日历">${icon('chevron-left', 18)}<span>日历</span></button>`;
+    header.innerHTML = `<button class="header-action back" data-route="${preferenceRecovery ? 'first-wall' : 'calendar'}" aria-label="${preferenceRecovery ? '返回首次准备' : '返回日历'}">${icon('chevron-left', 18)}<span>${preferenceRecovery ? '返回' : '日历'}</span></button>`;
   } else if (route === 'settings') {
     header.innerHTML = `<button class="header-action back" data-route="calendar" aria-label="返回日历">${icon('chevron-left', 18)}<span>日历</span></button><span class="header-title">ECHOoo</span><span class="header-side"></span>`;
   }
@@ -245,7 +256,13 @@ function renderRoute() {
   else if (route === 'first-wall') {
     const journey = firstJourney();
     journey.authorize(state.settings.photoAccess); journey.connect();
-    cleanupPanel = mountFirstWall({ host: screen, header, journey, onDone: () => navigate('calendar') });
+    cleanupPanel = mountFirstWall({ host: screen, header, journey, onDone: () => navigate('calendar'),
+      onAdjustPeople: () => {
+        if (journey.snapshot().failure !== 'people') return;
+        if (preferenceRecovery?.key !== journey) preferenceRecovery = { key: journey, stalePeople: [DEMO_STALE_PERSON_ID], availablePeople: [] };
+        navigate('preferences');
+      },
+    });
   }
   else if (FLOW_STAGES[route]) onboarding.show(FLOW_STAGES[route]);
   else cleanupPanel = mountPanel(screen, route, {
@@ -256,6 +273,13 @@ function renderRoute() {
     toast,
     openSheet,
     restartOnboarding,
+    preferenceRecovery,
+    onPreferencesSaved: () => {
+      if (preferenceRecovery?.key !== firstWallJourney) return;
+      if (!firstWallJourney.confirmPeoplePreferences(state.preferences.people)) return;
+      preferenceRecovery = null;
+      navigate('first-wall');
+    },
   });
   document.querySelectorAll('[data-level]').forEach(el => el.classList.toggle('active', el.dataset.level === route));
   document.title = `${route === 'calendar' ? '日历' : route === 'preferences' ? '偏好' : route === 'settings' ? '设置' : route === 'welcome' ? '欢迎' : '首次设置'} · Echooo`;
@@ -263,6 +287,8 @@ function renderRoute() {
 }
 function restartOnboarding() {
   firstWallJourney?.destroy(); firstWallJourney = null;
+  preferenceRecovery = null;
+  if (previewSettingsBeforeOverlay) { state = { ...state, settings: previewSettingsBeforeOverlay }; previewSettingsBeforeOverlay = null; }
   onboarding.reset();
   if (route === 'welcome') renderRoute();
   else navigate('welcome');

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
-const { mountFirstWall, createFirstWallJourney } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/first-wall.js')).toString('base64')}`);
+const { mountFirstWall, createFirstWallJourney, DEMO_STALE_PERSON_ID } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/first-wall.js')).toString('base64')}`);
 const { createOnboarding } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/onboarding.js')).toString('base64')}`);
+const { mountPanel, resetPreferenceDraft } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/panels.js')).toString('base64')}`);
 
 function harness(scenario = 'success', delays) {
   const tasks = new Map(), actions = {}; let id = 0, now = 0, done = 0;
@@ -22,7 +23,7 @@ function harness(scenario = 'success', delays) {
   };
   const host = { innerHTML: '', querySelector: selector => host.innerHTML.includes(selector.slice(1,-1)) ? { addEventListener: (_, fn) => actions[selector] = fn } : null };
   return { journey, tasks, actions, host, advance, schedule, cancel,
-    mount: () => mountFirstWall({ host, header: {}, journey, onDone: () => done++ }),
+    mount: (extra = {}) => mountFirstWall({ host, header: {}, journey, onDone: () => done++, ...extra }),
     events: (type, stage) => journey.snapshot().events.filter(event => event.type === type && (!stage || event.stage === stage)),
     done: () => done,
   };
@@ -37,6 +38,126 @@ test('authorization prepares locally during connection and reuses the finished r
   assert.equal(h.events('started', 'upload').length, 1);
   h.advance(9000); assert.match(h.host.innerHTML, /第一幅回忆，已在照片墙/);
   h.actions['[data-first-done]'](); assert.equal(h.done(), 1); stop(); h.journey.destroy();
+});
+
+function preferenceHarness(journey, preferences = { people: [], topics: [], memoryMix: '均衡' }, availablePeople) {
+  let state = { preferences: structuredClone(preferences), settings: { connected: true, deviceName: '示例照片墙', updateFrequency: '每周', updateTime: '18:30' } };
+  let allowSave = true, saves = 0, resumed = 0, cleanup;
+  const toasts = [];
+  const host = { innerHTML: '', contains: () => true, querySelector: () => ({ focus() {} }),
+    addEventListener(_, callback, { signal }) { this.click = callback; signal.addEventListener('abort', () => { this.click = null; }); } };
+  const recovery = journey ? { key: journey, stalePeople: [DEMO_STALE_PERSON_ID], availablePeople } : null;
+  const mount = () => {
+    cleanup = mountPanel(host, 'preferences', { icon: () => '', getState: () => structuredClone(state),
+      preferenceRecovery: recovery, toast: message => toasts.push(message),
+      updateState(patch) {
+        saves++;
+        if (!allowSave) return false;
+        state = { ...state, preferences: { ...state.preferences, ...patch.preferences } };
+        return true;
+      },
+      onPreferencesSaved() {
+        assert.equal(journey.confirmPeoplePreferences(state.preferences.people), true);
+        resumed++;
+      },
+    });
+  };
+  return { host, mount, close: () => cleanup(), state: () => structuredClone(state),
+    saves: () => saves, resumed: () => resumed, failSave: value => { allowSave = !value; }, toasts,
+    click(action, value) { host.click({ target: { closest: () => ({ dataset: { panelAction: action, value } }) } }); },
+  };
+}
+
+test('people recovery provides a preference entry; rechecking does not discard the original failure or connection', () => {
+  const h = harness('people'); let opened = 0;
+  h.journey.authorize('all'); h.journey.connect();
+  const stop = h.mount({ onAdjustPeople: () => opened++ }); h.advance(30000);
+  assert.match(h.host.innerHTML, /需要重新确认人物偏好/);
+  assert.match(h.host.innerHTML, /暂时不在当前可选结果中/);
+  assert.match(h.host.innerHTML, /调整人物偏好/);
+  assert.match(h.host.innerHTML, /重新检查/);
+  assert.match(h.host.innerHTML, /设备回执均为模拟/);
+  const before = h.journey.snapshot();
+  h.actions['[data-first-retry]'](); h.advance(30000);
+  assert.equal(h.journey.snapshot().failure, 'people');
+  assert.equal(h.journey.snapshot().connected, true);
+  assert.deepEqual(h.journey.snapshot().work, before.work);
+  assert.equal(h.events('started', 'publish').length, 0);
+  h.actions['[data-first-people]'](); assert.equal(opened, 1);
+  stop(); h.journey.destroy();
+});
+
+test('people recovery keeps old choices on back and retains edits across a failed save; only a successful save resumes', () => {
+  resetPreferenceDraft();
+  const h = harness('people'); h.journey.authorize('limited'); h.journey.connect();
+  const stop = h.mount(); h.advance(30000); stop();
+  const p = preferenceHarness(h.journey, { people: ['person-1'], topics: ['food'], memoryMix: '多些旧回忆' });
+  const original = p.state(); p.mount();
+  assert.match(p.host.innerHTML, /data-panel-action="manage">保存并继续<\/button>/);
+  assert.match(p.host.innerHTML, /待确认的旧选择 1/);
+  p.click('manage'); assert.equal(p.saves(), 0);
+  assert.match(p.host.innerHTML, /请先移除待确认的旧选择/);
+  p.close();
+  const returnToFailure = h.mount();
+  assert.match(h.host.innerHTML, /需要重新确认人物偏好/);
+  assert.deepEqual(p.state(), original);
+  assert.equal(h.journey.snapshot().connected, true);
+  returnToFailure(); p.mount();
+  assert.match(p.host.innerHTML, /待确认的旧选择 1/);
+  p.click('remove-unresolved', DEMO_STALE_PERSON_ID);
+  p.click('person', 'person-2'); p.failSave(true); p.click('manage');
+  assert.equal(p.saves(), 1); assert.equal(p.resumed(), 0);
+  assert.deepEqual(p.state(), original);
+  assert.equal(h.journey.snapshot().failure, 'people');
+  assert.match(p.host.innerHTML, /你的修改还在这里/);
+  p.close(); p.mount();
+  assert.doesNotMatch(p.host.innerHTML, /待确认的旧选择 1/);
+  assert.match(p.host.innerHTML, /data-value="person-2"[^>]*aria-pressed="true"/);
+  p.failSave(false); p.click('manage');
+  assert.equal(p.resumed(), 1);
+  assert.deepEqual(p.state().preferences.people, ['person-1', 'person-2']);
+  assert.deepEqual(p.state().settings, original.settings);
+  assert.deepEqual(p.state().preferences.topics, original.preferences.topics);
+  assert.equal(h.journey.snapshot().work.generation, 'idle', 'preferences route stays paused until return');
+  p.close(); const resumed = h.mount(); h.advance(30000);
+  assert.equal(h.journey.snapshot().work.receipt, 'ready');
+  assert.equal(h.events('started', 'local').length, 1);
+  assert.equal(h.events('started', 'upload').length, 1);
+  assert.equal(h.events('started', 'publish').length, 1);
+  assert.match(h.host.innerHTML, /设备回执均为模拟/);
+  resumed(); h.journey.destroy(); resetPreferenceDraft();
+});
+
+test('zero current people preserves every old selection and states natural arrangement before explicit save', () => {
+  resetPreferenceDraft();
+  const h = harness('people'); h.journey.authorize('all'); h.journey.connect(); h.advance(30000); h.journey.pause();
+  const p = preferenceHarness(h.journey, { people: ['person-1'], topics: [], memoryMix: '均衡' }, []); p.mount();
+  assert.match(p.host.innerHTML, /这次精选里暂时没有可选人物/);
+  assert.match(p.host.innerHTML, /也可以返回保留原选择/);
+  assert.doesNotMatch(p.host.innerHTML, /data-panel-action="person"/);
+  p.click('remove-unresolved', DEMO_STALE_PERSON_ID);
+  p.click('manage'); assert.equal(p.saves(), 0, 'the earlier normal selection is also preserved until explicitly removed');
+  assert.deepEqual(p.state().preferences.people, ['person-1']);
+  p.click('remove-unresolved', 'person-1');
+  assert.match(p.host.innerHTML, /未选择人物，保存后按自然安排继续/);
+  assert.equal(p.saves(), 0); assert.equal(h.journey.snapshot().failure, 'people');
+  p.click('manage'); assert.equal(p.saves(), 1); assert.equal(p.resumed(), 1);
+  assert.deepEqual(p.state().preferences.people, []);
+  p.close(); h.journey.destroy(); resetPreferenceDraft();
+});
+
+test('ordinary preferences still require manage before editing and remain on the page after saving', () => {
+  resetPreferenceDraft();
+  const p = preferenceHarness(null, { people: ['person-1'], topics: [], memoryMix: '均衡' }); p.mount();
+  assert.match(p.host.innerHTML, /管理偏好/);
+  assert.doesNotMatch(p.host.innerHTML, /待确认的旧选择/);
+  p.click('manage');
+  assert.match(p.host.innerHTML, /data-panel-action="manage">保存<\/button>/);
+  p.click('person', 'person-2'); p.click('manage');
+  assert.equal(p.saves(), 1); assert.equal(p.resumed(), 0);
+  assert.deepEqual(p.state().preferences.people, ['person-1', 'person-2']);
+  assert.match(p.host.innerHTML, /管理偏好/);
+  p.close(); resetPreferenceDraft();
 });
 
 test('onboarding authorization bridges into warmup before real demo connection completion', t => {

@@ -455,19 +455,22 @@ export async function syncPhotoAlbum({
   };
 }
 
-export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken, selectionSources = ['all'] }) {
+export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken, selectionSources = ['all'], signal }) {
   const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
   if (UNIFIED_SELECTION) {
     const response = await fetch(`${baseUrl(apiBase)}/api/selection/content`, {
-      method:'POST', headers:{...headers,'Content-Type':'application/json'}, body:JSON.stringify({sources:selectionSources}),
+      method:'POST', headers:{...headers,'Content-Type':'application/json'}, body:JSON.stringify({sources:selectionSources}), signal,
     });
     const result = await responseJson(response);
-    return {...result, people:(result.people || []).map(person => ({...person,
+    if (!Array.isArray(result?.people) || typeof result.peopleAvailable !== 'boolean') {
+      throw new Error('没有读到完整的人物结果，请重新读取。');
+    }
+    return {...result, people:result.people.map(person => ({...person,
       avatarUrl:baseUrl(apiBase)+person.cover, avatarHeaders:headers}))};
   }
   const [peopleResponse, albumsResponse] = await Promise.all([
-    fetch(`${baseUrl(apiBase)}/api/people`, { headers }),
-    fetch(`${baseUrl(apiBase)}/api/smart_albums`, { headers }),
+    fetch(`${baseUrl(apiBase)}/api/people`, { headers, signal }),
+    fetch(`${baseUrl(apiBase)}/api/smart_albums`, { headers, signal }),
   ]);
   const [people, albums] = await Promise.all([
     responseJson(peopleResponse),

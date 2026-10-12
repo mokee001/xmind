@@ -20,6 +20,7 @@ const MIXES = ['多些新照片', '均衡', '多些旧回忆'];
 const RANGES = ['全部已授权照片', '最近一年', '最近三年'];
 // Keep an unsaved edit session across in-app navigation, never across reloads.
 let pendingPreferences = null;
+let pendingRecoveryPreferences = null;
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[character]));
@@ -37,7 +38,7 @@ function portrait(style) {
 }
 
 export const preferenceChoices = { people: PEOPLE, topics: TOPICS, portrait };
-export function resetPreferenceDraft() { pendingPreferences = null; }
+export function resetPreferenceDraft() { pendingPreferences = null; pendingRecoveryPreferences = null; }
 
 function normalPreferences(state) {
   const current = state.preferences || {};
@@ -63,8 +64,19 @@ function scheduleSummary(settings) {
 }
 
 export function mountPanel(host, name, api) {
-  let editing = name === 'preferences' && !!pendingPreferences;
-  let draft = normalPreferences(pendingPreferences ? { preferences: pendingPreferences } : api.getState());
+  const recovery = name === 'preferences' ? api.preferenceRecovery : null;
+  const availablePeople = recovery && Array.isArray(recovery.availablePeople) ? recovery.availablePeople : PEOPLE;
+  const recoveryDraft = recovery && pendingRecoveryPreferences?.key === recovery.key ? pendingRecoveryPreferences.draft : null;
+  let editing = name === 'preferences' && (!!recovery || !!pendingPreferences);
+  let draft = normalPreferences(recovery ? recoveryDraft ? { preferences: recoveryDraft } : api.getState()
+    : pendingPreferences ? { preferences: pendingPreferences } : api.getState());
+  if (recovery && !recoveryDraft) draft.people = [...new Set([...draft.people, ...recovery.stalePeople])];
+  const rememberDraft = () => {
+    if (recovery) pendingRecoveryPreferences = { key: recovery.key, draft };
+    else pendingPreferences = draft;
+  };
+  if (recovery) rememberDraft();
+  let recoveryError = '';
   const controller = new AbortController();
   let activeSheet = null;
 
@@ -85,13 +97,15 @@ export function mountPanel(host, name, api) {
   const check = (selected) => `<span class="panel-choice-mark${selected ? ' panel-choice-mark-selected' : ''}" aria-hidden="true">${selected ? api.icon('check', 12) : ''}</span>`;
   function preferences() {
     const prefs = editing ? draft : normalPreferences(api.getState());
+    const unresolved = recovery ? prefs.people.filter(id => !availablePeople.some(person => person.id === id)) : [];
     host.innerHTML = `<div class="panel panel-preferences${editing ? ' panel-is-editing' : ''}">
-      <header class="panel-title-row"><h1>偏好</h1><button type="button" class="panel-manage${editing ? ' panel-manage-save' : ''}" data-panel-action="manage">${editing ? '保存' : '管理偏好'}</button></header>
-      <p class="panel-intro">让日常里，多一些你在意的。</p>
+      <header class="panel-title-row"><h1>偏好</h1><button type="button" class="panel-manage${editing ? ' panel-manage-save' : ''}" data-panel-action="manage">${editing ? recovery ? '保存并继续' : '保存' : '管理偏好'}</button></header>
+      <p class="panel-intro">${recovery ? '确认人物偏好后，继续准备第一幅回忆。' : '让日常里，多一些你在意的。'}</p>
+      ${recovery ? `<div class="panel-recovery"><p class="panel-description">${unresolved.length ? availablePeople.length ? '下面的旧选择暂不在当前结果中。请明确移除，再从当前示例人物中重新选择；也可以不选择人物。' : '下面的旧选择暂不在当前结果中。请明确移除后保存；返回会保留原选择。' : prefs.people.length ? '将按下面的人物选择继续准备。' : '未选择人物，保存后按自然安排继续。'}</p>${unresolved.map((id, index) => `<div class="panel-recovery-person"><span>待确认的旧选择 ${index + 1}<small>旧人物选择示例</small></span><button type="button" class="panel-manage" data-panel-action="remove-unresolved" data-value="${escapeHtml(id)}" aria-label="移除待确认的旧选择 ${index + 1}">移除</button></div>`).join('')}${recoveryError ? `<p class="panel-recovery-error" role="alert">${escapeHtml(recoveryError)}</p>` : ''}</div>` : ''}
       <section class="panel-section" aria-labelledby="panel-people-title">
         <div class="panel-section-title"><h2 id="panel-people-title">想多看到谁</h2><span class="panel-example">示例人物</span></div>
-        <p class="panel-description">默认所有人都可出现，也可以选出想多看到的人。</p>
-        <div class="panel-people">${PEOPLE.map((person) => {
+        <p class="panel-description">${recovery && !availablePeople.length ? '这次精选里暂时没有可选人物。可以取消旧选择，按自然安排继续；也可以返回保留原选择。' : '默认所有人都可出现，也可以选出想多看到的人。'}</p>
+        <div class="panel-people">${availablePeople.map((person) => {
           const selected = prefs.people.includes(person.id);
           const content = `<span class="panel-avatar panel-avatar-${person.style}${selected ? ' panel-avatar-selected' : ''}">${portrait(person.style)}${editing ? check(selected) : ''}</span><span class="panel-person-name">${person.name}</span>${!editing && selected ? '<span class="panel-person-note">多些出现</span>' : ''}`;
           return editing
@@ -225,23 +239,36 @@ export function mountPanel(host, name, api) {
     if (action === 'manage') {
       if (!editing) { draft = normalPreferences(api.getState()); editing = true; pendingPreferences = draft; }
       else {
+        if (recovery && draft.people.some(id => !availablePeople.some(person => person.id === id))) {
+          recoveryError = '请先移除待确认的旧选择，再保存。'; preferences();
+          host.querySelector('[data-panel-action="remove-unresolved"]')?.focus({ preventScroll: true });
+          return;
+        }
         const current = normalPreferences(api.getState());
-        if (!save({ preferences: { ...current, people: draft.people, topics: draft.topics, memoryMix: draft.memoryMix } }, '偏好已保存')) return;
+        if (!save({ preferences: { ...current, people: draft.people, topics: draft.topics, memoryMix: draft.memoryMix } }, '偏好已保存')) {
+          if (recovery) { recoveryError = '暂时无法保存。你的修改还在这里，请重试。'; preferences(); }
+          return;
+        }
         editing = false;
+        if (recovery) { pendingRecoveryPreferences = null; api.onPreferencesSaved?.(); return; }
         pendingPreferences = null;
       }
       preferences();
+      host.querySelector('[data-panel-action="manage"]')?.focus({ preventScroll: true });
+    } else if (editing && recovery && action === 'remove-unresolved') {
+      draft.people = draft.people.filter(id => id !== button.dataset.value);
+      recoveryError = ''; rememberDraft(); preferences();
       host.querySelector('[data-panel-action="manage"]')?.focus({ preventScroll: true });
     } else if (editing && (action === 'person' || action === 'topic')) {
       const key = action === 'person' ? 'people' : 'topics';
       const value = button.dataset.value;
       draft[key] = draft[key].includes(value) ? draft[key].filter((item) => item !== value) : [...draft[key], value];
-      pendingPreferences = draft;
+      recoveryError = ''; rememberDraft();
       preferences();
       host.querySelector(`[data-panel-action="${action}"][data-value="${value}"]`)?.focus({ preventScroll: true });
     } else if (editing && action === 'mix') {
       draft.memoryMix = button.dataset.value;
-      pendingPreferences = draft;
+      rememberDraft();
       preferences();
       host.querySelector(`[data-panel-action="mix"][data-value="${draft.memoryMix}"]`)?.focus({ preventScroll: true });
     } else if (action === 'device') openDevice();

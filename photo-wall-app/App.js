@@ -79,6 +79,8 @@ import HouseholdMembersModal from './src/HouseholdMembersModal';
 import ContentPreferenceDetails from './src/ContentPreferenceDetails';
 import { normalizePhotoRange, photoRangeLabel, normalizeTemporalPreference, temporalPreferenceLabel } from './src/contentPreferenceDetails.cjs';
 import { extendPreferenceSnapshot, snapshotsEqual } from './src/preferenceSnapshot.cjs';
+import { firstWallFailure, isPeoplePreferenceError, unresolvedPersonRules, preferenceFilters,
+  savePreferenceWithFallback, commitManagedPreferenceDraft, resumePreferenceRecovery, readRecoveryContent } from './src/preferenceRecovery.cjs';
 import { adoptDevice, readAccount, registerAccount } from './src/accountApi';
 import { loadAccountSession, saveAccountSession } from './src/accountStore';
 import {
@@ -1284,6 +1286,9 @@ function PhotoWallApp() {
   const [savingPreferenceRevision, setSavingPreferenceRevision] = useState(false);
   // Formal-page edits stay separate from the applied policy and My schedule draft.
   const [managedPreferenceDraft, setManagedPreferenceDraft] = useState(null);
+  const [preferenceRecovery, setPreferenceRecovery] = useState(null);
+  const [preferenceResume, setPreferenceResume] = useState(null);
+  const preferenceRecoveryReadRef = useRef(0);
   const [initialPreferencePreparation, setInitialPreferencePreparation] = useState(INITIAL_PREFERENCE_PREPARATION_IDLE);
   const [onboardingDiscovery, setOnboardingDiscovery] = useState({ state: 'idle', message: '', attempt: 0 });
   const [onboardingDeviceConnectedNow, setOnboardingDeviceConnectedNow] = useState(false);
@@ -1324,6 +1329,9 @@ function PhotoWallApp() {
     firstWallAbortRef.current?.controller.abort();
     setGeneratedWall(null);
     setFirstWall(null);
+    setPreferenceRecovery(null);
+    setPreferenceResume(null);
+    preferenceRecoveryReadRef.current += 1;
     firstWallAttemptRef.current = '';
     wallOperationRef.current = null;
     setPublishing(false);
@@ -1352,7 +1360,11 @@ function PhotoWallApp() {
     () => recognizedContentFrom(recognitionSnapshot, photoSync),
     [recognitionSnapshot, photoSync],
   );
-  const recognizedContent = contentMode !== 'live' || IS_WEB_PREVIEW
+  const recoveringPreferences = activeTab === 'preferences' && firstWall?.state === 'failed'
+    && sameDeviceBinding(preferenceRecovery, wallRequestScopeRef.current);
+  const recognizedContent = recoveringPreferences && preferenceRecovery.status === 'ready'
+    ? recognizedContentFrom(preferenceRecovery.recognition, photoSync)
+    : contentMode !== 'live' || IS_WEB_PREVIEW
     ? PREVIEW_RECOGNIZED_CONTENT
     : liveRecognizedContent;
   const recognizedItems = [...recognizedContent.people, ...recognizedContent.topics];
@@ -1399,16 +1411,19 @@ function PhotoWallApp() {
     !snapshotsEqual(activePreferenceRevision.snapshot || {}, preferenceSnapshot)
   );
   const needsOnboarding = preferenceProfileLoaded && ((!preferenceProfile?.onboardingCompleted && !DIRECT_WALL_PREVIEW) || firstRunPreview);
-  const editingPreferences = !needsOnboarding && managedPreferenceDraft?.deviceKey === preferenceDeviceKey;
+  const editingPreferences = !needsOnboarding && sameDeviceBinding(managedPreferenceDraft, wallRequestScopeRef.current);
   const preferenceProfileReady = IS_WEB_PREVIEW || (Boolean(preferenceDeviceKey) && hydratedPreferenceDeviceId === preferenceDeviceKey && hydratedPreferenceBinding === wallBindingKey);
-  const canEditModelPreferences = (IS_WEB_PREVIEW || contentMode === 'live') && !savingPreferenceRevision;
+  const canEditModelPreferences = (IS_WEB_PREVIEW || contentMode === 'live') && !savingPreferenceRevision
+    && (!recoveringPreferences || preferenceRecovery.status === 'ready');
   const visiblePreferenceRules = editingPreferences ? managedPreferenceDraft.rules : preferenceRules;
+  const pendingPersonRules = recoveringPreferences && preferenceRecovery.status === 'ready'
+    ? unresolvedPersonRules(preferenceRules, recognizedContent) : [];
 
   useEffect(() => {
     setManagedPreferenceDraft(null);
     setPreferenceDetails(null);
     setPreferencePeopleExpanded(false);
-  }, [preferenceDeviceKey, needsOnboarding]);
+  }, [wallBindingKey, needsOnboarding]);
   const permissionDescription = useMemo(() => {
     if (IS_WEB_PREVIEW) return webPhotoAuthorized ? '已模拟允许访问照片。' : '尚未模拟开启照片权限。';
     if (!permission) return '正在检查 iPhone 相册权限…';
@@ -1494,37 +1509,26 @@ function PhotoWallApp() {
     setSavingPreferenceRevision(true);
     setError('');
     try {
-      let next;
-      let localOnly = false;
-      if (!IS_WEB_PREVIEW && effectiveSession?.device?.device_id && session?.accountToken) {
-        try {
-          next = await createDevicePreferenceRevision({
+      const result = await savePreferenceWithFallback({
+        current:currentSavingBinding,
+        remote:!IS_WEB_PREVIEW && effectiveSession?.device?.device_id && session?.accountToken
+          ? () => createDevicePreferenceRevision({
             apiBase: DEFAULT_API_BASE,
             deviceId: effectiveSession.device.device_id,
             accountToken: session.accountToken,
             snapshot,
             parentId: preferenceProfile?.activeRevisionId || '',
             source,
-          });
-          if (!currentSavingBinding()) return null;
-          await cachePreferenceProfile(next);
-        } catch (remoteError) {
-          if ([401, 403, 409].includes(Number(remoteError?.status))) throw remoteError;
-          // The App can still safely preserve a revision during a staged API
-          // rollout.  It never mutates the old snapshot; the next successful
-          // connection will hydrate the device-level source of truth.
-          localOnly = true;
-        }
-      }
-      if (!next) {
-        if (!currentSavingBinding()) return null;
-        next = await savePreferenceRevision({
+          }) : null,
+        cache:cachePreferenceProfile,
+        local:() => savePreferenceRevision({
           profile: preferenceProfile,
           snapshot,
           source,
-        });
-      }
-      if (!currentSavingBinding()) return null;
+        }),
+      });
+      if (!result || !currentSavingBinding()) return null;
+      const {profile:next, localOnly} = result;
       setPreferenceProfile(next);
       setNotice(source === 'onboarding'
         ? (localOnly ? '默认偏好已保存在本机，尚未同步到设备。' : '默认偏好已保存。之后可以随时调整。')
@@ -1544,27 +1548,65 @@ function PhotoWallApp() {
   const beginPreferenceManagement = () => {
     if (!preferenceProfileReady || !canEditModelPreferences || preferenceSaveInFlightRef.current) return;
     preferenceRequestEpochRef.current += 1;
-    setManagedPreferenceDraft({ deviceKey: preferenceDeviceKey, rules: { ...preferenceRules }, photoRange: { ...photoRange }, temporalPreference });
+    setManagedPreferenceDraft({ ...wallRequestScopeRef.current, rules: { ...preferenceRules }, photoRange: { ...photoRange }, temporalPreference });
     setNotice('');
     setError('');
   };
 
   const saveManagedPreferences = async () => {
-    if (!editingPreferences || preferenceSaveInFlightRef.current) return;
-    const { deviceKey, rules, photoRange: draftRange, temporalPreference: draftTemporal } = managedPreferenceDraft;
-    const snapshot = extendPreferenceSnapshot(activePreferenceRevision?.snapshot || preferenceSnapshot, { rules, photoRange: draftRange, temporalPreference: draftTemporal });
-    if (snapshotsEqual(activePreferenceRevision?.snapshot || {}, snapshot)) {
+    if (!editingPreferences || !canEditModelPreferences || preferenceSaveInFlightRef.current) return;
+    const scope = {...wallRequestScopeRef.current};
+    const recovery = recoveringPreferences;
+    try {
+      const saved = await commitManagedPreferenceDraft({draft:managedPreferenceDraft, profile:preferenceProfile,
+        baseSnapshot:activePreferenceRevision?.snapshot || preferenceSnapshot,
+        recoveryContent:recovery ? recognizedContent : null,
+        current:() => sameDeviceBinding(scope, wallRequestScopeRef.current),
+        persist:snapshot => savePreferenceAsRevision('preferences', snapshot), apply:hydrateContentPreferenceSnapshot});
+      if (!saved) return;
       setManagedPreferenceDraft(null);
       setPreferenceDetails(null);
-      setNotice('偏好已保存。');
       setError('');
-      return;
+      if (recovery) {
+        setPreferenceResume({...scope, ...saved, content:recognizedContent});
+        setActiveTab('calendar');
+      } else setNotice('偏好已保存。');
+    } catch (caught) {
+      if (sameDeviceBinding(scope, wallRequestScopeRef.current)) setError(`无法保存偏好：${caught.message}`);
     }
-    const saved = await savePreferenceAsRevision('preferences', snapshot);
-    if (!saved || preferenceDeviceKeyRef.current !== deviceKey) return;
-    hydrateContentPreferenceSnapshot(getActivePreferenceRevision(saved)?.snapshot);
-    setManagedPreferenceDraft(null);
-    setPreferenceDetails(null);
+  };
+
+  const readRecoveryPreferences = async () => {
+    const scope = {...wallRequestScopeRef.current};
+    const request = ++preferenceRecoveryReadRef.current;
+    const current = () => request === preferenceRecoveryReadRef.current && sameDeviceBinding(scope, wallRequestScopeRef.current);
+    setPreferenceRecovery({...scope, status:'loading'});
+    try {
+      const recognition = await readRecoveryContent(signal => readRecognizedContent({apiBase:DEFAULT_API_BASE,
+        accountToken:session.accountToken, selectionSources:selectionSources(photoSync), signal}));
+      if (!Array.isArray(recognition?.people)) throw new Error('没有读到完整的人物结果，请重新读取。');
+      if (recognition.peopleAvailable !== true) throw new Error('人物结果尚未就绪，请稍后重新读取；原有选择仍保留。');
+      if (current()) {
+        setRecognitionSnapshot(recognition);
+        setPreferenceRecovery({...scope, status:'ready', recognition});
+      }
+    } catch (caught) {
+      if (current()) setPreferenceRecovery({...scope, status:'failed', message:caught.message});
+    }
+  };
+
+  const openFirstWallPreferences = () => {
+    if (firstWall?.binding !== wallBindingKey || firstWall.state !== 'failed' || wallOperationRef.current
+      || !preferenceProfileReady || preferenceSaveInFlightRef.current) return;
+    if (!sameDeviceBinding(managedPreferenceDraft, wallRequestScopeRef.current)) beginPreferenceManagement();
+    firstWallAttemptRef.current = wallBindingKey;
+    setActiveTab('preferences');
+    readRecoveryPreferences();
+  };
+
+  const returnFromRecoveryPreferences = () => {
+    firstWallAttemptRef.current = wallBindingKey;
+    setActiveTab('calendar');
   };
 
   const restorePreferenceRevision = async revisionId => {
@@ -2487,26 +2529,7 @@ function PhotoWallApp() {
     }
   };
 
-  const modelFilters = () => {
-    const people = (recognizedContent.people || [])
-      .filter(item => Array.isArray(item.filters) && item.filters.length);
-    const recallThemes = [
-      ...(recognizedContent.topics || []),
-      ...(recognizedContent.albums || []),
-    ].filter(item => Array.isArray(item.filters) && item.filters.length);
-    const unresolved = UNIFIED_SELECTION ? Object.entries(preferenceRules)
-      .filter(([id,rule]) => id.startsWith('person-person_') && ['more','hide'].includes(rule)
-        && !people.some(person => person.id === id)) : [];
-    return {
-      // New interactions are positive. Retain historical explicit exclusions.
-      prefer: [...new Set([...people, ...recallThemes]
-        .filter(item => preferenceRules[item.id] === 'more')
-        .flatMap(item => item.filters).concat(unresolved.filter(([,rule]) => rule==='more').map(([id]) => id.slice(7))))],
-      exclude: [...new Set(people
-        .filter(item => preferenceRules[item.id] === 'hide')
-        .flatMap(item => item.filters).concat(unresolved.filter(([,rule]) => rule==='hide').map(([id]) => id.slice(7))))],
-    };
-  };
+  const modelFilters = (rules = preferenceRules) => preferenceFilters(recognizedContent, rules, UNIFIED_SELECTION);
 
   useEffect(() => {
     if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || !photoAllowed || !connected || needsOnboarding || !session?.accountToken
@@ -2529,7 +2552,7 @@ function PhotoWallApp() {
     return () => { mounted = false; clearInterval(timer); subscription.remove(); };
   }, [photoAllowed, connected, needsOnboarding, session?.accountToken, effectiveSession?.device?.device_id, photoSync, session?.firstWall?.state, firstWall?.state]);
 
-  const startFirstWall = async (retryUncertain = false) => {
+  const startFirstWall = async (retryUncertain = false, appliedPreference = null) => {
     if (wallOperationRef.current || !session?.accountToken || !canPublish || AppState.currentState !== 'active') return;
     const request = { ...wallRequestScopeRef.current, sequence: ++wallRequestScopeRef.current.sequence };
     wallOperationRef.current = request;
@@ -2539,9 +2562,10 @@ function PhotoWallApp() {
     const photoEpoch = photoWorkEpochRef.current;
     const active = () => photoWorkMountedRef.current && !controller.signal.aborted && AppState.currentState === 'active'
       && photoEpoch === photoWorkEpochRef.current && isCurrentWallRequest(request, wallRequestScopeRef.current);
-    const { prefer, exclude } = modelFilters();
+    const { prefer, exclude } = preferenceFilters(appliedPreference?.content || recognizedContent,
+      appliedPreference?.snapshot?.rules || preferenceRules, UNIFIED_SELECTION);
     const generateOptions = {template:'auto', title:'今日精选', filters:prefer, excludeFilters:exclude,
-      deviceId:request.deviceId, preferenceRevisionId:preferenceProfile?.activeRevisionId || '', selectionSources:selectionSources(photoSync)};
+      deviceId:request.deviceId, preferenceRevisionId:appliedPreference?.revisionId || preferenceProfile?.activeRevisionId || '', selectionSources:selectionSources(photoSync)};
     const stage = state => { if (active()) setFirstWall({ binding: wallBindingKey, state }); };
     setFirstWall({ binding: wallBindingKey, state: 'preparing' });
     const store = async patch => {
@@ -2597,7 +2621,7 @@ function PhotoWallApp() {
       })]);
       if (active()) setHistoryRefresh(value => value + 1);
     } catch (caught) {
-      if (!attempt.resume && isCurrentWallRequest(request, wallRequestScopeRef.current)) setFirstWall({ binding: wallBindingKey, state: 'failed', message: caught.message, canRestart: caught.canRestart === true });
+      if (!attempt.resume && isCurrentWallRequest(request, wallRequestScopeRef.current)) setFirstWall(firstWallFailure(caught, wallBindingKey));
     } finally {
       clearTimeout(deadline); controller.abort();
       if (firstWallAbortRef.current === attempt) firstWallAbortRef.current = null;
@@ -2607,14 +2631,25 @@ function PhotoWallApp() {
   };
   firstWallRunRef.current = startFirstWall;
   useEffect(() => {
-    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || needsOnboarding || !preferenceProfileReady || !photoAllowed || !connected || !canPublish
+    if (!preferenceResume) return;
+    if (!sameDeviceBinding(preferenceResume, wallRequestScopeRef.current)) { setPreferenceResume(null); return; }
+    if (wallOperationRef.current || AppState.currentState !== 'active' || !photoAllowed || !connected
+      || !canPublish || !preferenceProfileReady) return;
+    setPreferenceResume(null);
+    setPreferenceRecovery(null);
+    firstWallAttemptRef.current = wallBindingKey;
+    resumePreferenceRecovery(preferenceResume, wallRequestScopeRef.current, (...args) => firstWallRunRef.current(...args));
+  }, [preferenceResume, photoWorkRevision, wallBindingKey, photoAllowed, connected, canPublish, preferenceProfileReady]);
+  useEffect(() => {
+    if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || needsOnboarding || recoveringPreferences || preferenceResume || !preferenceProfileReady || !photoAllowed || !connected || !canPublish
       || AppState.currentState !== 'active' || wallOperationRef.current || firstWallAttemptRef.current === wallBindingKey
       || !needsFirstWallRun({visibleState:firstWall?.binding === wallBindingKey ? firstWall.state : '', savedState:session?.firstWall?.state, device:session?.device})) return;
     firstWallAttemptRef.current = wallBindingKey;
     firstWallRunRef.current();
-  }, [needsOnboarding, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey, photoWorkRevision,
+  }, [needsOnboarding, recoveringPreferences, preferenceResume, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey, photoWorkRevision,
     firstWall?.state, session?.firstWall?.state, session?.device?.revision, session?.device?.state]);
-  const firstWallVisible = firstWall?.binding === wallBindingKey;
+  const firstWallVisible = firstWall?.binding === wallBindingKey && !recoveringPreferences;
+  const firstWallPeopleError = isPeoplePreferenceError(firstWall);
 
   const requestModelWall = async () => {
     const { prefer, exclude } = modelFilters();
@@ -3270,14 +3305,14 @@ function PhotoWallApp() {
         {!firstWallVisible && !needsOnboarding && activeTab === 'calendar' ? <View style={styles.headerEntries}>
           <MotionPressable onPress={() => setActiveTab('preferences')} contentStyle={styles.headerLink}><Text style={styles.headerLinkText}>偏好</Text></MotionPressable>
           <MotionPressable onPress={() => setActiveTab('manage')} contentStyle={styles.headerLink} accessibilityLabel="设置"><Text style={styles.headerLinkText}>设置</Text></MotionPressable>
-        </View> : !firstWallVisible && !needsOnboarding ? <MotionPressable onPress={() => setActiveTab(activeTab === 'current' ? 'manage' : 'calendar')} disabled={savingPreferenceRevision || editingPreferences} contentStyle={styles.headerLink}><Text style={[styles.headerLinkText, editingPreferences && styles.disabled]}>‹ {activeTab === 'current' ? '返回设置' : '返回日历'}</Text></MotionPressable> : null}
+        </View> : !firstWallVisible && !needsOnboarding ? <MotionPressable onPress={recoveringPreferences ? returnFromRecoveryPreferences : () => setActiveTab(activeTab === 'current' ? 'manage' : 'calendar')} disabled={savingPreferenceRevision || (editingPreferences && !recoveringPreferences)} contentStyle={styles.headerLink}><Text style={[styles.headerLinkText, editingPreferences && !recoveringPreferences && styles.disabled]}>‹ {recoveringPreferences ? '返回准备' : activeTab === 'current' ? '返回设置' : '返回日历'}</Text></MotionPressable> : null}
       </View>
       {!firstWallVisible && !needsOnboarding && activeTab !== 'calendar' ? <View style={styles.panelHeader}>
         <View style={styles.flex}><Text style={styles.panelTitle}>{TABS.find(tab => tab.id === activeTab)?.label || '设置'}</Text>
-        <Text style={styles.panelSubtitle}>{activeTab === 'preferences' ? editingPreferences ? '调整后保存，再回到日历。' : '自然安排，也可以更合你心意。' : activeTab === 'manage' ? '照片墙和日常安排，都在这里。' : '管理整面照片墙的展示。'}</Text></View>
-        {activeTab === 'preferences' && preferenceProfileLoaded ? <MotionPressable onPress={editingPreferences ? saveManagedPreferences : beginPreferenceManagement} disabled={savingPreferenceRevision || (!editingPreferences && (!preferenceProfileReady || !canEditModelPreferences))} accessibilityLabel={savingPreferenceRevision ? '正在保存偏好' : editingPreferences ? '保存' : '管理偏好'} contentStyle={[styles.preferenceManageButton, editingPreferences && styles.preferenceSaveButton]}>
+        <Text style={styles.panelSubtitle}>{recoveringPreferences ? '调整后保存，继续准备第一幅回忆。' : activeTab === 'preferences' ? editingPreferences ? '调整后保存，再回到日历。' : '自然安排，也可以更合你心意。' : activeTab === 'manage' ? '照片墙和日常安排，都在这里。' : '管理整面照片墙的展示。'}</Text></View>
+        {activeTab === 'preferences' && preferenceProfileLoaded ? <MotionPressable onPress={editingPreferences ? saveManagedPreferences : beginPreferenceManagement} disabled={savingPreferenceRevision || !canEditModelPreferences || (!editingPreferences && !preferenceProfileReady)} accessibilityLabel={savingPreferenceRevision ? '正在保存偏好' : editingPreferences ? recoveringPreferences ? '保存并继续' : '保存' : '管理偏好'} contentStyle={[styles.preferenceManageButton, editingPreferences && styles.preferenceSaveButton]}>
           {savingPreferenceRevision ? <ActivityIndicator size="small" color={editingPreferences ? C.white : C.ink} /> : null}
-          <Text style={[styles.preferenceManageText, editingPreferences && styles.preferenceSaveText]}>{savingPreferenceRevision ? '保存中' : editingPreferences ? '保存' : '管理偏好'}</Text>
+          <Text style={[styles.preferenceManageText, editingPreferences && styles.preferenceSaveText]}>{savingPreferenceRevision ? '保存中' : editingPreferences ? recoveringPreferences ? '保存并继续' : '保存' : '管理偏好'}</Text>
         </MotionPressable> : null}
       </View> : null}
       {firstWallVisible ? (
@@ -3285,8 +3320,13 @@ function PhotoWallApp() {
           <View style={styles.calendarArtwork} accessibilityElementsHidden><View style={styles.calendarPaperBack} /><View style={styles.calendarPaper}><Text style={styles.calendarPaperDay}>{firstWall.state === 'done' ? '✓' : '·'}</Text></View></View>
           {!['done','failed'].includes(firstWall.state) ? <ActivityIndicator color={C.muted} /> : null}
           <Text style={styles.landingTitle}>{firstWall.state === 'done' ? '第一幅回忆，已在照片墙。' : firstWall.state === 'failed' ? '这次准备暂时停下了' : ['publishing','waiting'].includes(firstWall.state) ? '回忆即将抵达' : '正在准备第一幅回忆'}</Text>
-          <Text style={styles.landingLead}>{firstWall.state === 'failed' ? firstWall.message : firstWall.state === 'done' ? '以后的日子，也会有新的相遇。' : firstWall.state === 'waiting' ? '正在等待照片墙完成刷新。' : '从手机里已有的照片开始，不必等整个相册。'}</Text>
-          {firstWall.state === 'failed' ? <><ActionButton onPress={() => startFirstWall()}>继续准备 / 检查上屏</ActionButton>{firstWall.canRestart ? <ActionButton secondary onPress={() => startFirstWall(true)}>重新准备并发送</ActionButton> : null}<ActionButton secondary onPress={() => Linking.openSettings()}>调整照片权限</ActionButton></> : firstWall.state === 'done' ? <ActionButton onPress={() => { setFirstWall(null); setActiveTab('calendar'); }}>进入日历</ActionButton> : <Text style={styles.landingNote}>首次准备中，请暂时保持 App 打开。</Text>}
+          <Text style={styles.landingLead}>{firstWall.state === 'failed' ? firstWallPeopleError ? '当前人物选择需要重新确认。请调整人物偏好后继续。' : firstWall.message : firstWall.state === 'done' ? '以后的日子，也会有新的相遇。' : firstWall.state === 'waiting' ? '正在等待照片墙完成刷新。' : '从手机里已有的照片开始，不必等整个相册。'}</Text>
+          {firstWall.state === 'failed' ? <>
+            <ActionButton onPress={firstWallPeopleError ? openFirstWallPreferences : () => startFirstWall()}>{firstWallPeopleError ? '调整人物偏好' : '继续准备 / 检查上屏'}</ActionButton>
+            {firstWallPeopleError ? <ActionButton secondary onPress={() => startFirstWall()}>重新检查</ActionButton> : <ActionButton secondary onPress={openFirstWallPreferences}>调整偏好</ActionButton>}
+            {firstWall.canRestart ? <ActionButton secondary onPress={() => startFirstWall(true)}>重新准备并发送</ActionButton> : null}
+            {!firstWallPeopleError ? <ActionButton secondary onPress={() => Linking.openSettings()}>调整照片权限</ActionButton> : null}
+          </> : firstWall.state === 'done' ? <ActionButton onPress={() => { setFirstWall(null); setActiveTab('calendar'); }}>进入日历</ActionButton> : <Text style={styles.landingNote}>首次准备中，请暂时保持 App 打开。</Text>}
         </ScrollView>
       ) : !needsOnboarding && preferenceProfileLoaded && activeTab === 'calendar' ? (
         <MemoryCalendar key={wallBindingKey} records={historyBinding === wallBindingKey ? displayHistory : []} loading={historyLoading} error={historyError} onRetry={() => setHistoryRefresh(value => value + 1)} />
@@ -3354,11 +3394,26 @@ function PhotoWallApp() {
             />
           ) : activeTab === 'preferences' ? (
             <>
-
+              {recoveringPreferences && preferenceRecovery.status !== 'ready' ? <View style={styles.settingCard}>
+                <Text style={styles.settingValue}>{preferenceRecovery.status === 'loading' ? '正在读取人物偏好' : '暂时无法读取人物偏好'}</Text>
+                <Text style={styles.settingHint}>{preferenceRecovery.status === 'loading' ? '原有选择会保留，读取完成后再确认。' : preferenceRecovery.message}</Text>
+                {preferenceRecovery.status === 'loading' ? <ActivityIndicator color={C.muted} /> : <ActionButton secondary onPress={readRecoveryPreferences}>重新读取</ActionButton>}
+              </View> : <>
+              {pendingPersonRules.length ? <View style={styles.settingCard}>
+                <Text style={styles.settingValue}>待确认的旧选择</Text>
+                <Text style={styles.settingHint}>之前选择的人物暂时不在当前可选结果中。可以保留原选择，也可以明确取消；保存后才会生效。</Text>
+                {pendingPersonRules.map(([id, original], index) => <View key={id} style={{marginTop:16}}>
+                  <Text style={styles.settingValue}>之前选择的人物 {index + 1}</Text>
+                  <Text style={styles.settingHint}>{visiblePreferenceRules[id] === 'normal' ? '已取消，保存后生效' : original === 'hide' ? '原设置：不参与展示' : '原设置：优先出现'}</Text>
+                  <ActionButton secondary disabled={!canEditModelPreferences || !editingPreferences} onPress={() => setModelPreference(id, visiblePreferenceRules[id] === 'normal' ? original : 'normal')}>{visiblePreferenceRules[id] === 'normal' ? '撤销取消' : '取消旧选择'}</ActionButton>
+                </View>)}
+                {!Object.entries(visiblePreferenceRules).some(([id, rule]) => id.startsWith('person-') && ['more','hide'].includes(rule)) ? <Text style={styles.settingHint}>保存后将自然安排人物，不再沿用这些旧选择。</Text> : null}
+              </View> : null}
               <ModelPreferenceGroup kind="people" title="想多看到谁？" description="来自已识别的人物与宠物。点头像增加出现机会，再点取消；未点选内容仍由模型自然安排。" items={preferencePeople} rules={visiblePreferenceRules} onChange={setModelPreference} sample={selectionIsSample} readOnly={!editingPreferences} disabled={!canEditModelPreferences} peopleExpanded={preferencePeopleExpanded} onTogglePeopleExpanded={() => setPreferencePeopleExpanded(current => !current)} />
-              {!preferencePeople.length ? <ContextCard title="正在补充人物与宠物" description="人物分组准备好后会出现在这里；不需要手动筛选照片。" /> : null}
+              {!preferencePeople.length ? recoveringPreferences ? <ContextCard title="这次精选里暂时没有可选人物" description="可以取消旧选择，按自然安排继续；也可以返回保留原选择。" /> : <ContextCard title="正在补充人物与宠物" description="人物分组准备好后会出现在这里；不需要手动筛选照片。" /> : null}
               <ModelPreferenceGroup kind="themes" title="想多看到哪些照片？" description="选中的主题会增加出现机会；不选择也会自动安排。" items={preferencePlacesAndTopics} rules={visiblePreferenceRules} onChange={setModelPreference} sample={selectionIsSample} readOnly={!editingPreferences} disabled={!canEditModelPreferences} />
               {!preferencePlacesAndTopics.length ? <ContextCard title="正在整理回忆主题" description="旅行、日常、风景等主题会在照片整理后自动出现。" /> : null}
+              </>}
             </>
           ) : (
             <>
