@@ -1,6 +1,7 @@
 import { requireCurrentWall } from './templateCatalog';
 import { UNIFIED_SELECTION, SELECTION_CONTRACT } from './unifiedSelection';
 import { generationPayload } from './selectionReadiness.cjs';
+import { withDeviceStatusTimeout } from './deviceStatus.cjs';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
@@ -852,11 +853,13 @@ export async function publishJulyCalendar({ apiBase, deviceId, accountToken }) {
 }
 
 export async function listDisplays({ apiBase, accountToken, signal }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/devices`, {
-    signal,
-    headers: { 'X-Account-Token': accountToken },
-  });
-  return responseJson(response);
+  return withDeviceStatusTimeout(async requestSignal => {
+    const response = await fetch(`${baseUrl(apiBase)}/api/devices`, {
+      signal: requestSignal,
+      headers: { 'X-Account-Token': accountToken },
+    });
+    return responseJson(response);
+  }, {signal});
 }
 
 export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, setupToken = '' }) {

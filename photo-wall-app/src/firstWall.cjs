@@ -1,5 +1,18 @@
 const { hasDisplayReceipt } = require('./wallExperienceState.cjs');
 
+const LEGACY_PENDING_REASONS = new Set([
+  '尚无当前账户的合格照片',
+  '照片尚未完成初筛，请稍后重试',
+  '当前展示范围内合格照片不足；不会补入未入选或被排除的照片',
+]);
+
+function canRetryGeneration(error) {
+  if (error.status !== 409) return false;
+  // deviceApi preserves the server response in error.data, including false.
+  if (error.data?.retryable !== undefined) return error.data.retryable === true;
+  return LEGACY_PENDING_REASONS.has(error.message);
+}
+
 function needsFirstWallRun({ visibleState, savedState, device }) {
   // A suspended visible attempt must reconcile its persisted revision even if
   // regular device polling received a display receipt while it was paused.
@@ -40,7 +53,7 @@ async function runFirstWall({ load, save, readDevice, prepare, generate, publish
       check();
       try { wall = await generate(); break; }
       catch (error) {
-        if (error.status !== 409 || !/尚未|初筛|合格照片不足/.test(error.message) || i === 23) throw error;
+        if (!canRetryGeneration(error) || i === 23) throw error;
         // One extra bounded batch if the first set is still insufficient.
         if (i === 6) await prepare({ additional: true });
         await sleep(5000);

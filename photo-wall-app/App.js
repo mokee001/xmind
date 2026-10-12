@@ -5,6 +5,7 @@ import MemoryCalendar from './src/MemoryCalendar';
 import { UNIFIED_SELECTION, selectionSources, syncSelectionInBackground, prewarmPhotoSelection,
   invalidatePhotoPrewarm, createFirstWallReadiness } from './src/unifiedSelection';
 import { createPrewarmOwner } from './src/photoPrewarm.cjs';
+import { createDeviceStatusPoll, deviceConnectionStatus, sameDeviceBinding } from './src/deviceStatus.cjs';
 import { publicationFromResponse, hasDisplayReceipt, nativeWallPresentation, isCurrentWallRequest } from './src/wallExperienceState.cjs';
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -1297,6 +1298,7 @@ function PhotoWallApp() {
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [historyBinding, setHistoryBinding] = useState('');
   const [statusClock, setStatusClock] = useState(Date.now());
+  const [deviceObservation, setDeviceObservation] = useState(null);
   const pageScrollRef = useRef(null);
   const onboardingPreparationRef = useRef('');
   const preferenceSaveInFlightRef = useRef(false);
@@ -1329,10 +1331,8 @@ function PhotoWallApp() {
   }, [wallBindingKey]);
   const photoAllowed = IS_WEB_PREVIEW ? webPhotoAuthorized : permission?.status === 'granted';
   const connected = IS_WEB_PREVIEW ? webConnected : Boolean(session?.device?.device_id);
-  const lastSeen = Number(effectiveSession?.device?.last_seen) || 0;
-  const deviceFault = Boolean(effectiveSession?.device?.error) || ['error', 'failed'].includes(effectiveSession?.device?.state);
-  const deviceOnline = connected && (IS_WEB_PREVIEW || (!deviceFault && lastSeen > 0 && statusClock / 1000 - lastSeen <= 90));
-  const connectionLabel = !connected ? '连接照片墙' : IS_WEB_PREVIEW ? '演示连接' : deviceFault ? '设备异常' : deviceOnline ? '已连接' : lastSeen ? '暂时离线' : '确认连接中';
+  const { deviceOnline, connectionLabel } = deviceConnectionStatus({ connected, preview:IS_WEB_PREVIEW,
+    device:effectiveSession?.device, observation:deviceObservation, scope:wallRequestScopeRef.current, now:statusClock });
 
   useEffect(() => {
     const timer = setInterval(() => setStatusClock(Date.now()), 15000);
@@ -2034,26 +2034,24 @@ function PhotoWallApp() {
     if (IS_WEB_PREVIEW || addingDevice || reconfigurationSession) return undefined;
     if (!session?.device?.device_id || !session.accountToken) return undefined;
     let active = true;
-    let refreshing = false;
     let invalidStatusCount = 0;
-    const refreshDevice = async () => {
-      if (refreshing || wallOperationRef.current) return;
-      const request = { ...wallRequestScopeRef.current };
-      refreshing = true;
-      try {
-        const device = await readDisplayStatus({
-          apiBase: DEFAULT_API_BASE,
-          deviceId: session.device.device_id,
-          accountToken: session.accountToken,
-        });
-        if (!active || !isCurrentWallRequest(request, wallRequestScopeRef.current)
-          || device.device_id !== request.deviceId) return;
+    const poll = createDeviceStatusPoll({
+      getScope:() => wallRequestScopeRef.current,
+      isBusy:() => Boolean(wallOperationRef.current),
+      readDevice:(request, signal) => readDisplayStatus({ apiBase:DEFAULT_API_BASE,
+        deviceId:request.deviceId, accountToken:session.accountToken, signal }),
+      onObserved:observation => {
+        invalidStatusCount = 0;
+        setDeviceObservation(observation);
+        setStatusClock(Date.now());
+      },
+      onIdle:async (device, request) => {
         invalidStatusCount = 0;
         // Use the latest local publication mapping; the polling effect's session
         // closure predates publications made on the same connected device.
         const nextSession = { ...latestWallSessionRef.current, apiBase: DEFAULT_API_BASE, device };
         const stored = await updateDeviceSession(nextSession);
-        if (!active || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
+        if (!active || wallOperationRef.current || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
         latestWallSessionRef.current = nextSession;
         setSession(nextSession);
         setDeviceSessions(stored.sessions.map(normalizeDeviceSession).filter(Boolean));
@@ -2066,8 +2064,10 @@ function PhotoWallApp() {
           ));
           if (status.state === 'done' || status.state === 'failed') setDeliveryPending(false);
         }
-      } catch (caught) {
-        if (!active || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
+      },
+      onError:async (caught, request, idle) => {
+        setDeviceObservation(current => ({...(sameDeviceBinding(current, request) ? current : request), readFailed:true}));
+        if (!idle || !active || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
         const invalidSession = caught.status === 401 || caught.code === 'DEVICE_NOT_FOUND';
         if (invalidSession) {
           invalidStatusCount += 1;
@@ -2092,13 +2092,11 @@ function PhotoWallApp() {
         setOperation(current => current.state === 'idle'
           ? { ...current, message: `暂时无法读取设备状态：${caught.message}` }
           : current);
-      } finally {
-        refreshing = false;
-      }
-    };
-    refreshDevice();
-    const timer = setInterval(refreshDevice, 5000);
-    return () => { active = false; clearInterval(timer); };
+      },
+    });
+    poll.refresh();
+    const timer = setInterval(poll.refresh, 5000);
+    return () => { active = false; clearInterval(timer); poll.cancel(); };
   }, [session?.device?.device_id, session?.accountToken, addingDevice, reconfigurationSession?.device?.device_id]);
 
   useEffect(() => {

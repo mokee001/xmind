@@ -30,9 +30,54 @@ test('uncertain dispatch survives relaunch, never blindly publishes a duplicate'
  const f=fixture({state:'publishing',wallId:'w',beforeRevision:''});await assert.rejects(runFirstWall(f.deps),/发送结果未确认/);assert.ok(!f.calls.includes('publish'));
  f.setDevice({revision:'r',displayed_revision:'r'});await runFirstWall(f.deps);assert.equal(f.state().state,'done');
 });
-test('worker not ready retries boundedly, non-readiness errors propagate',async()=>{
- const f=fixture();let n=0;await runFirstWall({...f.deps,generate:async()=>{if(++n<3)throw Object.assign(Error('照片尚未完成初筛'),{status:409});return {wall_id:'w',image_url:'/w'}}});assert.equal(n,3);
- const g=fixture();await assert.rejects(runFirstWall({...g.deps,generate:async()=>{throw Object.assign(Error('人物识别分组已变化'),{status:409})}}),/人物/);assert.ok(!g.calls.includes('publish'));
+test('server retryable 409 recovers with one extra preparation and exactly one publication',async()=>{
+ const f=fixture();let attempts=0,batches=0;const sleeps=[];
+ await runFirstWall({...f.deps,prepare:async()=>{batches++},sleep:async ms=>sleeps.push(ms),
+  generate:async()=>{
+   if(++attempts<8)throw Object.assign(Error('人物分组正在完成'),{status:409,data:{code:'people_pending',retryable:true}});
+   return {wall_id:'w',image_url:'/w'};
+  }});
+ assert.equal(attempts,8);assert.equal(batches,2);assert.deepEqual(sleeps,Array(7).fill(5000));
+ assert.equal(f.calls.filter(x=>x==='publish').length,1);assert.equal(f.state().state,'done');
+});
+test('terminal or legacy person error containing 尚未完成 stops immediately with the original reason',async()=>{
+ const reason='人物识别分组已变化或尚未完成，请重新确认人物偏好；未忽略原有范围';
+ for(const data of [{code:'people_changed',retryable:false},undefined]){
+  const f=fixture();let attempts=0,sleeps=0;
+  const rejected=Object.assign(Error(reason),{status:409,...(data ? {data} : {})});
+  await assert.rejects(runFirstWall({...f.deps,generate:async()=>{attempts++;throw rejected},sleep:async()=>sleeps++}),error=>error===rejected);
+  assert.equal(attempts,1);assert.equal(sleeps,0);assert.equal(f.calls.filter(x=>x==='prepare').length,1);
+  assert.ok(!f.calls.includes('publish'));assert.deepEqual(f.state(),{});
+ }
+});
+test('old servers retry only the three exact known lack-of-data reasons',async()=>{
+ for(const reason of ['尚无当前账户的合格照片','照片尚未完成初筛，请稍后重试','当前展示范围内合格照片不足；不会补入未入选或被排除的照片']){
+  const f=fixture();let attempts=0;
+  await runFirstWall({...f.deps,generate:async()=>{
+   if(++attempts===1)throw Object.assign(Error(reason),{status:409});
+   return {wall_id:'w',image_url:'/w'};
+  }});
+  assert.equal(attempts,2);assert.equal(f.calls.filter(x=>x==='publish').length,1);
+ }
+});
+test('explicit false and invalid retryability never fall back to a matching legacy reason',async()=>{
+ for(const retryable of [false,'true',1,null]){
+  const f=fixture();let attempts=0;
+  const rejected=Object.assign(Error('照片尚未完成初筛，请稍后重试'),{status:409,data:{retryable}});
+  await assert.rejects(runFirstWall({...f.deps,generate:async()=>{attempts++;throw rejected}}),error=>error===rejected);
+  assert.equal(attempts,1);assert.ok(!f.calls.includes('publish'));
+ }
+});
+test('non-409 errors and unrecognized legacy messages cannot trigger generation retries',async()=>{
+ for(const fields of [
+  {status:503,data:{retryable:true},message:'照片尚未完成初筛，请稍后重试'},
+  {status:409,message:'初筛快照与账户、规则或输入不符'},
+  {status:409,message:'照片尚未完成初筛，请稍后重试（其他错误）'},
+ ]){
+  const f=fixture();let attempts=0;const rejected=Object.assign(Error(fields.message),fields);
+  await assert.rejects(runFirstWall({...f.deps,generate:async()=>{attempts++;throw rejected}}),error=>error===rejected);
+  assert.equal(attempts,1);assert.ok(!f.calls.includes('publish'));
+ }
 });
 test('error receipt and unrelated revision never count as success',async()=>{
  for(const device of [{revision:'r',displayed_revision:'r',error:'failed'},{revision:'other',displayed_revision:'other'}]){const f=fixture({state:'waiting',revision:'r'},device);await assert.rejects(runFirstWall(f.deps));assert.ok(!f.calls.includes('done'))}
@@ -41,8 +86,15 @@ test('error receipt and unrelated revision never count as success',async()=>{
 test('explicit resend of an uncertain empty screen escapes interruption without an automatic duplicate',async()=>{
  const f=fixture({state:'publishing',wallId:'w',beforeRevision:''}); await runFirstWall({...f.deps,retryUncertain:true});assert.equal(f.calls.filter(x=>x==='publish').length,1);assert.equal(f.state().state,'done');
 });
-test('worker readiness retries stop and only request one additional bounded batch',async()=>{
- const f=fixture();let attempts=0,batches=0;await assert.rejects(runFirstWall({...f.deps,prepare:async()=>{batches++},generate:async()=>{attempts++;throw Object.assign(Error('合格照片不足'),{status:409})}}),/不足/);assert.equal(attempts,24);assert.equal(batches,2);assert.ok(!f.calls.includes('publish'));
+test('24 retryable failures stop with the exact last error and only one additional preparation',async()=>{
+ const f=fixture();let attempts=0,batches=0,lastError;const sleeps=[];
+ await assert.rejects(runFirstWall({...f.deps,prepare:async()=>{batches++},sleep:async ms=>sleeps.push(ms),
+  generate:async()=>{
+   attempts++;lastError=Object.assign(Error('当前展示范围内合格照片不足；不会补入未入选或被排除的照片'),{status:409,data:{code:'insufficient_candidates',retryable:true}});
+   throw lastError;
+  }}),error=>error===lastError);
+ assert.equal(attempts,24);assert.equal(batches,2);assert.deepEqual(sleeps,Array(23).fill(5000));
+ assert.ok(!f.calls.includes('publish'));assert.deepEqual(f.state(),{});
 });
 test('failed intent persistence prevents publication',async()=>{
  const f=fixture();await assert.rejects(runFirstWall({...f.deps,save:async()=>{throw Error('storage unavailable')}}),/storage/);assert.ok(!f.calls.includes('publish'));
