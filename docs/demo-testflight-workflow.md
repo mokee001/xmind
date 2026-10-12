@@ -86,3 +86,11 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 源码快照 `788d56e`，归档 `outputs/first-wall-release-20261012/`。IPA SHA256 `67826793541ad0cfc044f3e901c950454c46b74d3503f56615a0af01d15f4a01`；124 项回归、Xcode Release 归档、签名、内嵌版本与 Hermes 对应新源码的核验通过。
 - 11:37:45（上海）Apple 上传成功；11:39:41 核对构建 `3f6887c8-17fb-441a-9007-e743e0caf682` 为 `VALID / IN_BETA_TESTING`、未过期，精确属于原 Team (Expo) 内部组。手机从 TestFlight → Echooo 更新至 1.3.10（33）。
 - 配套后端仅更新选片网关，就绪接口已验证；规则与模型完整性检查通过，设备、固件及展示历史保持。真实速度仍待手机测试，未把 Demo/接口检查当作耗时实测。详见 `docs/first-wall-release-20261012.md`。
+
+## 2026-10-12 · 首次准备照片格式恢复 App 1.3.11（34）
+
+- 修复已发布首次体验中单张格式/解码错误导致反复卡在同一上传断点的问题；保留原图、真实上传确认、选片规则、配网及回执。未改变界面。
+- 修复提交 `97fec81`，独立快照 `f0db30053da0cf2c5b176441ca9909f4fedd8038`，归档 `outputs/photo-format-recovery-20261012/`；IPA SHA256 `8990dd90c10a3cd370d0ca143bd91bee6db453b8170c86eb86b399d060eee11b`。
+- 52 项 App 回归、17 项本地上传 API 回归、30 项生产依赖回归及39项最终包体检查通过。
+- 20:24:14 Apple 上传成功；20:26:33（上海）核对构建 `12798fa4-3094-40be-9d6b-ba73304d8f35` 为 `VALID / IN_BETA_TESTING`、未过期，精确属于原 Team (Expo) 组。TestFlight → Echooo 更新至 **1.3.11（34）**，保留设备连接后继续准备。
+- 后端只更新上传路由并重启8001，基准规则与模型校验通过；首次真实生成、屏幕回执与新绑定日历记录仍待手机验证。详情见 `docs/photo-format-recovery-20261012.md`。
