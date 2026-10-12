@@ -11,12 +11,13 @@
 
 ## 安装包与验证记录
 
-- 目标版本 `1.3.10（33）`；已在期望远端最新为 `32` 的前提下分配 EAS 构建号，避免重复递增。
-- 源码独立快照 `788d56e`，本机归档 `outputs/first-wall-release-20261012/`。安装与 Apple 状态以其中后续 `release-status.json` 为准，不能仅凭本文目标版本认定已发布。
+- `1.3.10（33）` 已发布。11:37:45（上海）Apple 接收成功；11:39:41 核对构建 `3f6887c8-17fb-441a-9007-e743e0caf682` 为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 `Team (Expo)` 内部测试组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。手机可从 TestFlight → Echooo 更新；未宣称特定手机已自动安装。
+- 源码独立快照 `788d56e`，本机归档 `outputs/first-wall-release-20261012/`，正式包 `photo-wall-first-wall-speed.ipa`，SHA256 `67826793541ad0cfc044f3e901c950454c46b74d3503f56615a0af01d15f4a01`。完整安装包、签名核验、Apple 接收及精确组关联证据见 `release-status.json`。
 - 合入后 53 项 App、55 项后端及 16 项 Demo 回归通过，共 124 项。独立快照按锁文件离线安装，Expo 57.0.19 / React Native 0.86.3。
-- 本机 Xcode 26.6 Release 构建采用本次独立生成工程副本。未变化的 Pods 与原生编译缓存复用前次归档依赖；两份原生模块源码与依赖锁逐一相同，不在旧 Pods 运行更新。App/JS 全部来自本次快照，包内 Hermes 仍须逐一核对，避免仅重发旧 JS。
+- 本机 Xcode 26.6 Release 构建采用本次独立生成工程副本。未变化的 Pods 与原生编译缓存复用前次归档依赖；两份原生模块源码与依赖锁逐一相同，不在旧 Pods 运行更新。App/JS 全部来自本次快照；独立核验包内 Hermes 的源哈希对应本次 Metro，提速及恢复函数与统一选片开关均已包含，两个原生模块、分发签名与 iOS 17.0 也通过检查。
 - 首次归档检查发现复用 Pods 的 Expo Constants 配置仍指向旧工程，已拦截未上传；最终归档显式设置 `NODE_ENV=production` 和本次 `PROJECT_ROOT`，Info.plist 与 `EXConstants.bundle/app.config` 均核对为 `1.3.10 / 33`。初始诊断包标记为 `*-initial`，不作为交付包。
 - 本地基准检查仍且仅有此前六处已知差异，未运行本地模型推理；线上实际 UID 999 冻结运行环境已复核 54 个规则文件与 5 个模型。完整差异见归档 `baseline-check.log` / `test-status.json`。
+- 临时分发钥匙串与发布私钥已清理；其他用户钥匙串保持，保留 Xcode 的公开 provisioning profile。候选工作树已申请可恢复归档，主分支与独立发布快照保留。
 
 ## 配套后端
 
