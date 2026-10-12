@@ -43,8 +43,17 @@
 - 浏览器已实际点击验证：重复检查仍保留错误；未处理旧选择时保存被拦截；返回后原选择保留；明确取消后提示自然安排；保存后继续准备，最终到达明确标注的模拟上屏完成。
 - Demo 20 项测试通过。App 75 项相关回归、Babel 解析及差异检查通过；包含真实 App 回调、合成 HTTP 与缓存、未解析选择拦截、畸形读取响应、保存后使用新快照，以及已投送版本仅核对回执。独立复核通过，无新增阻断项。
 - 测试记录：`outputs/person-preference-recovery-20261012/app-test-status.json`。本轮未执行真机选片、照片上传或设备投送，不能把 Demo 和合成测试当作硬件完成回执。
-- App 代码已实现，但未修改版本号、未打包上传。本轮遵循 `AGENTS.md` 的 Demo 确认规则，等待用户确认交互后发布；当前 TestFlight 仍是 1.3.12（35）。
+- 用户随后明确回复“发布”，对应修改已发布为 **1.3.13（36）**。22:03:08（上海）核对 Apple 为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 `Team (Expo)` 内部组；测试者可在 TestFlight → Echooo 更新。
 
 ## 保留的既有问题
 
 偏好仍使用全局 SecureStore 键。保存期间如果后台切换绑定，绑定保护会阻止旧结果应用到当前界面或生成，但已经开始的全局缓存写入无法取消。本轮未改缓存归属架构，也不宣称持久化已经按账户、图库或识别版本隔离；后续需独立迁移与验证。
+
+## 已确认发布归档
+
+- App 源码提交 `a6694ec7883dcd53e23f50cb912e3bb9c768a64b`（功能确认提交 `49d0f9f`），标签 `app-preference-recovery-v1.3.13-build36`；代码与标签已推送到原 GitHub 分支。
+- 独立源码快照 `f7501f30251c8ce9f803649309f2c6cfd5bb97e7`，50 个源码文件与构建/指纹清单一致，原生模块保留。完整归档在 `outputs/person-preference-recovery-20261012/release/`。
+- IPA：`photo-wall-preference-recovery.ipa`，SHA256 `949cf369977489fea0374454dd94fb9b72d41c88f2454f554842db2c2ac3d4c3`；77 项最终包体检查通过，包括实际 Hermes 源码一致性、正式选片开关、恢复路径与签名。
+- 第一份本地构建遗漏 production 环境变量，由正式选片开关核验拦截；已隔离到 `rejected-missing-production-env/`，从未上传。最终重建按 `eas.json` 的 `EXPO_PUBLIC_UNIFIED_SELECTION=1`，重新核验全部通过。
+- Apple 构建/上传 ID `d8e1e598-aac8-4914-b939-37a770d03a97`；原测试组 ID `1469f7eb-4dfa-4907-92e1-5aa09e307277`，未增加测试成员或主动发送测试者消息。
+- 本轮未部署后端或修改固件，未将合成测试或 Demo 当作真机上屏验收。临时签名凭据、独立钥匙串已清理，原有钥匙串保留。
