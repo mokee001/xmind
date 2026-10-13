@@ -26,7 +26,7 @@ atexit.register(STAGING.cleanup)
 HERE = Path(STAGING.name)
 (HERE/"backend").mkdir()
 SOURCE = Path(os.environ.get("PHOTOWALL_LEGACY_REPROVISION_SOURCE", str(ROOT/"outputs/wifi-recheck-20261012/server-before.py")))
-EXPECTED_SERVER = "3b6b9b6147d3cb3ca7df4509d2aabccd49cbbcfd91d11a75fa6d8a7b4a64659d"
+EXPECTED_SERVER = "caa763d465a6a9b4b00856783efe0d9b7dac6e6793ee070626d3d08fee326a2c"
 EXPECTED_HELPER = "fc0d863129236019fe641f4a4265d39f0fb752bea0499339b247606606ff470f"
 CHANGED = {"_public_device", "_queue_reprovision", "device_auto_claim", "device_bootstrap", "device_claim", "device_delete", "device_next", "device_publish", "device_publish_july_calendar", "device_publish_last_wall", "device_status"}
 ASYNC_WRITERS = {"device_publish", "device_publish_july_calendar", "device_publish_last_wall"}
@@ -133,6 +133,97 @@ class RecoveryTests(legacy.ReprovisionTests):
             binding = self.helper.binding_id(self.device())
         headers = {"X-Account-Token":token, "X-Device-Binding":binding, "X-Delete-Request-Id":request_id}
         return self.client.delete("/api/devices/"+device_id, headers=headers)
+
+    def legacy37_reprovision(self, proof="", token=OWNER):
+        # Exact published build37 wire shape: no binding, operation or generation.
+        return self.client.post("/api/devices/"+ID+"/reprovision",
+            json={"setup_token":proof},headers={"X-Account-Token":token})
+
+    def test_actual_bare_build37_begin_ack_proof_bootstrap(self):
+        begin=self.legacy37_reprovision()
+        self.assertEqual(begin.status_code,202)
+        self.assertNotIn("operation",begin.json())
+        self.assertEqual(self.body(self.next()),{"command":"reprovision","preserve_binding":True})
+        self.assertEqual(self.status("reprovisioning").status_code,200)
+        self.assertEqual(self.legacy37_reprovision(PROOF).status_code,202)
+        boot=self.client.post("/api/devices/bootstrap",json={"device_id":ID,
+            "pairing_code":"123456","device_token":DEVICE,"setup_token":PROOF})
+        self.assertEqual(boot.status_code,200)
+        self.assertNotIn("pending_command",self.device())
+        self.assertNotIn("reprovision_setup_token_digest",self.device())
+        self.assertNotIn("_recovery_protocol_version",self.device())
+        self.assertEqual(self.next().status_code,204)
+        self.assert_binding_wall_preserved()
+
+    def test_actual_bare_build37_lost_ack_then_proof_and_bootstrap(self):
+        self.assertEqual(self.legacy37_reprovision().status_code,202)
+        self.next()  # Physical device may reboot even when its ACK response is lost.
+        self.assertEqual(self.legacy37_reprovision(PROOF).status_code,202)
+        self.assertEqual(self.bootstrap().status_code,200)
+        self.assertNotIn("pending_command",self.device())
+        self.assert_binding_wall_preserved()
+
+    def test_generation_only_legacy_half_flow_recovers_after_reload(self):
+        # Exact intermediate persisted shape produced by the deployed V2 bare begin.
+        self.ns["_queue_reprovision"](self.device(),preserve_binding=True)
+        self.assertTrue(self.device()["recovery_generation"])
+        self.assertNotIn("binding_id",self.device())
+        self.assertNotIn("_recovery_operation",self.device())
+        self.store.data=json.loads(json.dumps(self.store.data))
+        replacement=helper_proxy(self.store);replacement.time=SimpleNamespace(time=lambda:self.now)
+        self.ns["device_recovery"]=replacement;self.helper=replacement
+        self.assertEqual(self.legacy37_reprovision(PROOF).status_code,202)
+        self.assertEqual(self.bootstrap().status_code,200)
+        self.assert_binding_wall_preserved()
+
+    def test_legacy_flow_can_adopt_v2_but_late_bare_requests_cannot_modify_it(self):
+        self.assertEqual(self.legacy37_reprovision().status_code,202)
+        self.assertEqual(self.operation(phase="authorize",proof=PROOF).status_code,202)
+        self.assertEqual(self.device()["_recovery_protocol_version"],2)
+        before=copy.deepcopy(self.store.data)
+        for proof in ("",PROOF):
+            reply=self.legacy37_reprovision(proof)
+            self.assertEqual(reply.status_code,409)
+            self.assertEqual(reply.json()["code"],"recovery_operation_required")
+            self.assertEqual(self.store.data,before)
+
+    def test_v2_marker_survives_operation_invalidation_and_remains_private(self):
+        self.operation(phase="authorize",proof=PROOF);self.bootstrap()
+        self.helper.invalidate_recovery(self.device())
+        self.assertNotIn("_recovery_operation",self.device())
+        self.assertEqual(self.device()["_recovery_protocol_version"],2)
+        self.assertNotIn("_recovery_protocol_version",self.ns["_public_device"](self.device()))
+        before=copy.deepcopy(self.store.data)
+        for proof in ("",PROOF):
+            self.assertEqual(self.legacy37_reprovision(proof).status_code,409)
+            self.assertEqual(self.store.data,before)
+
+    def test_pre_marker_deployed_v2_record_still_rejects_legacy(self):
+        self.operation(phase="authorize",proof=PROOF);self.bootstrap()
+        self.device().pop("_recovery_protocol_version")
+        before=copy.deepcopy(self.store.data)
+        for proof in ("",PROOF):
+            self.assertEqual(self.legacy37_reprovision(proof).status_code,409)
+            self.assertEqual(self.store.data,before)
+
+    def test_new_binding_without_v2_operation_rejects_bare_build37(self):
+        self.helper.start_binding(self.device())
+        self.assertNotIn("_recovery_operation",self.device())
+        before=copy.deepcopy(self.store.data)
+        for proof in ("",PROOF):
+            self.assertEqual(self.legacy37_reprovision(proof).status_code,409)
+            self.assertEqual(self.store.data,before)
+
+    def test_legacy_delete_and_rebind_do_not_reenable_bare_requests(self):
+        self.assertEqual(self.legacy37_reprovision().status_code,202)
+        self.assertEqual(self.delete().status_code,202)
+        self.assertEqual(self.legacy37_reprovision(PROOF).status_code,401)
+        self.status("unbound");self.bootstrap(token="")
+        req=self.ns["DeviceAutoClaimReq"](device_id=ID,setup_token=PROOF,name="synthetic")
+        self.assertEqual(self.ns["device_auto_claim"](req,OWNER).status_code,200)
+        before=copy.deepcopy(self.store.data)
+        self.assertEqual(self.legacy37_reprovision(PROOF).status_code,409)
+        self.assertEqual(self.store.data,before)
 
     def test_delete_still_revokes_binding_and_returns_false(self):
         self.reprovision(proof=PROOF)

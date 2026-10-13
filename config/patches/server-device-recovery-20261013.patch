@@ -25,7 +25,7 @@
 +        if key not in ("device_token", "account_token",
 +                       "setup_token_digest", "setup_token_expires_at",
 +                       "reprovision_setup_token_digest", "reprovision_setup_token_expires_at",
-+                       "_delete_receipts", "_delete_tombstone", "_bootstrap_receipt", "_recovery_operation")
++                       "_delete_receipts", "_delete_tombstone", "_bootstrap_receipt", "_recovery_operation", "_recovery_protocol_version")
      }
 +    if device.get("claimed"):
 +        public["binding_id"] = device_recovery.binding_id(device)
@@ -219,7 +219,7 @@
      return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
  
  
-@@ -1556,30 +1626,114 @@
+@@ -1556,30 +1626,116 @@
      return JSONResponse({"devices": visible})
  
  
@@ -279,12 +279,14 @@
 +            return JSONResponse(status_code=202, content={"device": _public_device(device),
 +                "reprovision_required": True, "preserve_binding": True,
 +                "operation": device_recovery.operation_response(operation)})
-+    elif device.get("recovery_generation") or device.get("binding_id"):
++    elif (device.get("_recovery_protocol_version") == 2 or device.get("binding_id")
++          or isinstance(device.get("_recovery_operation"), dict)):
 +        return JSONResponse(status_code=409, content={"error": "请更新 App 后重新检查设备连接", "code": "recovery_operation_required"})
 +    _queue_reprovision(device, preserve_binding=True)
 +    if operation is not None:
 +        device["recovery_generation"] = operation["generation"]
 +        device["_recovery_operation"] = operation
++        device["_recovery_protocol_version"] = 2
 +    if setup_token:
 +        device["reprovision_setup_token_digest"] = hashlib.sha256(setup_token.encode()).hexdigest()
 +        device["reprovision_setup_token_expires_at"] = time.time() + 600
@@ -353,7 +355,7 @@
  
  
  @app.post("/api/devices/{device_id}/publish")
-@@ -1597,6 +1751,7 @@
+@@ -1597,6 +1753,7 @@
      device = devices_data.get(device_id)
      if not device or not _account_auth(device, x_account_token):
          return JSONResponse(status_code=401, content={"error": "设备授权无效"})
@@ -361,7 +363,7 @@
      if not _is_eink_device(device):
          return JSONResponse(status_code=409, content={"error": "19 寸屏使用实时展示通道，不支持墨水屏帧发布"})
      if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
-@@ -1633,8 +1788,9 @@
+@@ -1633,8 +1790,9 @@
          "error": "",
      })
      display_history.stage(device, revision, title="照片墙画面", image_url=device["preview_url"])
@@ -373,7 +375,7 @@
      return JSONResponse({"device": _public_device(device), "revision": revision})
  
  
-@@ -1649,6 +1805,7 @@
+@@ -1649,6 +1807,7 @@
      device = devices_data.get(device_id)
      if not device or not _account_auth(device, x_account_token):
          return JSONResponse(status_code=401, content={"error": "设备授权无效"})
@@ -381,7 +383,7 @@
      scope = _account_scope(str(device.get("account_token", "")))
      wall = store.load(_scoped_store_name("last_wall", scope), {})
      requested_wall_id = str(req.wall_id if req else "")
-@@ -1675,8 +1832,9 @@
+@@ -1675,8 +1834,9 @@
              "error": "",
          })
          display_history.stage(device, revision, title=wall.get("title", "照片墙画面"), image_url=image_url)
@@ -393,7 +395,7 @@
          await hub.broadcast({"type": "wall", **wall}, target_device_ids={device_id})
          return JSONResponse({
              "device": _public_device(device),
-@@ -1688,8 +1846,9 @@
+@@ -1688,8 +1848,9 @@
          return JSONResponse(status_code=409, content={"error": "当前设备不支持墨水屏帧发布"})
      with open(image_path, "rb") as image_file:
          revision, _ = _queue_device_image(device, image_file.read(), title=wall.get("title", "照片墙画面"))
@@ -405,7 +407,7 @@
      return JSONResponse({"device": _public_device(device), "revision": revision, "wall": wall})
  
  
-@@ -1707,6 +1866,7 @@
+@@ -1707,6 +1868,7 @@
      device = devices_data.get(device_id)
      if not device or not _account_auth(device, x_account_token):
          return JSONResponse(status_code=401, content={"error": "设备授权无效"})
@@ -413,7 +415,7 @@
      if not _is_eink_device(device):
          return JSONResponse(status_code=409, content={"error": "七月日历仅支持 ESP32 墨水屏"})
  
-@@ -1738,8 +1898,9 @@
+@@ -1738,8 +1900,9 @@
      except (GenerationError, OSError, ValueError) as exc:
          return JSONResponse(status_code=500, content={"error": f"七月日历生成失败：{exc}"})
  
@@ -425,7 +427,7 @@
      return JSONResponse({
          "device": _public_device(device),
          "revision": revision,
-@@ -1753,6 +1914,7 @@
+@@ -1753,6 +1916,7 @@
  
  
  @app.get("/api/devices/{device_id}/next")
@@ -433,7 +435,7 @@
  def device_next(device_id: str, revision: str = "", token: str = "") -> Response:
      devices_data = _devices()
      device = devices_data.get(device_id)
-@@ -1763,12 +1925,12 @@
+@@ -1763,12 +1927,12 @@
      if _device_family(device) == DEVICE_FAMILY_WALNUTPI_19IN:
          device["state"] = "online"
          devices_data[device_id] = device
@@ -448,7 +450,7 @@
      if (isinstance(pending, dict) and pending.get("type") == "reprovision"
              and pending.get("preserve_binding") is False
              and not device.get("claimed") and not device.get("account_token")
-@@ -1778,7 +1940,7 @@
+@@ -1778,7 +1942,7 @@
      if isinstance(pending, dict) and pending.get("type") == "reprovision":
          return JSONResponse({
              "command": "reprovision",
@@ -457,7 +459,7 @@
          })
      target = str(device.get("revision", ""))
      if not target or target == revision:
-@@ -1813,6 +1975,7 @@
+@@ -1813,6 +1977,7 @@
  
  
  @app.post("/api/devices/{device_id}/status")
@@ -465,7 +467,7 @@
  def device_status(device_id: str, req: DeviceStatusReq, token: str = "") -> Response:
      devices_data = _devices()
      device = devices_data.get(device_id)
-@@ -1820,11 +1983,27 @@
+@@ -1820,11 +1985,27 @@
          return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
      pending = device.get("pending_command")
      if req.state == "unbound":
@@ -496,7 +498,7 @@
      device.update({
          "state": req.state[:24],
          "progress": max(0.0, min(float(req.progress), 100.0)),
-@@ -1837,7 +2016,7 @@
+@@ -1837,7 +2018,7 @@
          if not req.error:
              display_history.confirm(device, req.revision)
      devices_data[device_id] = device
