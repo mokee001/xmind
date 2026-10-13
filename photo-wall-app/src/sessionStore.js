@@ -7,6 +7,7 @@ const PENDING_SETUP_KEY = 'photowall-pending-setup-v1';
 const PHOTO_SYNC_KEY = 'photowall-photo-sync-v1';
 const RECOVERY_KEY = 'photowall-device-recovery-v1';
 const REMOVALS_KEY = 'photowall-device-removal-attempts-v1';
+const REPROVISION_KEY = 'photowall-device-reprovision-v1';
 let deviceMutationQueue = Promise.resolve();
 
 async function readValue(key) {
@@ -215,6 +216,58 @@ export async function prepareDeviceRemoval(target, guard = {}) {
       await writeValue(REMOVALS_KEY,attempts);
     }
     return {deviceId:attempt.deviceId,bindingId:attempt.bindingId,requestId:attempt.requestId};
+  });
+}
+
+function sameRecoveryBinding(record, target) {
+  return record?.deviceId === target?.device?.device_id && record.accountToken === target.accountToken
+    && (!target.device.binding_id || record.bindingId === target.device.binding_id);
+}
+
+export async function loadDeviceReprovision(target) {
+  const records = await readValue(REPROVISION_KEY) || {};
+  const record = records[target?.device?.device_id];
+  return sameRecoveryBinding(record, target) ? record : null;
+}
+
+export async function prepareDeviceReprovision(target, guard = {}) {
+  return serializeDeviceMutation(async () => {
+    const deviceId = target?.device?.device_id;
+    const stored = await readDeviceSessions();
+    const recoveries = await readValue(RECOVERY_KEY) || {};
+    const source = stored.sessions.find(item => item.device.device_id === deviceId) || recoveries[deviceId]?.session;
+    const valid = () => (!guard.current || guard.current()) && source?.accountToken === target?.accountToken
+      && (!source?.device?.binding_id || source.device.binding_id === target?.device?.binding_id);
+    if (!deviceId || !valid()) throw Object.assign(new Error('设备绑定已变化，请重新打开连接流程。'), {code:'DEVICE_BINDING_CHANGED'});
+    const records = await readValue(REPROVISION_KEY) || {};
+    if (!valid()) throw Object.assign(new Error('设备绑定已变化，请重新打开连接流程。'), {code:'DEVICE_BINDING_CHANGED'});
+    if (!guard.newOperation && sameRecoveryBinding(records[deviceId], target)) return records[deviceId];
+    const bindingId = target.device.binding_id, expectedGeneration = target.device.recovery_generation;
+    if (!bindingId || typeof expectedGeneration !== 'string' || !expectedGeneration) {
+      throw Object.assign(new Error('服务暂未提供安全重新配网能力，请稍后重试。'), {code:'REPROVISION_PROTOCOL_REQUIRED'});
+    }
+    const operationId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+      const random = Math.floor(Math.random() * 16); return (char === 'x' ? random : (random & 3) | 8).toString(16);
+    });
+    const operation = {deviceId,accountToken:target.accountToken,bindingId,expectedGeneration,operationId};
+    records[deviceId] = operation;
+    // Persist the exact intent before either HTTP phase. Timeouts/closing never rebase it.
+    await writeValue(REPROVISION_KEY, records);
+    if (!valid()) throw Object.assign(new Error('连接操作已取消，已保留本次恢复记录。'), {code:'DEVICE_BINDING_CHANGED'});
+    return operation;
+  });
+}
+
+export async function clearDeviceReprovision(operation, guard = {}) {
+  if (!operation?.deviceId) return;
+  return serializeDeviceMutation(async () => {
+    const records = await readValue(REPROVISION_KEY) || {};
+    const record = records[operation.deviceId];
+    if (guard.current && !guard.current()) throw Object.assign(new Error('设备连接操作已变化。'), {code:'DEVICE_BINDING_CHANGED'});
+    if (!record || record.operationId !== operation.operationId || record.bindingId !== operation.bindingId
+      || record.accountToken !== operation.accountToken) return;
+    delete records[operation.deviceId];
+    await writeValue(REPROVISION_KEY, records);
   });
 }
 

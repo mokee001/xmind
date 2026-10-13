@@ -133,15 +133,67 @@ def tombstone(device):
     return {"device_id": device["device_id"], "device_family": device.get("device_family"),
             "created_at": device.get("created_at"), "claimed": False,
             "account_token": "", "device_token": "", "state": "unbound",
-            "_delete_tombstone": True, "_delete_receipts": receipts(device)}
+            "_delete_tombstone": True, "_delete_receipts": receipts(device),
+            "recovery_generation": secrets.token_urlsafe(24)}
 
 
 def start_binding(device):
+    invalidate_recovery(device)
     device.pop("_bootstrap_receipt", None)
     device["binding_id"] = secrets.token_urlsafe(24)
     # The existing history key contains created_at. Change it only when starting
     # a new binding, never for Wi-Fi reconfiguration, to isolate old history.
     device["created_at"] = time.time()
+
+
+def recovery_generation(device):
+    explicit = str(device.get("recovery_generation", ""))
+    return explicit or "legacy-" + hashlib.sha256(("device-recovery:" + binding_id(device)).encode()).hexdigest()
+
+
+def invalidate_recovery(device):
+    device["recovery_generation"] = secrets.token_urlsafe(24)
+    device.pop("_recovery_operation", None)
+
+
+def operation_transition(device, operation_id, expected_generation, phase, setup_token):
+    """Validate without modifying state; old generations can never be rebased."""
+    current = device.get("_recovery_operation")
+    proof = hashlib.sha256(setup_token.encode()).hexdigest() if setup_token else ""
+    if isinstance(current, dict) and current.get("id") == operation_id:
+        if (current.get("binding_id") != binding_id(device)
+                or current.get("from_generation") != expected_generation
+                or current.get("generation") != recovery_generation(device)):
+            return None, "recovery_operation_conflict", False
+        if phase == "enter_setup":
+            return copy.deepcopy(current), "", False
+        if current.get("stage") in ("authorized", "completed"):
+            if not hmac.compare_digest(str(current.get("proof_digest", "")), proof):
+                return None, "recovery_operation_conflict", False
+            return copy.deepcopy(current), "", False
+        operation = copy.deepcopy(current)
+    else:
+        if expected_generation != recovery_generation(device):
+            return None, "recovery_generation_changed", False
+        operation = {"id": operation_id, "binding_id": binding_id(device),
+                     "from_generation": expected_generation, "generation": secrets.token_urlsafe(24),
+                     "stage": "entered"}
+    if phase == "authorize":
+        operation.update(stage="authorized", proof_digest=proof)
+    return operation, "", True
+
+
+def operation_response(operation):
+    return {key: operation[key] for key in ("id", "binding_id", "from_generation", "generation", "stage")}
+
+
+def complete_recovery(device, setup_token):
+    current = device.get("_recovery_operation")
+    if (isinstance(current, dict) and current.get("stage") == "authorized"
+            and current.get("binding_id") == binding_id(device)
+            and current.get("generation") == recovery_generation(device)
+            and hmac.compare_digest(str(current.get("proof_digest", "")), hashlib.sha256(setup_token.encode()).hexdigest())):
+        current["stage"] = "completed"
 
 
 def _bootstrap_identity(device):

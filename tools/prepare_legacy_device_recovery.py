@@ -45,9 +45,10 @@ replace_function("_public_device", lambda s: s.replace(
     '"reprovision_setup_token_digest", "reprovision_setup_token_expires_at")',
     '"setup_token_digest", "setup_token_expires_at",\n'
     '                       "reprovision_setup_token_digest", "reprovision_setup_token_expires_at",\n'
-    '                       "_delete_receipts", "_delete_tombstone", "_bootstrap_receipt")').replace(
+    '                       "_delete_receipts", "_delete_tombstone", "_bootstrap_receipt", "_recovery_operation")').replace(
     '    if hub.connected(', '    if device.get("claimed"):\n'
     '        public["binding_id"] = device_recovery.binding_id(device)\n'
+    '        public["recovery_generation"] = device_recovery.recovery_generation(device)\n'
     '    if hub.connected('))
 
 
@@ -75,10 +76,13 @@ def bootstrap(s):
         '    if previous_receipts:\n'
         '        device["_delete_receipts"] = previous_receipts\n'
         '    device.update({\n', 1)
+    s = s.replace('        device.pop("pending_command", None)\n',
+        '        device_recovery.complete_recovery(device, setup_token)\n'
+        '        device.pop("pending_command", None)\n')
     return s
 replace_function("device_bootstrap", bootstrap)
 replace_function("_queue_reprovision", lambda s: s.replace(
-    '    device["pending_command"] = {\n', '    device.pop("_bootstrap_receipt", None)\n    device["pending_command"] = {\n'))
+    '    device["pending_command"] = {\n', '    device.pop("_bootstrap_receipt", None)\n    device_recovery.invalidate_recovery(device)\n    device["pending_command"] = {\n'))
 
 
 def claim(s):
@@ -148,6 +152,20 @@ replace_function("device_delete", lambda _: '''def device_delete(
 replace_function("device_status", lambda s: s.replace(
     '        devices_data.pop(device_id, None)\n',
     '        devices_data[device_id] = device_recovery.tombstone(device)\n'))
+
+replace_function("DeviceReprovisionReq", lambda s: s + '\n    operation_id: str = ""\n    expected_generation: str = ""\n    phase: str = ""\n')
+replace_function("device_reprovision", lambda _: 'def device_reprovision(\n    device_id: str,\n    req: DeviceReprovisionReq | None = None,\n    x_account_token: str = Header(default=""),\n    x_device_binding: str = Header(default=""),\n) -> Response:\n    """Owner-scoped setup operations fence late begin/proof requests."""\n    devices_data = _devices()\n    device = devices_data.get(device_id)\n    if not device or not device.get("claimed") or not _account_auth(device, x_account_token):\n        return JSONResponse(status_code=401, content={"error": "设备授权无效"})\n    if _device_family(device) == DEVICE_FAMILY_WALNUTPI_19IN:\n        return JSONResponse(status_code=400, content={"error": "19 寸屏无需重新配网"})\n    setup_token = req.setup_token.strip() if req else ""\n    operation_id = req.operation_id.strip() if req else ""\n    expected_generation = req.expected_generation.strip() if req else ""\n    phase = req.phase.strip() if req else ""\n    binding = x_device_binding.strip()\n    if setup_token and not 24 <= len(setup_token) <= 256:\n        return JSONResponse(status_code=400, content={"error": "设备配网凭据无效"})\n    operation = None\n    if operation_id or expected_generation or phase or binding:\n        if (not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", operation_id)\n                or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", expected_generation)\n                or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", binding)\n                or phase not in ("enter_setup", "authorize")\n                or (phase == "authorize" and not setup_token)\n                or (phase == "enter_setup" and setup_token)):\n            return JSONResponse(status_code=400, content={"error": "配网操作信息不完整", "code": "recovery_operation_invalid"})\n        if binding != device_recovery.binding_id(device):\n            return JSONResponse(status_code=409, content={"error": "设备绑定已变化，请重新检查连接", "code": "device_binding_changed"})\n        operation, error_code, changed = device_recovery.operation_transition(\n            device, operation_id, expected_generation, phase, setup_token)\n        if error_code:\n            return JSONResponse(status_code=409, content={"error": "已有新的配网操作，请返回后重新检查连接", "code": error_code})\n        if not changed:\n            if (operation["stage"] == "authorized"\n                    and float(device.get("reprovision_setup_token_expires_at", 0)) < time.time()):\n                return JSONResponse(status_code=409, content={"error": "本次配网确认已过期，请重新开始连接", "code": "recovery_operation_expired"})\n            return JSONResponse(status_code=202, content={"device": _public_device(device),\n                "reprovision_required": True, "preserve_binding": True,\n                "operation": device_recovery.operation_response(operation)})\n    elif device.get("recovery_generation") or device.get("binding_id"):\n        return JSONResponse(status_code=409, content={"error": "请更新 App 后重新检查设备连接", "code": "recovery_operation_required"})\n    _queue_reprovision(device, preserve_binding=True)\n    if operation is not None:\n        device["recovery_generation"] = operation["generation"]\n        device["_recovery_operation"] = operation\n    if setup_token:\n        device["reprovision_setup_token_digest"] = hashlib.sha256(setup_token.encode()).hexdigest()\n        device["reprovision_setup_token_expires_at"] = time.time() + 600\n    devices_data[device_id] = device\n    device_recovery.save_devices(devices_data)\n    response = {"device": _public_device(device), "reprovision_required": True, "preserve_binding": True}\n    if operation is not None:\n        response["operation"] = device_recovery.operation_response(operation)\n    return JSONResponse(status_code=202, content=response)\n')
+replace_function("device_status", lambda s: s.replace(
+    '        device.pop("pending_command", None)\n',
+    '        if isinstance(device.get("_recovery_operation"), dict):\n'
+    '            # Old firmware ACK has no operation identity. Observe it without\n'
+    '            # clearing a newer proof or moving authoritative state backwards.\n'
+    '            device["last_seen"] = time.time()\n'
+    '            device["ip"] = req.ip or device.get("ip", "")\n'
+    '            devices_data[device_id] = device\n'
+    '            device_recovery.save_devices(devices_data)\n'
+    '            return JSONResponse({"ok": True})\n'
+    '        device.pop("pending_command", None)\n'))
 
 # Only fast synchronous metadata handlers hold the short cross-process lock.
 sync_writers = {"device_bootstrap", "device_claim", "device_auto_claim", "device_delete",

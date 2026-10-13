@@ -69,6 +69,9 @@ import {
   removeDeviceSession,
   forgetDeviceSession,
   prepareDeviceRemoval,
+  loadDeviceReprovision,
+  prepareDeviceReprovision,
+  clearDeviceReprovision,
   loadDeviceRecovery,
   loadLocallyRemovedDeviceIds,
   saveDeviceSession,
@@ -417,13 +420,14 @@ function createProvisionStatusWaiter(timeoutMs = 120000) {
   };
 }
 
-async function claimProvisionedDevice({ device, status }) {
+async function claimProvisionedDevice({ device, status, isCurrent = () => true }) {
   const deviceId = status?.deviceId || device?.deviceId;
   const setupToken = device?.setupToken;
   if (!deviceId || !setupToken) throw new Error('设备身份信息不完整，请重新连接照片墙');
 
   let lastError;
   for (let attempt = 0; attempt < 15; attempt += 1) {
+    if (!isCurrent()) throw Object.assign(new Error('本次连接操作已取消。'), {name:'AbortError'});
     try {
       const claimed = await autoClaimDisplay({
         apiBase: DEFAULT_API_BASE,
@@ -431,6 +435,7 @@ async function claimProvisionedDevice({ device, status }) {
         setupToken,
         name: device?.deviceName || '客厅照片墙',
       });
+      if (!isCurrent()) throw Object.assign(new Error('本次连接操作已取消。'), {name:'AbortError'});
       return {
         device: claimed.device,
         accountToken: claimed.account_token,
@@ -439,12 +444,39 @@ async function claimProvisionedDevice({ device, status }) {
       };
     } catch (error) {
       lastError = error;
+      if (!isCurrent() || error.name === 'AbortError') throw error;
       if ([401,403].includes(error.status)) throw new Error('当前凭据无法恢复云端绑定，请使用原管理员账户或联系支持；本次没有解除他人的设备绑定。');
       if (attempt < 14) await wait(1000);
     }
   }
   throw new Error(`设备已联网，但自动绑定失败：${lastError?.message || '请稍后重试'}`);
 }
+
+const sendReprovisionOperation = async ({session,phase,setupToken = '',signal,isCurrent = () => true,newOperation = false}) => {
+  return withDeviceStatusTimeout(async requestSignal => {
+    const current = () => !requestSignal.aborted && isCurrent();
+    const assertCurrent = () => {
+      if (!current()) throw Object.assign(new Error('本次连接操作已取消。'), {name:'AbortError'});
+    };
+    assertCurrent();
+    let operation = newOperation ? null : await loadDeviceReprovision(session);
+    assertCurrent();
+    if (!operation) {
+      const device = await readDisplayStatus({apiBase:DEFAULT_API_BASE,deviceId:session.device.device_id,
+        accountToken:session.accountToken,signal:requestSignal});
+      assertCurrent();
+      if (session.device.binding_id && device.binding_id !== session.device.binding_id) {
+        throw Object.assign(new Error('设备绑定已变化，请返回设备管理重新检查。'), {code:'DEVICE_BINDING_CHANGED'});
+      }
+      operation = await prepareDeviceReprovision({...session,device}, {current,newOperation});
+    }
+    assertCurrent();
+    const result = await reprovisionDisplay({apiBase:DEFAULT_API_BASE,deviceId:session.device.device_id,
+      accountToken:session.accountToken,setupToken,operation,phase,signal:requestSignal});
+    assertCurrent();
+    return {...result,operationIntent:operation};
+  }, {signal,timeoutMs:10000});
+};
 
 const REAL_DEVICE_SETUP_ADAPTER = {
   startDeviceDiscovery: startBleDeviceDiscovery,
@@ -457,15 +489,18 @@ const REAL_DEVICE_SETUP_ADAPTER = {
   scanWifiNetworks: scanBleWifiNetworks,
   subscribeProvisionStatus: subscribeBleProvisionStatus,
   cancelProvisioning: cancelBleProvisioning,
-  provisionWifi: async ({ ssid, password, device, existingSession }) => {
+  provisionWifi: async ({ ssid, password, device, existingSession, isCurrent = () => true, newOperation = false }) => {
     let retained = existingSession || device?.recoverySession;
     if (retained && retained.device?.device_id !== device?.deviceId) throw new Error('连接到的不是原照片墙，请重新选择。');
     const waiter = createProvisionStatusWaiter();
+    let operationIntent;
+    const assertCurrent = () => { if (!isCurrent()) throw Object.assign(new Error('本次连接操作已取消。'), {name:'AbortError'}); };
     try {
+      assertCurrent();
       if (retained?.device?.device_id) {
         try {
-          const result = await reprovisionDisplay({apiBase:DEFAULT_API_BASE,deviceId:retained.device.device_id,
-            accountToken:retained.accountToken,setupToken:device?.setupToken});
+          const result = await sendReprovisionOperation({session:retained,phase:'authorize',setupToken:device?.setupToken,isCurrent,newOperation});
+          operationIntent = result.operationIntent;
           const changedBinding = retained.device.binding_id && result.device?.binding_id
             && retained.device.binding_id !== result.device.binding_id;
           retained = {...retained,device:{...retained.device,...result.device},
@@ -478,15 +513,17 @@ const REAL_DEVICE_SETUP_ADAPTER = {
           else throw error;
         }
       }
+      assertCurrent();
       await provisionBleWifi({ ssid, password, apiBase: DEFAULT_API_BASE });
       const status = await waiter.promise;
+      assertCurrent();
       const deviceId = status?.deviceId || device?.deviceId;
       if (deviceId !== device?.deviceId) throw new Error('连接到的不是原照片墙，请重新选择。');
       if (retained?.device?.device_id) {
-        return {...retained,apiBase:DEFAULT_API_BASE,localUrl:status?.localUrl || localUrlForDevice(deviceId),
+        return {...retained,reprovisionOperation:operationIntent,apiBase:DEFAULT_API_BASE,localUrl:status?.localUrl || localUrlForDevice(deviceId),
           device:{...retained.device,state:'online',error:''}};
       }
-      const claimed = await claimProvisionedDevice({ device, status });
+      const claimed = await claimProvisionedDevice({ device, status, isCurrent });
       return device?.recoverySession?.recoveryPreferenceProfile
         ? {...claimed,recoveryPreferenceProfile:device.recoverySession.recoveryPreferenceProfile} : claimed;
     } catch (error) { waiter.cancel(); throw error; }
@@ -1237,6 +1274,8 @@ function PhotoWallApp() {
   const [session, setSession] = useState(null);
   const [deviceSessions, setDeviceSessions] = useState([]);
   const [reconfigurationSession, setReconfigurationSession] = useState(null);
+  const [reprovisionWake, setReprovisionWake] = useState(null);
+  const reprovisionWakeRef = useRef(null);
   const screenMotion = useRef(new Animated.Value(1)).current;
   const accountPreparationRef = useRef(null);
   const [webConnected, setWebConnected] = useState(DIRECT_WALL_PREVIEW);
@@ -1378,7 +1417,8 @@ function PhotoWallApp() {
     wallRequestScopeRef.current = { bindingKey: wallBindingKey, deviceId: preferenceDeviceKey,
       bindingEpoch: wallRequestScopeRef.current.bindingEpoch + 1, sequence: 0 };
   }
-  const historyScopeKey = JSON.stringify([wallBindingKey, wallRequestScopeRef.current.bindingEpoch]);
+  const renderedBindingEpoch = wallRequestScopeRef.current.bindingEpoch;
+  const historyScopeKey = JSON.stringify([wallBindingKey, renderedBindingEpoch]);
   const historyScopeRef = useRef('');
   const renderedManagementEpoch = deviceManagementEpochRef.current;
   const wallOperationRef = useRef(null);
@@ -2064,6 +2104,7 @@ function PhotoWallApp() {
       const saved = sessions.find(item => item.device.device_id === stored.activeDeviceId) || sessions[0];
       if (pending?.kind === 'reconfigure' && sessions.some(item => sameManagedDevice(item, pending.session) && (item.device.binding_id || '') === (pending.session?.device?.binding_id || ''))) {
         setReconfigurationSession(normalizeDeviceSession(pending.session));
+        setReprovisionWake({state:'paused',message:'上次配网尚未完成。可以继续请求屏幕进入配网，或搜索已进入配网的原设备。'});
         if (saved) setSession(saved);
         openDeviceSurface('setup');
         setActiveTab('manage');
@@ -2977,6 +3018,8 @@ function PhotoWallApp() {
       ? await updateDeviceSession(normalized, {current, expectedAccountToken:reconfigurationSession.accountToken})
       : await saveDeviceSession(normalized, {current});
     if (!current()) return;
+    if (next.reprovisionOperation) await clearDeviceReprovision(next.reprovisionOperation, {current});
+    if (!current()) return;
     deviceManagementEpochRef.current += 1;
     wallRequestScopeRef.current = {...wallRequestScopeRef.current, bindingEpoch:wallRequestScopeRef.current.bindingEpoch + 1,
       sequence:wallRequestScopeRef.current.sequence + 1};
@@ -3317,6 +3360,9 @@ function PhotoWallApp() {
   };
 
   const closeDeviceSetup = async () => {
+    reprovisionWakeRef.current?.controller.abort();
+    reprovisionWakeRef.current = null;
+    setReprovisionWake(null);
     deviceManagementEpochRef.current += 1;
     const wasReconfiguring = Boolean(reconfigurationSession?.device?.device_id);
     if (!pendingDeviceSurfaceRef.current) openDeviceSurface(wasReconfiguring ? 'manage' : null);
@@ -3333,6 +3379,31 @@ function PhotoWallApp() {
     }
   };
 
+  const wakeReconfiguration = async (targetSession, newOperation = false) => {
+    reprovisionWakeRef.current?.controller.abort();
+    const request = {controller:new AbortController(),epoch:deviceManagementEpochRef.current};
+    reprovisionWakeRef.current = request;
+    const current = () => reprovisionWakeRef.current === request && !request.controller.signal.aborted
+      && request.epoch === deviceManagementEpochRef.current
+      && latestDeviceSessionsRef.current.some(item => sameManagedDevice(item,targetSession)
+        && (item.device.binding_id || '') === (targetSession.device.binding_id || ''));
+    setReprovisionWake({state:'waking',message:'正在请求照片墙进入配网模式…'});
+    try {
+      const result = await sendReprovisionOperation({session:targetSession,phase:'enter_setup',
+        signal:request.controller.signal,isCurrent:current,newOperation});
+      if (!current()) return;
+      setReprovisionWake({state:'requested',message:result.operation.stage === 'completed'
+        ? '这次配网已在服务端完成。若仍需更换网络，可以重新开始本次配网。'
+        : '已请求照片墙进入配网模式。请靠近屏幕，搜索附近设备。',canRestart:result.operation.stage === 'completed'});
+    } catch (caught) {
+      if (!current()) return;
+      const conflict = caught.status === 409 || caught.code === 'DEVICE_BINDING_CHANGED';
+      setReprovisionWake({state:'failed',canRestart:caught.status === 409,
+        message:conflict ? '这次配网记录已变化。请重新开始本次配网，不会自动覆盖另一轮操作。'
+          : `${serviceFailureMessage(caught)}尚未确认屏幕进入配网；已进入配网的设备仍可通过蓝牙搜索。`});
+    } finally { if (reprovisionWakeRef.current === request) reprovisionWakeRef.current = null; }
+  };
+
   const reconfigureManagedDevice = targetSession => runManagedDeviceAction(targetSession, async current => {
     if (!targetSession?.device?.device_id || !targetSession.accountToken) throw new Error('暂时无法确认管理员权限，已保留设备。');
     if (isScreen19Device(targetSession.device)) throw new Error('19 寸屏无需重新配网');
@@ -3342,9 +3413,8 @@ function PhotoWallApp() {
     setAddingDevice(false);
     setInitialSetupDevice(null);
     openDeviceSurface('setup');
-    setNotice('请靠近原照片墙通过蓝牙重新连接。若屏幕离线且搜不到设备，需要在屏幕上重新进入配网模式。');
-    // Authorize once, after receiving fresh BLE setup proof. A delayed preflight
-    // command could otherwise invalidate that proof or restart completed setup.
+    setNotice('正在请求照片墙进入配网模式；也可以搜索已经进入配网的原设备。');
+    if (!IS_WEB_PREVIEW) wakeReconfiguration(targetSession);
   });
 
   const switchDevice = async next => {
@@ -3758,6 +3828,10 @@ function PhotoWallApp() {
           onDismiss={() => finishDeviceSurfaceTransition('setup')}
           session={null}
           existingSession={reconfigurationSession}
+          isSessionCurrent={() => renderedManagementEpoch === deviceManagementEpochRef.current && renderedBindingEpoch === wallRequestScopeRef.current.bindingEpoch}
+          wakeStatus={reprovisionWake}
+          onWakeRetry={() => reconfigurationSession && wakeReconfiguration(reconfigurationSession)}
+          onRestartRecovery={() => reconfigurationSession && wakeReconfiguration(reconfigurationSession,true)}
           initialDevice={initialSetupDevice}
           autoDiscover={false}
           autoFinish={needsOnboarding && !addingDevice && !reconfigurationSession}
@@ -4155,6 +4229,10 @@ function PhotoWallApp() {
           onDismiss={() => finishDeviceSurfaceTransition('setup')}
           session={null}
           existingSession={reconfigurationSession}
+          isSessionCurrent={() => renderedManagementEpoch === deviceManagementEpochRef.current && renderedBindingEpoch === wallRequestScopeRef.current.bindingEpoch}
+          wakeStatus={reprovisionWake}
+          onWakeRetry={() => reconfigurationSession && wakeReconfiguration(reconfigurationSession)}
+          onRestartRecovery={() => reconfigurationSession && wakeReconfiguration(reconfigurationSession,true)}
           initialDevice={initialSetupDevice}
           autoDiscover={false}
           previewMode={IS_WEB_PREVIEW}

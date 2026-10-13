@@ -877,7 +877,7 @@ export async function listDisplays({ apiBase, accountToken, signal }) {
   }, {signal});
 }
 
-export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, setupToken = '', signal }) {
+export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, setupToken = '', signal, operation, phase }) {
   const result = await requestJson(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/reprovision`,
     {
@@ -886,13 +886,23 @@ export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId,
       headers: {
         'Content-Type': 'application/json',
         'X-Account-Token': accountToken,
+        ...(operation ? {'X-Device-Binding':operation.bindingId} : {}),
       },
-      body: JSON.stringify({ setup_token: setupToken }),
+      body: JSON.stringify({ setup_token: setupToken, ...(operation ? {operation_id:operation.operationId,
+        expected_generation:operation.expectedGeneration,phase} : {}) }),
     },
     10000,
   );
   if (result?.device?.device_id !== deviceId || result.reprovision_required !== true) {
     throw invalidResponse('服务尚未确认重新配网，请重试。');
+  }
+  if (operation && (result.device.binding_id !== operation.bindingId || result.operation?.id !== operation.operationId
+    || result.operation.binding_id !== operation.bindingId || result.operation.from_generation !== operation.expectedGeneration
+    || typeof result.operation.generation !== 'string' || !result.operation.generation
+    || result.device.recovery_generation !== result.operation.generation
+    || !['entered','authorized','completed'].includes(result.operation.stage)
+    || (phase === 'authorize' && result.operation.stage === 'entered'))) {
+    throw invalidResponse('服务返回的重新配网记录不匹配，已保留本次操作，请重试。');
   }
   return result;
 }

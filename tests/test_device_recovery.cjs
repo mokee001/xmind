@@ -104,7 +104,7 @@ test('actual modal coordinator waits for matching iOS onDismiss across manage/ad
   }
 });
 
-function adapter(extra={}){const events=[];const context={startBleDeviceDiscovery:()=>{},stopBleDeviceDiscovery:()=>{},connectBleProvisioningDevice:async()=>({deviceId:'screen',setupToken:'physical-proof'}),loadDeviceRecovery:async()=>({session:s()}),scanBleWifiNetworks:()=>{},subscribeBleProvisionStatus:()=>{},cancelBleProvisioning:()=>{},createProvisionStatusWaiter:()=>({promise:Promise.resolve({deviceId:'screen',localUrl:'http://fixture.invalid'}),cancel:()=>events.push('cancel')}),reprovisionDisplay:async options=>{events.push(['authorize',options]);return{device:s().device}},provisionBleWifi:async()=>events.push('wifi'),claimProvisionedDevice:async()=>{events.push('claim');return{accountToken:'new-owner',device:{device_id:'screen',binding_id:'new-binding'}}},localUrlForDevice:()=>'',DEFAULT_API_BASE:'https://fixture.invalid',...extra};return{events,api:value('REAL_DEVICE_SETUP_ADAPTER',context)}}
+function adapter(extra={}){const events=[];const context={startBleDeviceDiscovery:()=>{},stopBleDeviceDiscovery:()=>{},connectBleProvisioningDevice:async()=>({deviceId:'screen',setupToken:'physical-proof'}),loadDeviceRecovery:async()=>({session:s()}),scanBleWifiNetworks:()=>{},subscribeBleProvisionStatus:()=>{},cancelBleProvisioning:()=>{},createProvisionStatusWaiter:()=>({promise:Promise.resolve({deviceId:'screen',localUrl:'http://fixture.invalid'}),cancel:()=>events.push('cancel')}),reprovisionDisplay:async options=>{events.push(['authorize',options]);return{device:s().device}},provisionBleWifi:async()=>events.push('wifi'),claimProvisionedDevice:async()=>{events.push('claim');return{accountToken:'new-owner',device:{device_id:'screen',binding_id:'new-binding'}}},localUrlForDevice:()=>'',DEFAULT_API_BASE:'https://fixture.invalid',...extra};context.sendReprovisionOperation=({session,setupToken})=>context.reprovisionDisplay({accountToken:session.accountToken,setupToken});return{events,api:value('REAL_DEVICE_SETUP_ADAPTER',context)}}
 test('physical same-device recovery uses retained owner plus fresh setup proof and preserves publication',async()=>{
   const f=adapter(),device=await f.api.connectProvisioningDevice('screen'),result=await f.api.provisionWifi({ssid:'synthetic',password:'',device});
   assert.equal(f.events[0][0],'authorize');assert.equal(f.events[0][1].setupToken,'physical-proof');assert.equal(f.events[0][1].accountToken,'fixture-owner');assert.equal(f.events[1],'wifi');
@@ -124,11 +124,11 @@ test('wrong physical device, network failure, or server ownership rejection cann
   f=adapter({reprovisionDisplay:async()=>{throw Object.assign(Error('missing'),{status:401})},claimProvisionedDevice:async()=>{throw Object.assign(Error('still owned'),{status:403})}});device=await f.api.connectProvisioningDevice('screen');await assert.rejects(f.api.provisionWifi({device}),/still owned/);assert.ok(f.events.includes('cancel'));
 });
 
-test('explicit reprovision opens BLE with no racing cloud preflight',async()=>{
+test('explicit reprovision opens BLE before waiting for its guarded cloud wake operation',async()=>{
   const opened=[],bound=s();let requests=0;
   const context={session:bound,deviceSessions:[bound],canManageCurrentDevice:true,IS_WEB_PREVIEW:false,isScreen19Device:()=>false,
-    runManagedDeviceAction:(_,action)=>action(()=>true),savePendingDeviceSetup:async()=>{},setReconfigurationSession:x=>opened.push(x),setAddingDevice:()=>{},setInitialSetupDevice:()=>{},openDeviceSurface:x=>opened.push(x),setNotice:()=>{},reprovisionDisplay:()=>{requests++;return new Promise(()=>{})},DEFAULT_API_BASE:'https://fixture.invalid'};
-  await value('reconfigureManagedDevice',context)(bound);assert.ok(opened.includes('setup'));assert.equal(requests,0);
+    runManagedDeviceAction:(_,action)=>action(()=>true),savePendingDeviceSetup:async()=>{},setReconfigurationSession:x=>opened.push(x),setAddingDevice:()=>{},setInitialSetupDevice:()=>{},openDeviceSurface:x=>opened.push(x),setNotice:()=>{},wakeReconfiguration:()=>{requests++;return new Promise(()=>{})},DEFAULT_API_BASE:'https://fixture.invalid'};
+  await value('reconfigureManagedDevice',context)(bound);assert.ok(opened.includes('setup'));assert.equal(requests,1);
 });
 
 test('empty cloud profile cannot erase recovered preferences after a same-device claim uses a new account',async()=>{
@@ -190,4 +190,108 @@ test('forgetting another-account non-current device never copies the active devi
   const context={runManagedDeviceAction:(_,action)=>action(()=>true),sameManagedDevice:network.sameManagedDevice,latestWallSessionRef:{current:active},preferenceProfile:profile,
     IS_WEB_PREVIEW:false,forgetDeviceSession:async x=>{saved=x;return{sessions:[active],activeDeviceId:'active'}},applyDeviceRemoval:()=>{},setNotice:()=>{},setAddingDevice:()=>{},setInitialSetupDevice:()=>{},openDeviceSurface:()=>{}};
   await value('forgetManagedDevice',context)(target);assert.equal(saved.recoveryPreferenceProfile,undefined);
+});
+
+function operationRunner(f,{read,post,timeoutMs=10000}={}) {
+  return value('sendReprovisionOperation',{withDeviceStatusTimeout:(fn,opts)=>status.withDeviceStatusTimeout(fn,{...opts,timeoutMs}),
+    loadDeviceReprovision:f.store.loadDeviceReprovision,prepareDeviceReprovision:f.store.prepareDeviceReprovision,
+    readDisplayStatus:read||(async()=>({...s().device,recovery_generation:'gen-0'})),
+    reprovisionDisplay:post||(async ({operation,phase})=>({device:{...s().device,recovery_generation:'gen-1'},
+      operation:{id:operation.operationId,binding_id:operation.bindingId,from_generation:operation.expectedGeneration,generation:'gen-1',stage:phase==='authorize'?'authorized':'entered'}})),DEFAULT_API_BASE:'https://fixture.invalid'});
+}
+
+test('legacy session obtains binding and generation read-only, persists the shared intent before either phase',async()=>{
+  const f=storage(),legacy={...s(),device:{device_id:'screen'}};await f.store.saveDeviceSession(legacy);
+  const events=[],messages=[];
+  const send=operationRunner(f,{read:async()=>{events.push('read');return{device_id:'screen',binding_id:'binding-a',recovery_generation:'gen-0'}},post:async body=>{assert.ok(f.values.has('photowall-device-reprovision-v1'));events.push(body.phase);messages.push(body);return{device:{device_id:'screen'}}}});
+  await send({session:legacy,phase:'enter_setup'});await send({session:legacy,phase:'authorize',setupToken:'fresh-physical-proof'});
+  assert.deepEqual(events,['read','enter_setup','authorize']);assert.deepEqual(messages[0].operation,messages[1].operation);
+  assert.equal(messages[1].operation.bindingId,'binding-a');assert.equal(messages[1].operation.expectedGeneration,'gen-0');
+  assert.equal((await f.store.loadDeviceSession()).device.binding_id,undefined,'metadata lookup must not switch the active binding or invalidate its UI');
+});
+
+test('a lost enter response and reopening reuse durable operation ID and original generation without rebasing',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());let first=true,reads=0;const attempts=[];
+  const options={read:async()=>{reads++;return{...s().device,recovery_generation:'gen-0'}},post:async body=>{attempts.push(body.operation);if(first){first=false;throw Object.assign(Error('lost response'),{code:'SERVICE_TIMEOUT'})}return{device:s().device}}};
+  await assert.rejects(operationRunner(f,options)({session:s(),phase:'enter_setup'}),{code:'SERVICE_TIMEOUT'});
+  // Recreate the orchestration function: no in-memory operation reference is reused.
+  await operationRunner(f,options)({session:s(),phase:'enter_setup'});
+  assert.equal(reads,1);assert.deepEqual(attempts[0],attempts[1]);assert.ok(await f.store.loadDeviceReprovision(s()));
+});
+
+test('persistent operation write failure never dispatches either cloud phase',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());let posted=0;
+  f.hooks.set=async key=>{if(key==='photowall-device-reprovision-v1')throw Error('keychain unavailable')};
+  const send=operationRunner(f,{post:async()=>posted++});
+  for(const phase of ['enter_setup','authorize'])await assert.rejects(send({session:s(),phase}),/keychain/);
+  assert.equal(posted,0);assert.equal((await f.store.loadDeviceSession()).accountToken,s().accountToken);
+});
+
+test('concurrent wake and physical authorization share the serialized durable intent, including proof arriving first',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());const gate=deferred(),calls=[];
+  const send=operationRunner(f,{read:()=>gate.promise,post:async body=>{calls.push(body);return{device:s().device}}});
+  const proof=send({session:s(),phase:'authorize',setupToken:'fresh-proof'}),enter=send({session:s(),phase:'enter_setup'});
+  gate.resolve({...s().device,recovery_generation:'gen-0'});await Promise.all([proof,enter]);
+  assert.equal(calls.length,2);assert.equal(calls[0].operation.operationId,calls[1].operation.operationId);assert.equal(calls[0].operation.expectedGeneration,calls[1].operation.expectedGeneration);
+});
+
+test('cancelled or changed binding cannot persist a late lookup or send a cloud command; an already sent intent remains recoverable',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());let active=true,posted=0;const gate=deferred();
+  const pending=operationRunner(f,{read:()=>gate.promise,post:async()=>posted++})({session:s(),phase:'enter_setup',isCurrent:()=>active});
+  active=false;gate.resolve({...s().device,recovery_generation:'gen-0'});await assert.rejects(pending,{name:'AbortError'});assert.equal(posted,0);assert.equal(await f.store.loadDeviceReprovision(s()),null);
+  active=true;const reply=deferred();const sent=operationRunner(f,{post:()=>{posted++;return reply.promise}})({session:s(),phase:'enter_setup',isCurrent:()=>active});await flush();active=false;reply.resolve({device:s().device});await assert.rejects(sent,{name:'AbortError'});assert.ok(await f.store.loadDeviceReprovision(s()));
+});
+
+test('409 is not automatically rebased, and only explicit new operation reads fresh generation and changes ID',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());let reads=0;const seen=[];
+  const send=operationRunner(f,{read:async()=>({...s().device,recovery_generation:`gen-${reads++}`}),post:async body=>{seen.push(body.operation);throw Object.assign(Error('conflict'),{status:409})}});
+  await assert.rejects(send({session:s(),phase:'enter_setup'}),{status:409});
+  await assert.rejects(send({session:s(),phase:'authorize',setupToken:'proof'}),{status:409});assert.equal(reads,1);assert.deepEqual(seen[0],seen[1]);
+  await assert.rejects(send({session:s(),phase:'enter_setup',newOperation:true}),{status:409});assert.equal(reads,2);assert.notEqual(seen[1].operationId,seen[2].operationId);assert.equal(seen[2].expectedGeneration,'gen-1');
+});
+
+test('real API carries and validates the full two-phase recovery contract and rejects stale response identities',async()=>{
+  const operation={operationId:'op-a',bindingId:'binding-a',expectedGeneration:'gen-0'},sent=[];
+  const good={device:{device_id:'screen',binding_id:'binding-a',recovery_generation:'gen-1'},reprovision_required:true,
+    operation:{id:'op-a',binding_id:'binding-a',from_generation:'gen-0',generation:'gen-1',stage:'authorized'}};
+  const client=api(async(_,init)=>{sent.push(init);return response(good)});
+  await client.reprovisionDisplay({...options,operation,phase:'authorize',setupToken:'fresh-proof'});
+  assert.equal(sent[0].headers['X-Device-Binding'],'binding-a');assert.deepEqual(JSON.parse(sent[0].body),{setup_token:'fresh-proof',operation_id:'op-a',expected_generation:'gen-0',phase:'authorize'});
+  for(const changes of [{id:'other'},{binding_id:'other'},{from_generation:'other'},{generation:'other'},{stage:'entered'},{stage:'unknown'}])await assert.rejects(api(async()=>response({...good,operation:{...good.operation,...changes}})).reprovisionDisplay({...options,operation,phase:'authorize'}),{code:'INVALID_SERVICE_RESPONSE'});
+  await client.reprovisionDisplay({...options,operation,phase:'enter_setup'}); // authorized replay is safe and valid for a late enter.
+});
+
+test('successful real connection storage clears only its exact recovery operation; failed storage keeps the intent',async()=>{
+  const f=storage(),old={...s(),device:{...s().device,recovery_generation:'gen-0'}};await f.store.saveDeviceSession(old);const op=await f.store.prepareDeviceReprovision(old);
+  let fail=true,cleared=0;const noop=()=>{},context={renderedManagementEpoch:0,deviceManagementRef:{current:null},deviceManagementEpochRef:{current:0},wallRequestScopeRef:{current:scope()},reconfigurationSession:old,IS_WEB_PREVIEW:false,addingDevice:false,normalizeDeviceSession:x=>x,
+    prepareAccountSession:async()=>{throw Error('unavailable')},updateDeviceSession:async(...args)=>{if(fail)throw Error('session write failed');return f.store.updateDeviceSession(...args)},clearDeviceReprovision:async(...args)=>{cleared++;return f.store.clearDeviceReprovision(...args)},setSession:noop,setDeviceSessions:noop,clearPendingDeviceSetup:async()=>{},setReconfigurationSession:noop,setAddingDevice:noop,setInitialSetupDevice:noop,setDeviceModal:noop,openDeviceSurface:noop,needsOnboarding:false,setActiveTab:noop,setNotice:noop};
+  const result={...old,reprovisionOperation:op};await assert.rejects(value('onConnected',context)(result),/session write failed/);assert.equal(cleared,0);assert.ok(await f.store.loadDeviceReprovision(old));
+  fail=false;await value('onConnected',context)(result);assert.equal(cleared,1);assert.equal(await f.store.loadDeviceReprovision(old),null);assert.equal((await f.store.loadDeviceSession()).firstWall.state,'publishing');
+});
+
+test('wake UI immediately shows progress, distinguishes uncertain result, and never waits before presentation',async()=>{
+  const old=s(),gate=deferred(),states=[],context={reprovisionWakeRef:{current:null},deviceManagementEpochRef:{current:3},latestDeviceSessionsRef:{current:[old]},sameManagedDevice:network.sameManagedDevice,
+    setReprovisionWake:x=>states.push(x),sendReprovisionOperation:()=>gate.promise,serviceFailureMessage:network.serviceFailureMessage};
+  const wake=value('wakeReconfiguration',context),pending=wake(old);assert.equal(states[0].state,'waking');
+  gate.reject(Object.assign(Error('timeout'),{code:'SERVICE_TIMEOUT'}));await pending;assert.equal(states.at(-1).state,'failed');assert.match(states.at(-1).message,/尚未确认/);assert.equal(context.reprovisionWakeRef.current,null);
+});
+
+test('App restart restores a paused pending setup with a visible safe retry rather than silently creating a fresh operation',async()=>{
+  const old=s(),state={},noop=()=>{};
+  const cleanup=effect('Promise.all([loadDeviceSessions(), loadPendingDeviceSetup()])',{
+    IS_WEB_PREVIEW:false,deviceManagementEpochRef:{current:4},deviceManagementRef:{current:null},loadDeviceSessions:async()=>({sessions:[old],activeDeviceId:'screen'}),
+    loadPendingDeviceSetup:async()=>({kind:'reconfigure',session:old}),normalizeDeviceSession:x=>x,sameManagedDevice:network.sameManagedDevice,
+    setDeviceSessions:noop,setSession:noop,setReconfigurationSession:x=>state.session=x,setReprovisionWake:x=>state.wake=x,openDeviceSurface:x=>state.surface=x,
+    setActiveTab:noop,setError:assert.fail,loadPhotoSyncPreference:async()=>null,setPhotoSync:noop,refreshPermission:async()=>{}});
+  await flush();assert.equal(state.wake.state,'paused');assert.equal(state.surface,'setup');assert.equal(state.session.device.device_id,'screen');cleanup();
+});
+
+test('explicit new-operation permission is consumed once even if authorization fails, so ordinary retry cannot silently rebase',async()=>{
+  const content=fs.readFileSync(path.join(app,'src/DeviceSetupFlow.js'),'utf8');const parsed=babel.parseSync(content,{configFile:false,babelrc:false,parserOpts:{plugins:['jsx']}});let n;
+  visit(parsed,x=>{if(x.type==='VariableDeclarator'&&x.id.name==='connectWifi')n=x.init});const flags=[],noop=()=>{},ref={current:true};
+  const context={provisionRequestRef:{current:false},selectedNetwork:{ssid:'synthetic',secure:false},password:'',flowGenerationRef:{current:0},
+    setBusy:noop,setError:noop,setProgress:noop,setStatusText:noop,transition:noop,previewMode:false,newRecoveryOperationRef:ref,selectedDevice:{deviceId:'screen'},
+    existingSession:s(),isSessionCurrent:()=>true,setRecoveryConflict:noop,adapter:{provisionWifi:async options=>{flags.push(options.newOperation);throw Object.assign(Error('lost response'),{code:'SERVICE_TIMEOUT'})}}};
+  const connect=vm.compileFunction('return ('+content.slice(n.start,n.end)+')',Object.keys(context))(...Object.values(context));
+  await connect();await connect();assert.deepEqual(flags,[true,false]);assert.equal(ref.current,false);
 });

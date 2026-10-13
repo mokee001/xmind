@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -102,6 +103,10 @@ export default function DeviceSetupFlow({
   visible,
   session,
   existingSession = null,
+  isSessionCurrent = () => true,
+  wakeStatus = null,
+  onWakeRetry,
+  onRestartRecovery,
   onClose,
   onDismiss,
   onConnected,
@@ -124,6 +129,8 @@ export default function DeviceSetupFlow({
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState('');
   const [error, setError] = useState('');
+  const [recoveryConflict, setRecoveryConflict] = useState(false);
+  const newRecoveryOperationRef = useRef(false);
   const [result, setResult] = useState(null);
   const [confirmingRemoval, setConfirmingRemoval] = useState(false);
   const stageMotion = useRef(new Animated.Value(1)).current;
@@ -253,6 +260,8 @@ export default function DeviceSetupFlow({
     setStatusText('');
     setError('');
     setResult(null);
+    setRecoveryConflict(false);
+    newRecoveryOperationRef.current = false;
     setConfirmingRemoval(false);
     if (autoDiscover) discoverDevices();
   }, [visible, session, autoDiscover]);
@@ -399,11 +408,15 @@ export default function DeviceSetupFlow({
         return;
       }
       if (!adapter?.provisionWifi) throw new Error('蓝牙配网接口尚未接入');
+      const newOperation = newRecoveryOperationRef.current;
+      newRecoveryOperationRef.current = false;
       const provisioned = await adapter.provisionWifi({
         ssid: selectedNetwork.ssid,
         password,
         device: selectedDevice,
         existingSession,
+        isCurrent:() => flowGenerationRef.current === generation && isSessionCurrent(),
+        newOperation,
       });
       if (flowGenerationRef.current !== generation) return;
       setProgress(100);
@@ -412,7 +425,8 @@ export default function DeviceSetupFlow({
       transition('success');
     } catch (caught) {
       if (flowGenerationRef.current !== generation) return;
-      setError(caught.message || '连接失败，请重试');
+      setRecoveryConflict(caught.status === 409);
+      setError(caught.status === 409 ? '本次配网记录已变化。可重新开始本次配网，再连接原照片墙。' : caught.message || '连接失败，请重试');
       transition('error');
     } finally {
       if (flowGenerationRef.current === generation) {
@@ -519,10 +533,15 @@ export default function DeviceSetupFlow({
             <View style={styles.flex}>
               <Text style={styles.title}>连接照片墙</Text>
               <Text style={styles.description}>{existingSession
-                ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。若屏幕离线且搜不到，请在屏幕上重新进入配网模式。`
+                ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。照片墙需要先恢复联网，才能接收进入配网模式的请求。`
                 : '保持照片墙通电并靠近手机。若搜不到，请先在屏幕上进入配网模式；App 无法唤醒离线屏幕。'}</Text>
             </View>
           </View>
+          {existingSession && wakeStatus ? <View style={styles.errorBox} accessibilityLiveRegion="polite">
+            <Text style={styles.description}>{wakeStatus.message}</Text>
+            {wakeStatus.state === 'waking' ? <ActivityIndicator /> : ['failed','paused'].includes(wakeStatus.state) ? <PrimaryButton secondary onPress={onWakeRetry}>重试请求进入配网</PrimaryButton> : null}
+            {wakeStatus.canRestart ? <PrimaryButton secondary onPress={onRestartRecovery}>重新开始本次配网</PrimaryButton> : null}
+          </View> : null}
           <View style={styles.discoveryArt}>
             <View style={styles.discoveryRingLarge} />
             <View style={styles.discoveryRingSmall} />
@@ -655,6 +674,7 @@ export default function DeviceSetupFlow({
         <View style={[styles.stateIcon, styles.failureIcon]}><Text style={styles.failureMark}>!</Text></View>
         <Text style={styles.stateTitle}>没有连接成功</Text>
         <Text style={styles.stateDescription}>{error || '请检查 Wi-Fi 密码后重试。'}</Text>
+        {recoveryConflict ? <PrimaryButton onPress={() => {newRecoveryOperationRef.current = true;setRecoveryConflict(false);retryPassword();}}>重新开始本次配网</PrimaryButton> : null}
         <PrimaryButton onPress={retryPassword}>重新输入密码</PrimaryButton>
         <PrimaryButton secondary onPress={() => transition('wifi')}>选择其他网络</PrimaryButton>
         <PrimaryButton secondary onPress={restartDeviceConnection}>返回蓝牙设备列表</PrimaryButton>

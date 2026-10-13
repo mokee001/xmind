@@ -26,8 +26,8 @@ atexit.register(STAGING.cleanup)
 HERE = Path(STAGING.name)
 (HERE/"backend").mkdir()
 SOURCE = Path(os.environ.get("PHOTOWALL_LEGACY_REPROVISION_SOURCE", str(ROOT/"outputs/wifi-recheck-20261012/server-before.py")))
-EXPECTED_SERVER = "a6fa49638cb80cfd9a19d161d297784af9933eb7203454f4aba6a5aeebac132e"
-EXPECTED_HELPER = "dd7344d167a9cfebaea592de2d45c4c00e86c1c12ce95d64775c2d6841cdba11"
+EXPECTED_SERVER = "3b6b9b6147d3cb3ca7df4509d2aabccd49cbbcfd91d11a75fa6d8a7b4a64659d"
+EXPECTED_HELPER = "fc0d863129236019fe641f4a4265d39f0fb752bea0499339b247606606ff470f"
 CHANGED = {"_public_device", "_queue_reprovision", "device_auto_claim", "device_bootstrap", "device_claim", "device_delete", "device_next", "device_publish", "device_publish_july_calendar", "device_publish_last_wall", "device_status"}
 ASYNC_WRITERS = {"device_publish", "device_publish_july_calendar", "device_publish_last_wall"}
 
@@ -101,6 +101,8 @@ class RecoveryTests(legacy.ReprovisionTests):
     def setUp(self):
         setup_ns["setUp"](self)
         self.helper = self.ns["device_recovery"]
+        self.raw_reprovision = self.ns["device_reprovision"]
+        self.recovery_sequence = 0
         # Use a fixed synthetic clock for receipt TTL checks.
         self.helper.time = SimpleNamespace(time=lambda: self.now)
         raw_delete = self.ns["device_delete"]
@@ -110,6 +112,21 @@ class RecoveryTests(legacy.ReprovisionTests):
         self.ns["app"].post("/api/devices/bootstrap")(self.ns["device_bootstrap"])
         self.ns["app"].post("/api/devices/auto-claim")(self.ns["device_auto_claim"])
         self.ns["app"].post("/api/devices/claim")(self.ns["device_claim"])
+
+    def reprovision(self, token=OWNER, proof="", device_id=ID):
+        self.recovery_sequence += 1
+        req=self.ns["DeviceReprovisionReq"](setup_token=proof,
+            operation_id="synthetic-operation-"+str(self.recovery_sequence),
+            expected_generation=self.helper.recovery_generation(self.device()),
+            phase="authorize" if proof else "enter_setup")
+        return self.raw_reprovision(device_id,req,token,self.helper.binding_id(self.device()))
+
+    def operation(self, operation_id="synthetic-operation-alpha", generation=None,
+                  phase="enter_setup", proof="", binding=None, token=OWNER):
+        return self.client.post("/api/devices/"+ID+"/reprovision",json={
+            "operation_id":operation_id,"expected_generation":generation or self.helper.recovery_generation(self.device()),
+            "phase":phase,"setup_token":proof},headers={"X-Account-Token":token,
+            "X-Device-Binding":binding or self.helper.binding_id(self.device())})
 
     def delete(self, token=OWNER, binding=None, request_id=REQUEST, device_id=ID):
         if binding is None:
@@ -225,7 +242,7 @@ class RecoveryTests(legacy.ReprovisionTests):
         self.delete()
         public=self.ns["_public_device"](self.device())
         for name in ("_delete_receipts","_delete_tombstone","account_token","device_token",
-                     "setup_token_digest","reprovision_setup_token_digest","_bootstrap_receipt"):
+                     "setup_token_digest","reprovision_setup_token_digest","_bootstrap_receipt","_recovery_operation"):
             self.assertNotIn(name,public)
         self.assertNotIn(self.helper.account_proof(OWNER),json.dumps(public))
 
@@ -325,6 +342,164 @@ class RecoveryTests(legacy.ReprovisionTests):
         self.assertEqual(self.bootstrap(token="").status_code,401)
         self.assertEqual(self.store.data,before)
 
+    def test_reprovision_ack_retains_binding_and_wall(self):
+        # The old firmware ACK has no generation: it no longer clears v2 proof.
+        self.reprovision(proof=PROOF)
+        before=copy.deepcopy(self.device())
+        self.assertEqual(self.status("reprovisioning").status_code,200)
+        for key in ("pending_command","reprovision_setup_token_digest","reprovision_setup_token_expires_at",
+                    "_recovery_operation","recovery_generation","state","progress","error"):
+            self.assertEqual(self.device()[key],before[key])
+        self.assertEqual(self.bootstrap().status_code,200)
+        self.assertNotIn("pending_command",self.device())
+        self.assertEqual(self.device()["_recovery_operation"]["stage"],"completed")
+        self.assert_binding_wall_preserved()
+
+    def test_generation_projection_is_stable_readonly_and_private_operation_hidden(self):
+        before=copy.deepcopy(self.store.data)
+        first=self.ns["_public_device"](self.device())
+        second=self.ns["_public_device"](self.device())
+        self.assertEqual(first["recovery_generation"],second["recovery_generation"])
+        self.assertEqual(self.store.data,before)
+        self.operation(phase="authorize",proof=PROOF)
+        public=self.ns["_public_device"](self.device())
+        self.assertNotIn("_recovery_operation",public)
+        self.assertNotIn(hashlib.sha256(PROOF.encode()).hexdigest(),json.dumps(public))
+
+    def test_begin_duplicate_replays_exact_operation_without_mutation_or_rotation(self):
+        generation=self.helper.recovery_generation(self.device())
+        first=self.operation(generation=generation)
+        self.assertEqual(first.status_code,202)
+        op=first.json()["operation"]
+        self.assertEqual(op["stage"],"entered")
+        self.assertEqual(op["from_generation"],generation)
+        self.assertNotEqual(op["generation"],generation)
+        before=copy.deepcopy(self.store.data);saves=len(self.store.saves)
+        duplicate=self.operation(generation=generation)
+        self.assertEqual(duplicate.json(),first.json())
+        self.assertEqual(self.store.data,before);self.assertEqual(len(self.store.saves),saves)
+
+    def test_fresh_proof_first_late_begin_cannot_erase_authorization(self):
+        generation=self.helper.recovery_generation(self.device())
+        proof=self.operation(generation=generation,phase="authorize",proof=PROOF)
+        self.assertEqual(proof.status_code,202)
+        before=copy.deepcopy(self.store.data);saves=len(self.store.saves)
+        late=self.operation(generation=generation)
+        self.assertEqual(late.status_code,202)
+        self.assertEqual(late.json()["operation"],proof.json()["operation"])
+        self.assertEqual(self.store.data,before);self.assertEqual(len(self.store.saves),saves)
+
+    def test_begin_then_proof_same_operation_is_monotonic_and_retry_does_not_extend(self):
+        generation=self.helper.recovery_generation(self.device())
+        entered=self.operation(generation=generation)
+        proof=self.operation(generation=generation,phase="authorize",proof=PROOF)
+        self.assertEqual(proof.status_code,202)
+        self.assertEqual(proof.json()["operation"]["generation"],entered.json()["operation"]["generation"])
+        before=copy.deepcopy(self.store.data);self.now+=5
+        retry=self.operation(generation=generation,phase="authorize",proof=PROOF)
+        self.assertEqual(retry.status_code,202)
+        self.assertEqual(self.store.data,before)
+        self.assertEqual(self.operation(generation=generation,phase="authorize",proof="different-valid-physical-proof-1234").status_code,409)
+        self.assertEqual(self.store.data,before)
+
+    def test_new_operation_fences_old_begin_and_proof_with_no_aba_after_completion(self):
+        old=self.helper.recovery_generation(self.device())
+        self.operation(generation=old)
+        next_generation=self.helper.recovery_generation(self.device())
+        newer=self.operation(operation_id="synthetic-operation-bravo",generation=next_generation,phase="authorize",proof=PROOF)
+        self.assertEqual(newer.status_code,202)
+        self.bootstrap()
+        completed_generation=self.helper.recovery_generation(self.device())
+        self.assertNotIn(completed_generation,(old,next_generation))
+        before=copy.deepcopy(self.store.data)
+        for phase,proof in (("enter_setup",""),("authorize",PROOF)):
+            denied=self.operation(generation=old,phase=phase,proof=proof)
+            self.assertEqual(denied.status_code,409)
+            self.assertEqual(denied.json()["code"],"recovery_generation_changed")
+            self.assertEqual(self.store.data,before)
+        replay=self.operation(operation_id="synthetic-operation-bravo",generation=next_generation)
+        self.assertEqual(replay.status_code,202);self.assertEqual(replay.json()["operation"]["stage"],"completed")
+        self.assertEqual(self.store.data,before)
+
+    def test_unknown_old_request_cannot_replace_a_newer_operation(self):
+        old=self.helper.recovery_generation(self.device())
+        self.operation(operation_id="synthetic-operation-bravo",generation=old,phase="authorize",proof=PROOF)
+        before=copy.deepcopy(self.store.data)
+        self.assertEqual(self.operation(generation=old).status_code,409)
+        self.assertEqual(self.store.data,before)
+
+    def test_completed_replay_and_late_ack_do_not_regress_wall_state(self):
+        old=self.helper.recovery_generation(self.device())
+        self.operation(generation=old,phase="authorize",proof=PROOF);self.bootstrap()
+        self.device().update(state="displayed",progress=100,error="")
+        before=copy.deepcopy(self.store.data)
+        replay=self.operation(generation=old,phase="authorize",proof=PROOF)
+        self.assertEqual(replay.status_code,202);self.assertEqual(replay.json()["operation"]["stage"],"completed")
+        self.assertEqual(self.status("reprovisioning").status_code,409)
+        self.assertEqual(self.store.data,before)
+
+    def test_delayed_ack_during_new_proof_cannot_clear_it_or_regress_state(self):
+        old=self.helper.recovery_generation(self.device())
+        self.operation(generation=old)
+        newgen=self.helper.recovery_generation(self.device())
+        self.operation(operation_id="synthetic-operation-bravo",generation=newgen,phase="authorize",proof=PROOF)
+        before=copy.deepcopy(self.device());self.now+=2
+        self.assertEqual(self.status("reprovisioning").status_code,200)
+        after=self.device();after_copy=copy.deepcopy(after);after_copy["last_seen"]=before["last_seen"];after_copy.pop("ip",None)
+        before.pop("ip",None)
+        self.assertEqual(after_copy,before)
+        self.assertEqual(after["last_seen"],self.now)
+
+    def test_operation_state_survives_store_serialization_and_server_helper_reload(self):
+        old=self.helper.recovery_generation(self.device())
+        first=self.operation(generation=old,phase="authorize",proof=PROOF)
+        self.store.data=json.loads(json.dumps(self.store.data))
+        replacement=helper_proxy(self.store);replacement.time=SimpleNamespace(time=lambda:self.now)
+        self.ns["device_recovery"]=replacement;self.helper=replacement
+        before=copy.deepcopy(self.store.data)
+        self.assertEqual(self.operation(generation=old).json()["operation"],first.json()["operation"])
+        self.assertEqual(self.store.data,before)
+
+    def test_expired_proof_replay_never_renews_it(self):
+        old=self.helper.recovery_generation(self.device())
+        self.operation(generation=old,phase="authorize",proof=PROOF);self.now+=601
+        before=copy.deepcopy(self.store.data)
+        replay=self.operation(generation=old,phase="authorize",proof=PROOF)
+        self.assertEqual(replay.status_code,409);self.assertEqual(replay.json()["code"],"recovery_operation_expired")
+        self.assertEqual(self.store.data,before)
+
+    def test_legacy_begin_and_proof_blocked_after_operation_or_new_binding(self):
+        self.operation(phase="authorize",proof=PROOF);self.bootstrap()
+        for proof in ("",PROOF):
+            before=copy.deepcopy(self.store.data)
+            r=self.client.post("/api/devices/"+ID+"/reprovision",json={"setup_token":proof},headers={"X-Account-Token":OWNER})
+            self.assertEqual(r.status_code,409);self.assertEqual(r.json()["code"],"recovery_operation_required")
+            self.assertEqual(self.store.data,before)
+        self.device().pop("recovery_generation",None);self.device()["binding_id"]="synthetic-new-binding-identifier"
+        self.assertEqual(self.client.post("/api/devices/"+ID+"/reprovision",headers={"X-Account-Token":OWNER}).status_code,409)
+
+    def test_delete_and_rebind_invalidate_old_operation_identity(self):
+        old=self.helper.recovery_generation(self.device());old_binding=self.helper.binding_id(self.device())
+        self.operation(generation=old,phase="authorize",proof=PROOF)
+        self.delete(binding=old_binding)
+        self.assertNotIn("_recovery_operation",self.device())
+        self.status("unbound");self.bootstrap(token="")
+        req=self.ns["DeviceAutoClaimReq"](device_id=ID,setup_token=PROOF,name="synthetic")
+        self.ns["device_auto_claim"](req,OWNER)
+        before=copy.deepcopy(self.store.data)
+        r=self.operation(generation=old,binding=old_binding)
+        self.assertEqual(r.status_code,409);self.assertEqual(r.json()["code"],"device_binding_changed")
+        self.assertEqual(self.store.data,before)
+
+    def test_invalid_operation_contract_and_wrong_owner_never_mutate(self):
+        before=copy.deepcopy(self.store.data)
+        for kwargs in ({"operation_id":"short"},{"generation":"short"},{"phase":"unknown"},
+                       {"phase":"authorize","proof":""},{"phase":"enter_setup","proof":PROOF},{"binding":"short"}):
+            self.assertEqual(self.operation(**kwargs).status_code,400)
+            self.assertEqual(self.store.data,before)
+        self.assertEqual(self.operation(token="different-owner").status_code,401)
+        self.assertEqual(self.store.data,before)
+
 
 class TransactionTests(unittest.TestCase):
     def setUp(self):
@@ -407,6 +582,48 @@ class TransactionTests(unittest.TestCase):
     def test_async_route_cannot_accidentally_use_blocking_decorator(self):
         async def route():pass
         with self.assertRaises(TypeError):self.helper.serialized(route)
+
+    def operation_client(self):
+        harness=RecoveryTests(methodName="test_fresh_proof_first_late_begin_cannot_erase_authorization")
+        harness.candidate=(HERE/"backend/server.py").read_bytes();harness.setUp()
+        self.helper.time=SimpleNamespace(time=lambda:harness.now)
+        harness.ns["store"]=self.store;harness.ns["device_recovery"]=self.helper
+        app=legacy.FastAPI()
+        app.post("/api/devices/{device_id}/reprovision")(self.helper.serialized(harness.raw_reprovision))
+        return legacy.TestClient(app)
+
+    def test_actual_http_concurrent_same_operation_enters_and_authorizes_once(self):
+        client=self.operation_client();generation=self.helper.recovery_generation(self.initial)
+        body={"operation_id":"synthetic-operation-race","expected_generation":generation}
+        headers={"X-Account-Token":OWNER,"X-Device-Binding":self.initial["binding_id"]}
+        responses=[]
+        requests=[{"phase":"enter_setup"},{"phase":"authorize","setup_token":PROOF}]*3
+        def call(request):responses.append(client.post("/api/devices/"+ID+"/reprovision",json={**body,**request},headers=headers))
+        threads=[threading.Thread(target=call,args=(r,)) for r in requests]
+        for t in threads:t.start()
+        for t in threads:t.join(5);self.assertFalse(t.is_alive())
+        self.assertEqual([r.status_code for r in responses],[202]*6)
+        generations={r.json()["operation"]["generation"] for r in responses}
+        self.assertEqual(len(generations),1)
+        current=self.store.load("eink_devices",{})[ID]
+        self.assertEqual(current["_recovery_operation"]["stage"],"authorized")
+        self.assertEqual(current["reprovision_setup_token_digest"],hashlib.sha256(PROOF.encode()).hexdigest())
+        self.assertEqual(generations,{current["recovery_generation"]})
+
+    def test_actual_http_competing_operations_have_one_atomic_generation_winner(self):
+        client=self.operation_client();generation=self.helper.recovery_generation(self.initial)
+        headers={"X-Account-Token":OWNER,"X-Device-Binding":self.initial["binding_id"]}
+        responses=[]
+        def call(operation):responses.append(client.post("/api/devices/"+ID+"/reprovision",json={
+            "operation_id":operation,"expected_generation":generation,"phase":"authorize","setup_token":PROOF},headers=headers))
+        threads=[threading.Thread(target=call,args=("synthetic-operation-"+str(n),)) for n in range(2)]
+        for t in threads:t.start()
+        for t in threads:t.join(5);self.assertFalse(t.is_alive())
+        self.assertEqual(sorted(r.status_code for r in responses),[202,409])
+        winner=next(r.json()["operation"] for r in responses if r.status_code==202)
+        current=self.store.load("eink_devices",{})[ID]
+        self.assertEqual(current["_recovery_operation"]["id"],winner["id"])
+        self.assertEqual(current["recovery_generation"],winner["generation"])
 
     def test_real_serialized_http_concurrent_bootstrap_returns_one_durable_token(self):
         harness=RecoveryTests(methodName="test_fresh_bootstrap_lost_response_recovers_same_token_until_claim")
