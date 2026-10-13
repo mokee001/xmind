@@ -2,6 +2,7 @@ import { requireCurrentWall } from './templateCatalog';
 import { UNIFIED_SELECTION, SELECTION_CONTRACT } from './unifiedSelection';
 import { generationPayload } from './selectionReadiness.cjs';
 import { withDeviceStatusTimeout } from './deviceStatus.cjs';
+import { withRequestTimeout } from './networkRecovery.cjs';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { File, Paths, UploadType } from 'expo-file-system';
@@ -56,6 +57,15 @@ async function responseJson(response) {
     throw requestError(data.error || (typeof data.detail === 'string' ? data.detail : '') || `请求失败（HTTP ${response.status}）`, response.status, data);
   }
   return data;
+}
+
+function requestJson(url, options = {}, timeoutMs = 8000) {
+  return withRequestTimeout(async signal => responseJson(await fetch(url, { ...options, signal })),
+    { signal: options.signal, timeoutMs });
+}
+
+function invalidResponse(message) {
+  return Object.assign(new Error(message), { code: 'INVALID_SERVICE_RESPONSE' });
 }
 
 function uploadForm({ url, form, headers = {}, onProgress, timeoutMs = 0 }) {
@@ -458,23 +468,18 @@ export async function syncPhotoAlbum({
 export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken, selectionSources = ['all'], signal }) {
   const headers = accountToken ? { 'X-Account-Token': accountToken } : {};
   if (UNIFIED_SELECTION) {
-    const response = await fetch(`${baseUrl(apiBase)}/api/selection/content`, {
+    const result = await requestJson(`${baseUrl(apiBase)}/api/selection/content`, {
       method:'POST', headers:{...headers,'Content-Type':'application/json'}, body:JSON.stringify({sources:selectionSources}), signal,
     });
-    const result = await responseJson(response);
     if (!Array.isArray(result?.people) || typeof result.peopleAvailable !== 'boolean') {
       throw new Error('没有读到完整的人物结果，请重新读取。');
     }
     return {...result, people:result.people.map(person => ({...person,
       avatarUrl:baseUrl(apiBase)+person.cover, avatarHeaders:headers}))};
   }
-  const [peopleResponse, albumsResponse] = await Promise.all([
-    fetch(`${baseUrl(apiBase)}/api/people`, { headers, signal }),
-    fetch(`${baseUrl(apiBase)}/api/smart_albums`, { headers, signal }),
-  ]);
   const [people, albums] = await Promise.all([
-    responseJson(peopleResponse),
-    responseJson(albumsResponse),
+    requestJson(`${baseUrl(apiBase)}/api/people`, { headers, signal }),
+    requestJson(`${baseUrl(apiBase)}/api/smart_albums`, { headers, signal }),
   ]);
   return {
     total: Number(albums.total) || 0,
@@ -485,11 +490,12 @@ export async function readRecognizedContent({ apiBase = DEFAULT_API_BASE, accoun
   };
 }
 
-export async function readSelectionModel({ apiBase = DEFAULT_API_BASE, accountToken }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/model`, {
+export async function readSelectionModel({ apiBase = DEFAULT_API_BASE, accountToken, signal }) {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/model`, {
+    signal,
     headers: accountToken ? { 'X-Account-Token': accountToken } : {},
   });
-  return responseJson(response);
+  return result;
 }
 
 export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, accountToken, selectionSources = ['all'] }) {
@@ -512,8 +518,7 @@ export async function refreshRecognizedContent({ apiBase = DEFAULT_API_BASE, acc
 }
 
 export async function listWallTemplates({ apiBase = DEFAULT_API_BASE } = {}) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/templates`);
-  const result = await responseJson(response);
+  const result = await requestJson(`${baseUrl(apiBase)}/api/templates`);
   return {
     ...result,
     templates: Array.isArray(result.templates)
@@ -534,30 +539,32 @@ export async function generateWall({
   selectionSources = ['all'],
   signal,
 }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/generate`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/generate`, {
     signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}),
       ...(UNIFIED_SELECTION ? {'X-Selection-Contract':SELECTION_CONTRACT} : {}) },
     body: JSON.stringify(generationPayload({template,title,filters,excludeFilters,deviceId,preferenceRevisionId,selectionSources}, UNIFIED_SELECTION)),
-  });
-  return responseJson(response);
+  }, 120000);
+  return result;
 }
 
-export async function readDevicePreferenceProfile({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
-  const response = await fetch(
+export async function readDevicePreferenceProfile({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal }) {
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/preferences?device_id=${encodeURIComponent(deviceId)}`,
-    { headers: accountToken ? { 'X-Account-Token': accountToken } : {} },
+    { headers: accountToken ? { 'X-Account-Token': accountToken } : {}, signal },
   );
-  return responseJson(response);
+  if (!Array.isArray(result?.revisions)) throw invalidResponse('没有读到完整的偏好设置，请重试。');
+  return result;
 }
 
-export async function readDeviceDisplayHistory({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
-  const response = await fetch(
+export async function readDeviceDisplayHistory({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal }) {
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/display-history`,
-    { headers: accountToken ? { 'X-Account-Token': accountToken } : {} },
+    { headers: accountToken ? { 'X-Account-Token': accountToken } : {}, signal },
   );
-  return responseJson(response);
+  if (!Array.isArray(result?.records)) throw invalidResponse('没有读到完整的展示记录，请重试。');
+  return result;
 }
 
 export async function createDevicePreferenceRevision({
@@ -568,7 +575,7 @@ export async function createDevicePreferenceRevision({
   parentId = '',
   source = 'preferences',
 }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/preferences/revisions`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/preferences/revisions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
     body: JSON.stringify({
@@ -577,8 +584,8 @@ export async function createDevicePreferenceRevision({
       parent_id: parentId,
       source,
     }),
-  });
-  return responseJson(response);
+  }, 10000);
+  return result;
 }
 
 export async function activateDevicePreferenceRevision({
@@ -587,16 +594,16 @@ export async function activateDevicePreferenceRevision({
   accountToken,
   revisionId,
 }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/preferences/activate`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/preferences/activate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(accountToken ? { 'X-Account-Token': accountToken } : {}) },
     body: JSON.stringify({ device_id: deviceId, revision_id: revisionId }),
-  });
-  return responseJson(response);
+  }, 10000);
+  return result;
 }
 
 export async function publishGeneratedWall({ apiBase, deviceId, accountToken, wallId, signal }) {
-  const response = await fetch(
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/publish-last-wall`,
     {
       signal,
@@ -604,8 +611,9 @@ export async function publishGeneratedWall({ apiBase, deviceId, accountToken, wa
       headers: { 'Content-Type': 'application/json', 'X-Account-Token': accountToken },
       body: JSON.stringify({ wall_id: wallId || '' }),
     },
+    15000,
   );
-  return responseJson(response);
+  return result;
 }
 
 export async function createPetCollageJob({
@@ -861,14 +869,19 @@ export async function listDisplays({ apiBase, accountToken, signal }) {
       signal: requestSignal,
       headers: { 'X-Account-Token': accountToken },
     });
-    return responseJson(response);
+    const result = await responseJson(response);
+    if (!Array.isArray(result?.devices) || result.devices.some(device => !device || typeof device.device_id !== 'string')) {
+      throw invalidResponse('没有读到完整的设备状态，请重试。');
+    }
+    return result;
   }, {signal});
 }
 
-export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, setupToken = '' }) {
-  const response = await fetch(
+export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, setupToken = '', signal }) {
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}/reprovision`,
     {
+      signal,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -876,21 +889,29 @@ export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId,
       },
       body: JSON.stringify({ setup_token: setupToken }),
     },
+    10000,
   );
-  return responseJson(response);
+  if (result?.device?.device_id !== deviceId || result.reprovision_required !== true) {
+    throw invalidResponse('服务尚未确认重新配网，请重试。');
+  }
+  return result;
 }
 
-export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken }) {
-  const response = await fetch(
+export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal }) {
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}`,
-    { method: 'DELETE', headers: { 'X-Account-Token': accountToken } },
+    { method: 'DELETE', headers: { 'X-Account-Token': accountToken }, signal },
+    10000,
   );
-  return responseJson(response);
+  if (result?.device_id !== deviceId || result.removed !== true) {
+    throw invalidResponse('服务尚未确认删除这台设备，已保留本机绑定。');
+  }
+  return result;
 }
 
 export async function readDisplayStatus({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal }) {
   const result = await listDisplays({ apiBase, accountToken, signal });
-  const device = (result.devices || []).find(item => item.device_id === deviceId);
+  const device = result.devices.find(item => item.device_id === deviceId);
   if (!device) {
     throw Object.assign(new Error('线上服务中没有找到已绑定的设备'), {
       status: 404,

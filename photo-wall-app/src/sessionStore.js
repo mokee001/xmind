@@ -56,8 +56,7 @@ async function readDeviceSessions() {
   const activeDeviceId = sessions.some(item => item.device.device_id === requestedActiveId)
     ? requestedActiveId
     : sessions[0]?.device?.device_id || null;
-  if (sessions.length || stored) await writeValue(DEVICES_KEY, { activeDeviceId, sessions });
-  if (legacy?.device?.device_id?.endsWith('-demo')) await deleteValue(KEY);
+  // Reads never write a captured snapshot back over a concurrent removal/claim.
   return { activeDeviceId, sessions };
 }
 
@@ -74,10 +73,11 @@ export async function loadDeviceSession() {
   return stored.sessions.find(item => item.device.device_id === stored.activeDeviceId) || null;
 }
 
-export async function saveDeviceSession(session) {
+export async function saveDeviceSession(session, guard = {}) {
   if (!validSession(session)) throw new Error('设备会话无效');
   return serializeDeviceMutation(async () => {
     const stored = await readDeviceSessions();
+    checkMutation(stored, session.device.device_id, guard);
     const sessions = upsertSession(stored.sessions, session);
     const activeDeviceId = session.device.device_id;
     await writeValue(DEVICES_KEY, { activeDeviceId, sessions });
@@ -86,10 +86,18 @@ export async function saveDeviceSession(session) {
   });
 }
 
-export async function updateDeviceSession(session) {
+function checkMutation(stored, deviceId, { current, expectedAccountToken } = {}) {
+  const existing = stored?.sessions.find(item => item.device.device_id === deviceId);
+  if ((current && !current()) || (expectedAccountToken !== undefined && existing?.accountToken !== expectedAccountToken)) {
+    throw Object.assign(new Error('设备绑定已变化，请重新打开设备管理。'), { code: 'DEVICE_BINDING_CHANGED' });
+  }
+}
+
+export async function updateDeviceSession(session, guard = {}) {
   if (!validSession(session)) throw new Error('设备会话无效');
   return serializeDeviceMutation(async () => {
     const stored = await readDeviceSessions();
+    checkMutation(stored, session.device.device_id, guard);
     const sessions = upsertSession(stored.sessions, session);
     const activeDeviceId = sessions.some(item => item.device.device_id === stored.activeDeviceId)
       ? stored.activeDeviceId
@@ -101,9 +109,10 @@ export async function updateDeviceSession(session) {
   });
 }
 
-export async function selectDeviceSession(deviceId) {
+export async function selectDeviceSession(deviceId, guard = {}) {
   return serializeDeviceMutation(async () => {
     const stored = await readDeviceSessions();
+    checkMutation(stored, deviceId, guard);
     const session = stored.sessions.find(item => item.device.device_id === deviceId);
     if (!session) throw new Error('没有找到这台照片墙');
     await Promise.all([
@@ -114,9 +123,10 @@ export async function selectDeviceSession(deviceId) {
   });
 }
 
-export async function removeDeviceSession(deviceId) {
+export async function removeDeviceSession(deviceId, guard = {}) {
   return serializeDeviceMutation(async () => {
     const stored = await readDeviceSessions();
+    checkMutation(stored, deviceId, guard);
     const sessions = stored.sessions.filter(item => item.device.device_id !== deviceId);
     const activeDeviceId = stored.activeDeviceId === deviceId
       ? sessions[0]?.device?.device_id || null
@@ -125,7 +135,13 @@ export async function removeDeviceSession(deviceId) {
     await writeValue(DEVICES_KEY, { activeDeviceId, sessions });
     if (activeSession) await writeValue(KEY, activeSession);
     else await deleteValue(KEY);
-    return activeSession;
+    const pending = await readValue(PENDING_SETUP_KEY);
+    if (pending?.session?.device?.device_id === deviceId
+      && (guard.expectedAccountToken === undefined || pending.session.accountToken === guard.expectedAccountToken)) {
+      await deleteValue(PENDING_SETUP_KEY);
+    }
+    if (!sessions.length) await deleteValue(PHOTO_SYNC_KEY);
+    return guard.returnSnapshot ? {activeDeviceId, sessions} : activeSession;
   });
 }
 

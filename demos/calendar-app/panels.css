@@ -12,6 +12,7 @@
 .panel-section-title { display: flex; align-items: center; gap: 9px; }
 .panel-example { font-size: 10px; font-weight: 500; color: var(--muted, #85837f); padding: 3px 7px; background: #efeee9; border-radius: 5px; }
 .panel-description { font-size: 12px; color: var(--muted, #85837f); line-height: 1.8; margin: 7px 0 18px; }
+.panel-removed { padding: 16px 15px; margin: 0; }
 .panel-recovery { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 0; margin-bottom: 24px; }
 .panel-recovery .panel-description { margin: 0 0 10px; }
 .panel-recovery-person { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 13px; }

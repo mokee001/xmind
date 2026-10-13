@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -49,22 +49,26 @@ export default function DeviceManagerModal({
   onReconfigure,
   onAdd,
   onRemove,
+  activeConnectionLabel,
+  connectionError,
+  onCheckConnection,
 }) {
   const [removalTarget, setRemovalTarget] = useState(null);
   const [busyDeviceId, setBusyDeviceId] = useState('');
   const [error, setError] = useState('');
+  const busyRef = useRef(false);
 
   useEffect(() => {
-    if (!visible) {
+    if (!visible && !busyRef.current) {
       setRemovalTarget(null);
-      setBusyDeviceId('');
       setError('');
     }
   }, [visible]);
 
   const runDeviceAction = async (session, action) => {
     const id = deviceId(session);
-    if (!id || busyDeviceId) return;
+    if (!id || busyRef.current) return;
+    busyRef.current = true;
     setBusyDeviceId(id);
     setError('');
     try {
@@ -72,6 +76,7 @@ export default function DeviceManagerModal({
     } catch (caught) {
       setError(caught.message || '设备操作失败，请稍后重试');
     } finally {
+      busyRef.current = false;
       setBusyDeviceId('');
     }
   };
@@ -103,7 +108,7 @@ export default function DeviceManagerModal({
             <Text style={styles.confirmationId}>{deviceId(removalTarget)}</Text>
             <Text style={styles.confirmationDescription}>{isScreen19(removalTarget)
               ? '删除后，这台屏幕只会从 App 的设备列表移除，不会改变屏幕原有的连接设置。'
-              : '删除后，这台设备的管理员权限会被撤销，屏幕会清除 Wi-Fi。再次连接必须从“添加设备”开始。'}</Text>
+              : '服务确认移除后，管理员权限会被撤销；屏幕恢复联网后会清除连接设置。再次连接请从“添加设备”开始。'}</Text>
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <Pressable
               accessibilityRole="button"
@@ -136,7 +141,9 @@ export default function DeviceManagerModal({
               {sessions.map(session => {
                 const id = deviceId(session);
                 const current = id === activeDeviceId;
-                const online = deviceIsOnline(session);
+                const label = current && activeConnectionLabel ? activeConnectionLabel
+                  : deviceIsOnline(session) ? '最近在线' : '状态待确认';
+                const online = label === '已连接' || label === '最近在线';
                 const canManage = session.device?.can_manage !== false;
                 return (
                   <View key={id} style={styles.deviceRow}>
@@ -148,7 +155,7 @@ export default function DeviceManagerModal({
                         {!canManage ? <Text style={styles.memberBadge}>家庭成员</Text> : null}
                       </View>
                       <Text style={styles.deviceId}>{deviceFamilyLabel(session)} · {id}</Text>
-                      <Text style={styles.deviceStatus}>{online ? '在线' : '暂时离线'}</Text>
+                      <Text style={styles.deviceStatus}>{label}</Text>
                     </View>
                     <View style={styles.rowActions}>
                       {canManage && !isScreen19(session) ? (
@@ -194,8 +201,12 @@ export default function DeviceManagerModal({
             </ScrollView>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
+            {connectionError ? <View style={styles.connectionError}>
+              <Text style={styles.error}>{connectionError}</Text>
+              <Pressable accessibilityRole="button" onPress={onCheckConnection} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>检查连接 / 重试</Text></Pressable>
+            </View> : null}
             <View style={styles.footer}>
-              <Pressable accessibilityRole="button" onPress={onAdd} style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}>
+              <Pressable accessibilityRole="button" disabled={Boolean(busyDeviceId)} onPress={onAdd} style={({ pressed }) => [styles.addButton, pressed && styles.pressed, busyDeviceId && styles.disabled]}>
                 <Text style={styles.addButtonText}>添加设备</Text>
               </Pressable>
             </View>
@@ -207,6 +218,7 @@ export default function DeviceManagerModal({
 }
 
 const styles = StyleSheet.create({
+  connectionError: { paddingHorizontal: 20, paddingBottom: 12 },
   page: { flex: 1, backgroundColor: '#F7F7F7' },
   header: { height: 58, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E5E5E5', backgroundColor: '#FFFFFF' },
   headerButton: { width: 64, minHeight: 40, justifyContent: 'center' },

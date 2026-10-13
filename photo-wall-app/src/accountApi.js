@@ -1,4 +1,5 @@
 import { DEFAULT_API_BASE } from './deviceApi';
+import { withRequestTimeout } from './networkRecovery.cjs';
 
 function baseUrl(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -18,6 +19,11 @@ async function responseJson(response) {
   return data;
 }
 
+function requestJson(url, options = {}) {
+  return withRequestTimeout(async signal => responseJson(await fetch(url, { ...options, signal })),
+    { signal: options.signal, timeoutMs: 8000 });
+}
+
 function authHeaders(accessToken, json = false) {
   return {
     ...(json ? { 'Content-Type': 'application/json' } : {}),
@@ -26,36 +32,35 @@ function authHeaders(accessToken, json = false) {
 }
 
 export async function registerAccount({ apiBase = DEFAULT_API_BASE, name = '我' } = {}) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/accounts/register`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/accounts/register`, {
     method: 'POST',
     headers: authHeaders('', true),
     body: JSON.stringify({ name }),
   });
-  const result = await responseJson(response);
   return { account: result.account, accessToken: result.access_token };
 }
 
 export async function readAccount({ apiBase = DEFAULT_API_BASE, accessToken }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/accounts/me`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/accounts/me`, {
     headers: authHeaders(accessToken),
   });
-  return responseJson(response);
+  return result;
 }
 
 export async function updateAccount({ apiBase = DEFAULT_API_BASE, accessToken, name }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/accounts/me`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/accounts/me`, {
     method: 'PATCH',
     headers: authHeaders(accessToken, true),
     body: JSON.stringify({ name }),
   });
-  return responseJson(response);
+  return result;
 }
 
 export async function listHouseholds({ apiBase = DEFAULT_API_BASE, accessToken }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/households`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/households`, {
     headers: authHeaders(accessToken),
   });
-  return responseJson(response);
+  return result;
 }
 
 export async function adoptDevice({
@@ -65,7 +70,7 @@ export async function adoptDevice({
   deviceAccountToken,
   householdName,
 }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/households/adopt-device`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/households/adopt-device`, {
     method: 'POST',
     headers: authHeaders(accessToken, true),
     body: JSON.stringify({
@@ -74,32 +79,32 @@ export async function adoptDevice({
       household_name: householdName,
     }),
   });
-  return responseJson(response);
+  return result;
 }
 
 export async function readHouseholdMembers({ apiBase = DEFAULT_API_BASE, accessToken, householdId }) {
-  const response = await fetch(
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/households/${encodeURIComponent(householdId)}/members`,
     { headers: authHeaders(accessToken) },
   );
-  return responseJson(response);
+  return result;
 }
 
 export async function createHouseholdInvite({ apiBase = DEFAULT_API_BASE, accessToken, householdId }) {
-  const response = await fetch(
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/households/${encodeURIComponent(householdId)}/invites`,
     { method: 'POST', headers: authHeaders(accessToken) },
   );
-  return responseJson(response);
+  return result;
 }
 
 export async function acceptHouseholdInvite({ apiBase = DEFAULT_API_BASE, accessToken, code }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/households/invites/accept`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/households/invites/accept`, {
     method: 'POST',
     headers: authHeaders(accessToken, true),
     body: JSON.stringify({ code }),
   });
-  return responseJson(response);
+  return result;
 }
 
 export async function updateHouseholdMember({
@@ -109,7 +114,7 @@ export async function updateHouseholdMember({
   userId,
   canPublish,
 }) {
-  const response = await fetch(
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}`,
     {
       method: 'PATCH',
@@ -117,7 +122,7 @@ export async function updateHouseholdMember({
       body: JSON.stringify({ can_publish: canPublish }),
     },
   );
-  return responseJson(response);
+  return result;
 }
 
 export async function removeHouseholdMember({
@@ -126,9 +131,9 @@ export async function removeHouseholdMember({
   householdId,
   userId,
 }) {
-  const response = await fetch(
+  const result = await requestJson(
     `${baseUrl(apiBase)}/api/households/${encodeURIComponent(householdId)}/members/${encodeURIComponent(userId)}`,
     { method: 'DELETE', headers: authHeaders(accessToken) },
   );
-  return responseJson(response);
+  return result;
 }

@@ -102,7 +102,7 @@ const Month = memo(function Month({ month, byDay, todayKey, firstUse, onOpenDay,
 
 // The caller owns device authorization and fetching. This view accepts receipt
 // metadata only; it never infers photos or reads the user's local library.
-export default function MemoryCalendar({ records = EMPTY_RECORDS, loading = false, error = '', onRetry }) {
+export default function MemoryCalendar({ records = EMPTY_RECORDS, loading = false, error = '', onRetry, connectionNotice = '', onManageDevice }) {
   const dimensions = useWindowDimensions();
   const [width, setWidth] = useState(dimensions.width);
   const [now, setNow] = useState(Date.now);
@@ -223,6 +223,14 @@ export default function MemoryCalendar({ records = EMPTY_RECORDS, loading = fals
                 <Text style={styles.todayButtonText}>今天</Text>
               </Pressable>
             </View>
+            {connectionNotice && connectionNotice !== errorMessage ? (
+              <View style={styles.errorRow} accessibilityLiveRegion="polite">
+                <View style={styles.errorCopy}><Text style={styles.errorDetail}>{connectionNotice}</Text>
+                  {onManageDevice ? <Pressable accessibilityRole="button" onPress={onManageDevice} style={styles.retryButton}><Text style={styles.retryText}>管理设备</Text></Pressable> : null}
+                </View>
+                {canRetry ? <Pressable accessibilityRole="button" onPress={retry} style={styles.retryButton}><Text style={styles.retryText}>检查连接 / 重试</Text></Pressable> : null}
+              </View>
+            ) : null}
             {loading ? (
               <View style={styles.statusRow} accessibilityLiveRegion="polite">
                 <ActivityIndicator size="small" color="#7a8068" />
@@ -231,7 +239,7 @@ export default function MemoryCalendar({ records = EMPTY_RECORDS, loading = fals
             ) : errorMessage ? (
               <View style={styles.errorRow} accessibilityLiveRegion="polite">
                 <View style={styles.errorCopy}><Text style={styles.errorTitle}>暂时无法读取展示记录</Text><Text style={styles.errorDetail}>{errorMessage}</Text></View>
-                {canRetry ? <Pressable accessibilityRole="button" accessibilityLabel="重新读取展示记录" onPress={retry} style={({ pressed }) => [styles.retryButton, pressed && styles.dayPressed]}><Text style={styles.retryText}>重试</Text></Pressable> : null}
+                {canRetry ? <Pressable accessibilityRole="button" accessibilityLabel="检查连接并重新读取展示记录" onPress={retry} style={({ pressed }) => [styles.retryButton, pressed && styles.dayPressed]}><Text style={styles.retryText}>检查连接 / 重试</Text></Pressable> : null}
               </View>
             ) : null}
             <View accessible accessibilityLabel="星期一、星期二、星期三、星期四、星期五、星期六、星期日" style={[styles.weekdays, { marginHorizontal: gutter }]}>

@@ -46,7 +46,6 @@ test('a fresh server read of an expired heartbeat still reports offline using th
 test('a failed or stale status request is not evidence that the device went offline', () => {
   const binding = scope(), now = 1_000_000, status = device(900);
   for (const observation of [null,
-    {...binding, device:status, receivedAt:now, readFailed:true},
     {...binding, device:status, receivedAt:now-21_000, readFailed:false}]) {
     assert.deepEqual(deviceConnectionStatus({connected:true, device:status, scope:binding, now, observation}),
       {deviceOnline:false, connectionLabel:'确认连接中'});

@@ -10,6 +10,7 @@ function deviceConnectionStatus({ connected, preview, device, observation, scope
   if (!connected) return { deviceOnline:false, connectionLabel:'连接照片墙' };
   if (preview) return { deviceOnline:true, connectionLabel:'演示连接' };
   const observed = sameDeviceBinding(observation, scope) ? observation : null;
+  if (observed?.readFailed) return { deviceOnline:false, connectionLabel:'连接确认失败' };
   const latest = observed?.device && Number(observed.device.last_seen || 0) >= Number(device?.last_seen || 0)
     ? observed.device : device;
   const lastSeen = Number(latest?.last_seen) || 0;

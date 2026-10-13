@@ -142,11 +142,12 @@ export function mountPanel(host, name, api) {
     const state = api.getState();
     const device = state.settings || {};
     const prefs = normalPreferences(state);
+    const removed = api.network?.snapshot().removed;
     host.innerHTML = `<div class="panel panel-settings">
       <header class="panel-title-row"><h1>设置</h1></header>
       <p class="panel-intro">照顾好连接，剩下的交给时光。</p>
       <section class="panel-setting-section" aria-labelledby="panel-device-heading"><h2 id="panel-device-heading">我的设备</h2><div class="panel-settings-group">
-        ${row({ action: 'device', icon: 'device', title: escapeHtml(device.deviceName || '客厅照片墙'), detail: `<span class="panel-status-dot${device.connected ? ' panel-status-online' : ''}"></span>${device.connected ? '已连接' : '未连接'} · 模拟状态` })}
+        <div data-bound-device${removed ? ' hidden' : ''}>${row({ action: 'device', icon: 'device', title: escapeHtml(device.deviceName || '客厅照片墙'), detail: api.network ? '查看连接与移除设备 · 模拟状态' : `<span class="panel-status-dot${device.connected ? ' panel-status-online' : ''}"></span>${device.connected ? '已连接' : '未连接'} · 模拟状态` })}</div><p class="panel-description panel-removed" data-device-removed${removed ? '' : ' hidden'}>暂无绑定的示例设备。原有偏好与记录已保留。</p>
         ${row({ action: 'schedule', icon: 'clock', title: '更新时间', value: scheduleSummary(device) })}
       </div></section>
       <section class="panel-setting-section" aria-labelledby="panel-account-heading"><h2 id="panel-account-heading">账户与照片</h2><div class="panel-settings-group">
@@ -165,6 +166,16 @@ export function mountPanel(host, name, api) {
 
   function openDevice() {
     const current = api.getState().settings || {};
+    if (api.network) {
+      const status = api.network.snapshot();
+      const connection = status.removed ? '设备已移除' : !status.service ? '手机暂时无法访问服务，照片墙状态未确认' : status.device ? '照片墙在线' : '照片墙暂时离线';
+      sheet({ title: '我的设备', body: `<p><strong>${escapeHtml(current.deviceName || '客厅照片墙')}</strong></p><p>${connection} · 本地模拟</p><p>检查连接不会更改设备绑定。移除需要服务确认；屏幕清除连接设置还需联网同步。</p><p>未确认移除时，设备和偏好都会保留。</p>`,
+        actions: status.removed ? [{ label: '知道了', primary: true, onClick: closeSheet }]
+          : [{ label: '检查连接', primary: true, onClick: () => api.networkHelp() },
+            { label: '移除设备', onClick: () => api.removeNetworkDevice() }],
+      });
+      return;
+    }
     const photoAccess = {
       all: '已模拟允许访问全部照片',
       limited: '已模拟允许访问部分照片，仅使用授权范围',
@@ -284,6 +295,6 @@ export function mountPanel(host, name, api) {
   }, { signal: controller.signal });
 
   if (name === 'preferences') preferences();
-  else settings();
+  else { settings(); if (api.openDeviceOnMount) openDevice(); }
   return () => { controller.abort(); closeSheet(); };
 }

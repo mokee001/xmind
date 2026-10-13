@@ -4,13 +4,15 @@ import test from 'node:test';
 const { mountFirstWall, createFirstWallJourney, DEMO_STALE_PERSON_ID } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/first-wall.js')).toString('base64')}`);
 const { createOnboarding } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/onboarding.js')).toString('base64')}`);
 const { mountPanel, resetPreferenceDraft } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/panels.js')).toString('base64')}`);
+const { createNetworkDemo, networkNotice } = await import(`data:text/javascript;base64,${Buffer.from(fs.readFileSync('demos/calendar-app/network.js')).toString('base64')}`);
 
-function harness(scenario = 'success', delays) {
+function harness(scenario = 'success', delays, networkOptions) {
   const tasks = new Map(), actions = {}; let id = 0, now = 0, done = 0;
   const schedule = (fn, delay) => { const key = ++id; tasks.set(key, { fn, at: now + delay }); return key; };
   const cancel = key => tasks.delete(key);
+  const network = networkOptions ? createNetworkDemo({ ...networkOptions, schedule, cancel }) : null;
   const journey = createFirstWallJourney({ scenario, delays,
-    schedule, cancel,
+    schedule, cancel, network,
   });
   const advance = milliseconds => {
     const until = now + milliseconds;
@@ -22,8 +24,9 @@ function harness(scenario = 'success', delays) {
     now = until;
   };
   const host = { innerHTML: '', querySelector: selector => host.innerHTML.includes(selector.slice(1,-1)) ? { addEventListener: (_, fn) => actions[selector] = fn } : null };
-  return { journey, tasks, actions, host, advance, schedule, cancel,
-    mount: (extra = {}) => mountFirstWall({ host, header: {}, journey, onDone: () => done++, ...extra }),
+  const header = { innerHTML: '', querySelector: selector => header.innerHTML.includes(selector.slice(1,-1)) ? { addEventListener: (_, fn) => actions[selector] = fn } : null };
+  return { journey, network, tasks, actions, host, header, advance, schedule, cancel,
+    mount: (extra = {}) => mountFirstWall({ host, header, journey, onDone: () => done++, ...extra }),
     events: (type, stage) => journey.snapshot().events.filter(event => event.type === type && (!stage || event.stage === stage)),
     done: () => done,
   };
@@ -38,6 +41,228 @@ test('authorization prepares locally during connection and reuses the finished r
   assert.equal(h.events('started', 'upload').length, 1);
   h.advance(9000); assert.match(h.host.innerHTML, /第一幅回忆，已在照片墙/);
   h.actions['[data-first-done]'](); assert.equal(h.done(), 1); stop(); h.journey.destroy();
+});
+
+test('service-unreachable history reads end at eight seconds and repeated checks never invent screen offline or success', async () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  const reading = h.network.readHistory();
+  h.advance(7999); assert.equal(h.network.snapshot().history, 'loading');
+  assert.equal(networkNotice(h.network.snapshot()).label, '确认连接中');
+  h.advance(1); assert.equal((await reading).ok, false);
+  assert.equal(h.network.snapshot().history, 'error');
+  assert.equal(h.network.snapshot().device, null);
+  assert.match(networkNotice(h.network.snapshot()).title, /无法读取展示记录/);
+  assert.match(networkNotice(h.network.snapshot()).copy, /已有记录会保留/);
+  for (let i = 0; i < 3; i++) {
+    const checking = h.network.check(); h.advance(8000);
+    assert.equal((await checking).ok, false);
+    assert.equal(h.network.snapshot().checking, false);
+    assert.equal(h.network.snapshot().history, 'error');
+    assert.equal(h.network.snapshot().removed, false);
+  }
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('screen offline does not prevent a successful history read or count as a display receipt', async () => {
+  const h = harness('success', undefined, { scenario: 'device-offline' });
+  const reading = h.network.readHistory(); h.advance(650);
+  assert.equal((await reading).ok, true);
+  assert.equal(h.network.snapshot().history, 'ready');
+  assert.equal(networkNotice(h.network.snapshot()).label, '照片墙离线');
+  assert.equal(h.journey.snapshot().work.receipt, 'idle');
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('removal needs explicit confirmation; ten-second service failure retains the binding', async () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  assert.equal((await h.network.remove()).confirmationRequired, true);
+  assert.equal(h.tasks.size, 0);
+  const removing = h.network.remove({ confirmed: true });
+  h.advance(9999); assert.equal(h.network.snapshot().removing, true);
+  assert.equal(h.network.snapshot().removed, false);
+  h.advance(1); assert.deepEqual(await removing, { ok: false, reason: 'timeout', simulated: true });
+  assert.equal(h.network.snapshot().removed, false);
+  assert.equal(h.network.snapshot().removing, false);
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('service acceptance removes an offline device while explicitly retaining pending device synchronization', async () => {
+  const h = harness('success', undefined, { scenario: 'device-offline' });
+  const removing = h.network.remove({ confirmed: true }); h.advance(650);
+  assert.deepEqual(await removing, { ok: true, removed: true, pendingDevice: true, simulated: true });
+  assert.equal(h.network.snapshot().removed, true);
+  assert.match(networkNotice(h.network.snapshot()).copy, /屏幕恢复联网后同步清除连接设置/);
+  assert.equal(h.journey.snapshot().work.receipt, 'idle');
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('mismatched or unconfirmed removal responses preserve the binding', async () => {
+  for (const response of [null, {}, { device_id: 'another-demo-frame', removed: true }, { device_id: 'demo-frame', removed: false }]) {
+    const h = harness('success', undefined, { scenario: 'device-offline', removalResponse: () => response });
+    const removing = h.network.remove({ confirmed: true }); h.advance(650);
+    assert.equal((await removing).reason, 'unconfirmed');
+    assert.equal(h.network.snapshot().removed, false);
+    h.network.destroy(); h.journey.destroy();
+  }
+});
+
+function actualSheetHarness(network) {
+  const source = fs.readFileSync('demos/calendar-app/app.js', 'utf8');
+  const openSource = source.slice(source.indexOf('function openSheet('), source.indexOf('function manageDevice('));
+  const networkSource = source.slice(source.indexOf('async function checkNetwork('), source.indexOf('function removeNetworkDevice('));
+  const removeSource = source.slice(source.indexOf('function removeNetworkDevice('), source.indexOf('function connectionSheet('));
+  const listeners = [], queued = [];
+  const dialog = {
+    open: false, closeCalls: 0, showCalls: 0, buttons: [], fields: {},
+    set innerHTML(value) {
+      this.html = value;
+      this.buttons = [...value.matchAll(/data-sheet-action="(\d+)">([^<]*)<\/button>/g)]
+        .map(match => ({ dataset: { sheetAction: match[1] }, textContent: match[2], disabled: false }));
+      this.fields = Object.fromEntries(['data-remove-result', 'data-network-result', 'data-network-label', 'data-network-copy']
+        .map(name => [`[${name}]`, { textContent: '' }]));
+    },
+    querySelector(selector) {
+      const index = /\[data-sheet-action="(\d+)"\]/.exec(selector);
+      return index ? this.buttons[Number(index[1])] : this.fields[selector];
+    },
+    addEventListener(type, callback, options = {}) {
+      const listener = { type, callback, active: true };
+      listeners.push(listener);
+      options.signal?.addEventListener('abort', () => { listener.active = false; });
+    },
+    dispatch(type, event) {
+      const current = listeners.filter(listener => listener.type === type && listener.active);
+      current.forEach(listener => { if (listener.active) listener.callback(event); });
+    },
+    showModal() { this.open = true; this.showCalls++; },
+    close() { this.open = false; this.closeCalls++; queued.push(() => this.dispatch('close', {})); },
+    click(index) {
+      const button = this.buttons[index];
+      this.dispatch('click', { target: { closest: selector => selector === '[data-sheet-action]' ? button : null } });
+    },
+    flushClose() { while (queued.length) queued.shift()(); },
+  };
+  const factory = new Function('dialog', 'document', 'escapeHtml', 'icon', 'network', 'navigate', 'networkNotice',
+    `let sheetController; const route = 'calendar'; const manageDevice = () => {}; ${openSource}\n${networkSource}\n${removeSource}\nreturn {openSheet, networkHelp, removeNetworkDevice};`);
+  return { dialog, ...factory(dialog, { activeElement: null }, String, () => '', network, () => {}, networkNotice) };
+}
+
+test('actual nested sheets keep new buttons active and ignore an old queued close event', () => {
+  const h = actualSheetHarness(); let confirmed = 0, child;
+  const parent = h.openSheet({ title: '设备', body: '', actions: [{ label: '移除设备', onClick: () => {
+    child = h.openSheet({ title: '确认移除', body: '', actions: [{ label: '确认移除', onClick: () => confirmed++ }] });
+  } }] });
+  h.dialog.click(0);
+  assert.equal(h.dialog.closeCalls, 0, 'replacement must not enqueue a close event');
+  assert.equal(h.dialog.showCalls, 1);
+  assert.equal(parent.signal.aborted, true);
+  parent.close(); assert.equal(h.dialog.open, true, 'a stale view cannot close its replacement');
+  h.dialog.click(0); assert.equal(confirmed, 1);
+  child.close();
+  const next = h.openSheet({ title: '下一张', body: '', actions: [{ label: '继续', onClick: () => confirmed++ }] });
+  h.dialog.flushClose();
+  assert.equal(next.signal.aborted, false);
+  h.dialog.click(0); assert.equal(confirmed, 2);
+  next.close(); h.dialog.flushClose(); assert.equal(next.signal.aborted, true);
+});
+
+test('actual removal sheet disables only its request button and restores retry after the bounded failure', async () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  const ui = actualSheetHarness(h.network); ui.removeNetworkDevice();
+  ui.dialog.click(0);
+  assert.equal(ui.dialog.buttons[0].textContent, '正在确认移除…');
+  assert.equal(ui.dialog.buttons[0].disabled, true);
+  assert.equal(ui.dialog.buttons[1].disabled, false);
+  ui.dialog.click(0); assert.equal(h.tasks.size, 1, 'repeated confirmation cannot queue another request');
+  h.advance(10000); await Promise.resolve();
+  assert.equal(ui.dialog.buttons[0].disabled, false);
+  assert.equal(ui.dialog.buttons[0].textContent, '重新确认移除');
+  assert.match(ui.dialog.fields['[data-remove-result]'].textContent, /设备绑定和偏好已保留/);
+  assert.equal(h.network.snapshot().removed, false);
+  ui.dialog.click(1); ui.dialog.flushClose(); assert.equal(ui.dialog.open, false);
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('actual network sheet updates its status after recovery and stops listening after replacement', async () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  const ui = actualSheetHarness(h.network); ui.networkHelp();
+  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '暂时连不上服务');
+  ui.dialog.click(0);
+  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '确认连接中');
+  h.advance(8000); await Promise.resolve(); await Promise.resolve();
+  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '暂时连不上服务');
+  ui.dialog.click(2);
+  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '已连接');
+  assert.match(ui.dialog.fields['[data-network-copy]'].textContent, /模拟服务已恢复访问/);
+  assert.equal(h.journey.snapshot().work.receipt, 'idle');
+  ui.dialog.click(0); h.advance(650); await Promise.resolve(); await Promise.resolve();
+  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '已连接');
+  assert.match(ui.dialog.fields['[data-network-result]'].textContent, /模拟服务已恢复/);
+  const oldLabel = ui.dialog.fields['[data-network-label]'];
+  ui.openSheet({ title: '另一张', body: '' });
+  ui.dialog.fields = {};
+  h.network.recover(); h.advance(650);
+  assert.equal(oldLabel.textContent, '已连接', 'the replaced sheet subscription must have been removed');
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('canceling a dialog releases its request and a stale callback cannot settle its replacement', async () => {
+  for (const operation of ['check', 'remove']) {
+    const h = harness('success', undefined, { scenario: 'device-offline' });
+    const controller = new AbortController();
+    const first = h.network[operation]({ confirmed: true, signal: controller.signal });
+    const late = [...h.tasks.values()][0].fn;
+    controller.abort(); assert.equal((await first).canceled, true);
+    const replacement = h.network[operation]({ confirmed: true });
+    late();
+    assert.equal(h.network.snapshot().removed, false);
+    assert.equal(h.network.snapshot()[operation === 'check' ? 'checking' : 'removing'], true);
+    h.advance(650); assert.equal((await replacement).ok, true);
+    h.network.destroy(); h.journey.destroy();
+  }
+});
+
+test('explicit simulated recovery reloads history without silently completing a first wall', async () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  const initial = h.network.readHistory(); h.advance(8000); await initial;
+  h.network.recover();
+  assert.equal(h.network.snapshot().history, 'error', 'recovery alone does not pretend history was fetched');
+  const checking = h.network.check(); h.advance(650); assert.equal((await checking).ok, true);
+  const reading = h.network.readHistory(); h.advance(650); assert.equal((await reading).ok, true);
+  assert.equal(h.journey.snapshot().work.receipt, 'idle');
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('first-wall navigation stays available while waiting and in a network failure', () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  let calendar = 0, settings = 0, checks = 0;
+  h.journey.authorize('all'); h.journey.connect();
+  const stop = h.mount({ onCalendar: () => calendar++, onManageDevice: () => settings++, onCheckNetwork: () => checks++ });
+  h.actions['[data-first-calendar]'](); h.actions['[data-first-manage]']();
+  assert.equal(calendar, 1); assert.equal(settings, 1);
+  h.advance(30000); assert.match(h.host.innerHTML, /暂时连不上服务/);
+  h.actions['[data-first-calendar]'](); h.actions['[data-first-manage]'](); h.actions['[data-first-network]']();
+  assert.equal(calendar, 2); assert.equal(settings, 2); assert.equal(checks, 1);
+  assert.equal(h.journey.snapshot().work.receipt, 'idle');
+  stop(); h.network.destroy(); h.journey.destroy();
+});
+
+test('network recovery preserves completed stages and a sent wall only resumes its receipt', async () => {
+  for (const scenario of ['service-unreachable', 'device-offline']) {
+    const h = harness('success', undefined, { scenario });
+    h.journey.authorize('all'); h.journey.connect(); const stop = h.mount(); h.advance(30000);
+    assert.equal(h.journey.snapshot().failure, scenario);
+    const completed = Object.entries(h.journey.snapshot().work).filter(([,state]) => state === 'ready').map(([name]) => name);
+    const starts = Object.fromEntries(completed.map(stage => [stage, h.events('started', stage).length]));
+    h.journey.retry(); h.advance(30000);
+    assert.equal(h.journey.snapshot().failure, scenario, 'a retry cannot cure the network');
+    h.network.recover(); const checking = h.network.check(); h.advance(650); await checking;
+    h.journey.retry(); h.advance(30000);
+    assert.equal(h.journey.snapshot().work.receipt, 'ready');
+    completed.forEach(stage => assert.equal(h.events('started', stage).length, starts[stage]));
+    assert.equal(h.events('started', 'publish').length, 1);
+    stop(); h.network.destroy(); h.journey.destroy();
+  }
 });
 
 function preferenceHarness(journey, preferences = { people: [], topics: [], memoryMix: '均衡' }, availablePeople) {

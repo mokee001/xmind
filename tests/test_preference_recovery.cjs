@@ -45,6 +45,7 @@ function nativeApis(fetch) {
     'react-native':{Platform:{OS:'ios'}},
     './unifiedSelection':{UNIFIED_SELECTION:true,SELECTION_CONTRACT},
     './selectionReadiness.cjs':require('../photo-wall-app/src/selectionReadiness.cjs'),
+    './networkRecovery.cjs':require('../photo-wall-app/src/networkRecovery.cjs'),
   },{fetch,process:{env:{}},__DEV__:false});
   return{store,api};
 }
@@ -86,8 +87,8 @@ test('real App recovery route bypasses first-wall overlay only for the current f
   const firstWall={binding:current.bindingKey,state:'failed'};
   const recovering=appValue('recoveringPreferences',{activeTab:'preferences',firstWall,preferenceRecovery:current,wallRequestScopeRef:{current},sameDeviceBinding});
   assert.equal(recovering,true);
-  assert.equal(appValue('firstWallVisible',{firstWall,wallBindingKey:current.bindingKey,recoveringPreferences:recovering}),false);
-  assert.equal(appValue('firstWallVisible',{firstWall,wallBindingKey:current.bindingKey,recoveringPreferences:false}),true);
+  assert.equal(appValue('firstWallVisible',{firstWall,wallBindingKey:current.bindingKey,dismissedFirstWall:null,wallRequestScopeRef:{current},sameDeviceBinding,recoveringPreferences:recovering}),false);
+  assert.equal(appValue('firstWallVisible',{firstWall,wallBindingKey:current.bindingKey,dismissedFirstWall:null,wallRequestScopeRef:{current},sameDeviceBinding,recoveringPreferences:false}),true);
   assert.equal(appValue('recoveringPreferences',{activeTab:'preferences',firstWall,preferenceRecovery:{...current,bindingEpoch:2},wallRequestScopeRef:{current},sameDeviceBinding}),false);
 });
 
@@ -135,7 +136,7 @@ test('real unified content API rejects malformed success instead of converting i
     body={peopleAvailable:available,people:[],albums:[]};
     const result=await read();assert.equal(result.peopleAvailable,available);assert.deepEqual(result.people,[]);
   }
-  assert.equal(seenSignal,signal);
+  assert.notEqual(seenSignal,signal);assert.equal(seenSignal.aborted,false);
 });
 
 test('404 cloud preferences persist a real local revision and real App resumes generation with newly saved filters',async()=>{
@@ -191,11 +192,11 @@ test('real App startFirstWall uses the explicitly saved snapshot and fresh conte
   const binding=scope(),session={accountToken:'synthetic',device:{device_id:binding.deviceId,revision:''}},requests=[],states=[];
   const latest={current:session};
   const start=appValue('startFirstWall',{
-    wallOperationRef:{current:null},session,canPublish:true,AppState:{currentState:'active'},
+    wallOperationRef:{current:null},deviceManagementRef:{current:null},session,canPublish:true,AppState:{currentState:'active'},
     wallRequestScopeRef:{current:binding},firstWallAbortRef:{current:null},photoWorkEpochRef:{current:0},photoWorkMountedRef:{current:true},
     isCurrentWallRequest,preferenceFilters:recovery.preferenceFilters,recognizedContent:{people:[],topics:[]},preferenceRules:initial.rules,
     UNIFIED_SELECTION:true,preferenceProfile:initialProfile(),selectionSources:()=>['all'],photoSync:null,wallBindingKey:binding.bindingKey,
-    setFirstWall:value=>states.push(value),latestWallSessionRef:latest,
+    setFirstWall:value=>states.push(value),setDismissedFirstWall:()=>{},latestWallSessionRef:latest,
     updateDeviceSession:async value=>({sessions:[value]}),setSession:()=>{},setDeviceSessions:()=>{},normalizeDeviceSession:x=>x,
     runFirstWall,readDisplayStatus:async()=>session.device,DEFAULT_API_BASE:'https://fixture.invalid',
     createFirstWallReadiness:()=>({refresh:async()=>true,close:()=>{}}),syncSelectionInBackground:()=>assert.fail(),prewarmOwner:'synthetic',

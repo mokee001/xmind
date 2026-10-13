@@ -134,6 +134,7 @@ export default function HouseholdMembersModal({
           deviceAccountToken: deviceSession.accountToken,
           householdName: `${deviceSession.device?.name || '照片墙'}家庭`,
         });
+        if (!active) return;
         nextHousehold = adopted.household;
         await onDeviceSessionChange?.({
           ...deviceSession,

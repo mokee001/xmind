@@ -6,6 +6,7 @@ import { UNIFIED_SELECTION, selectionSources, syncSelectionInBackground, prewarm
   invalidatePhotoPrewarm, createFirstWallReadiness } from './src/unifiedSelection';
 import { createPrewarmOwner } from './src/photoPrewarm.cjs';
 import { createDeviceStatusPoll, deviceConnectionStatus, sameDeviceBinding } from './src/deviceStatus.cjs';
+import { serviceFailureMessage, sameManagedDevice } from './src/networkRecovery.cjs';
 import { publicationFromResponse, hasDisplayReceipt, nativeWallPresentation, isCurrentWallRequest } from './src/wallExperienceState.cjs';
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as MediaLibrary from 'expo-media-library/legacy';
@@ -1247,6 +1248,7 @@ function PhotoWallApp() {
   const [publishing, setPublishing] = useState(false);
   const [deliveryPending, setDeliveryPending] = useState(false);
   const [firstWall, setFirstWall] = useState(null);
+  const [dismissedFirstWall, setDismissedFirstWall] = useState(null);
   const firstWallAttemptRef = useRef('');
   const firstWallRunRef = useRef(null);
   const firstWallAbortRef = useRef(null);
@@ -1304,6 +1306,13 @@ function PhotoWallApp() {
   const [historyBinding, setHistoryBinding] = useState('');
   const [statusClock, setStatusClock] = useState(Date.now());
   const [deviceObservation, setDeviceObservation] = useState(null);
+  const [connectionRefresh, setConnectionRefresh] = useState(0);
+  const [preferenceReadError, setPreferenceReadError] = useState('');
+  const deviceStatusPollRef = useRef(null);
+  const deviceManagementRef = useRef(null);
+  const deviceManagementEpochRef = useRef(0);
+  const latestDeviceSessionsRef = useRef(deviceSessions);
+  latestDeviceSessionsRef.current = deviceSessions;
   const pageScrollRef = useRef(null);
   const onboardingPreparationRef = useRef('');
   const preferenceSaveInFlightRef = useRef(false);
@@ -1322,6 +1331,9 @@ function PhotoWallApp() {
     wallRequestScopeRef.current = { bindingKey: wallBindingKey, deviceId: preferenceDeviceKey,
       bindingEpoch: wallRequestScopeRef.current.bindingEpoch + 1, sequence: 0 };
   }
+  const historyScopeKey = JSON.stringify([wallBindingKey, wallRequestScopeRef.current.bindingEpoch]);
+  const historyScopeRef = useRef('');
+  const renderedManagementEpoch = deviceManagementEpochRef.current;
   const wallOperationRef = useRef(null);
   const latestWallSessionRef = useRef(session);
   latestWallSessionRef.current = session;
@@ -1329,18 +1341,29 @@ function PhotoWallApp() {
     firstWallAbortRef.current?.controller.abort();
     setGeneratedWall(null);
     setFirstWall(null);
+    setDismissedFirstWall(null);
     setPreferenceRecovery(null);
     setPreferenceResume(null);
+    setPreferenceReadError('');
     preferenceRecoveryReadRef.current += 1;
     firstWallAttemptRef.current = '';
     wallOperationRef.current = null;
     setPublishing(false);
     setDeliveryPending(false);
-  }, [wallBindingKey]);
+  }, [historyScopeKey]);
   const photoAllowed = IS_WEB_PREVIEW ? webPhotoAuthorized : permission?.status === 'granted';
   const connected = IS_WEB_PREVIEW ? webConnected : Boolean(session?.device?.device_id);
   const { deviceOnline, connectionLabel } = deviceConnectionStatus({ connected, preview:IS_WEB_PREVIEW,
     device:effectiveSession?.device, observation:deviceObservation, scope:wallRequestScopeRef.current, now:statusClock });
+  const connectionError = sameDeviceBinding(deviceObservation, wallRequestScopeRef.current) && deviceObservation.readFailed
+    ? deviceObservation.message : '';
+  const connectionNotice = connectionError || (connectionLabel === '暂时离线'
+    ? '照片墙暂时离线，请检查屏幕电源和 Wi-Fi。已有展示记录仍可查看。' : '');
+  const checkConnection = () => {
+    deviceStatusPollRef.current?.refresh();
+    setHistoryRefresh(value => value + 1);
+    setConnectionRefresh(value => value + 1);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => setStatusClock(Date.now()), 15000);
@@ -1570,7 +1593,7 @@ function PhotoWallApp() {
       if (recovery) {
         setPreferenceResume({...scope, ...saved, content:recognizedContent});
         setActiveTab('calendar');
-      } else setNotice('偏好已保存。');
+      }
     } catch (caught) {
       if (sameDeviceBinding(scope, wallRequestScopeRef.current)) setError(`无法保存偏好：${caught.message}`);
     }
@@ -1706,7 +1729,9 @@ function PhotoWallApp() {
   };
 
   const syncAccountDevices = async nextAccountSession => {
-    if (!nextAccountSession?.accessToken) return null;
+    if (!nextAccountSession?.accessToken || deviceManagementRef.current) return null;
+    const managementEpoch = deviceManagementEpochRef.current;
+    const current = () => !deviceManagementRef.current && managementEpoch === deviceManagementEpochRef.current;
     const [result, local] = await Promise.all([
       listDisplays({ apiBase: DEFAULT_API_BASE, accountToken: nextAccountSession.accessToken }),
       loadDeviceSessions(),
@@ -1720,8 +1745,9 @@ function PhotoWallApp() {
         householdId: device.household_id || existing?.householdId,
         device: { ...(existing?.device || {}), ...device },
       });
-      stored = await updateDeviceSession(nextSession);
+      stored = await updateDeviceSession(nextSession, {current});
     }
+    if (!current()) return null;
     const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
     const activeSession = sessions.find(item => item.device.device_id === stored.activeDeviceId) || sessions[0] || null;
     setDeviceSessions(sessions);
@@ -1730,27 +1756,50 @@ function PhotoWallApp() {
   };
 
   const handleFamilyDeviceUpgrade = async next => {
+    if (deviceManagementRef.current || renderedManagementEpoch !== deviceManagementEpochRef.current) return;
     const normalized = normalizeDeviceSession(next);
-    const stored = await updateDeviceSession(normalized);
+    const managementEpoch = renderedManagementEpoch;
+    const original = deviceSessions.find(item => item.device.device_id === normalized.device.device_id);
+    const current = () => !deviceManagementRef.current && managementEpoch === deviceManagementEpochRef.current;
+    if (!original) return;
+    const stored = await updateDeviceSession(normalized, {current, expectedAccountToken:original.accountToken});
+    if (!current()) return;
     const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
     setDeviceSessions(sessions);
     if (normalized.device.device_id === session?.device?.device_id) setSession(normalized);
   };
 
   const handleHouseholdJoined = async (_household, nextAccountSession) => {
+    if (deviceManagementRef.current || renderedManagementEpoch !== deviceManagementEpochRef.current) return;
     await syncAccountDevices(nextAccountSession);
   };
 
   const handleHouseholdLeft = async household => {
-    const leavingDeviceIds = new Set((household?.devices || []).map(device => device.device_id));
-    for (const deviceId of leavingDeviceIds) await removeDeviceSession(deviceId);
-    const stored = await loadDeviceSessions();
-    const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
-    const activeSession = sessions.find(item => item.device.device_id === stored.activeDeviceId) || sessions[0] || null;
-    setDeviceSessions(sessions);
-    if (activeSession) setSession(activeSession);
-    else clearDeviceRuntimeState();
+    if (deviceManagementRef.current || renderedManagementEpoch !== deviceManagementEpochRef.current) return;
+    const request = {...wallRequestScopeRef.current, sequence:++wallRequestScopeRef.current.sequence};
+    const epoch = ++deviceManagementEpochRef.current;
+    deviceManagementRef.current = request;
+    const current = () => deviceManagementRef.current === request && epoch === deviceManagementEpochRef.current
+      && sameDeviceBinding(request, wallRequestScopeRef.current);
+    firstWallAbortRef.current?.controller.abort();
+    try {
+      const leavingDeviceIds = new Set((household?.devices || []).map(device => device.device_id));
+      for (const deviceId of leavingDeviceIds) {
+        const original = deviceSessions.find(item => item.device.device_id === deviceId);
+        if (original) await removeDeviceSession(deviceId, {current, expectedAccountToken:original.accountToken});
+      }
+      const stored = await loadDeviceSessions();
+      if (!current()) return;
+      const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
+      const activeSession = sessions.find(item => item.device.device_id === stored.activeDeviceId) || sessions[0] || null;
+      setDeviceSessions(sessions);
+      if (activeSession) setSession(activeSession);
+      else clearDeviceRuntimeState();
+    } finally {
+      if (deviceManagementRef.current === request) deviceManagementRef.current = null;
+    }
   };
+
 
   useEffect(() => {
     screenMotion.setValue(0);
@@ -1936,12 +1985,14 @@ function PhotoWallApp() {
   useEffect(() => {
     if (IS_WEB_PREVIEW) return;
     let active = true;
+    const managementEpoch = deviceManagementEpochRef.current;
+    const current = () => active && !deviceManagementRef.current && managementEpoch === deviceManagementEpochRef.current;
     Promise.all([loadDeviceSessions(), loadPendingDeviceSetup()]).then(([stored, pending]) => {
-      if (!active) return;
+      if (!current()) return;
       const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
       setDeviceSessions(sessions);
       const saved = sessions.find(item => item.device.device_id === stored.activeDeviceId) || sessions[0];
-      if (pending?.kind === 'reconfigure' && pending.session?.device?.device_id) {
+      if (pending?.kind === 'reconfigure' && sessions.some(item => sameManagedDevice(item, pending.session))) {
         setReconfigurationSession(normalizeDeviceSession(pending.session));
         if (saved) setSession(saved);
         setDeviceModal(true);
@@ -1961,22 +2012,24 @@ function PhotoWallApp() {
     if (IS_WEB_PREVIEW) return undefined;
     let active = true;
     const initializeAccount = async () => {
+      const managementEpoch = deviceManagementEpochRef.current;
+      const current = () => active && !deviceManagementRef.current && managementEpoch === deviceManagementEpochRef.current;
       const nextAccountSession = await prepareAccountSession();
-      if (!active) return;
+      if (!current()) return;
       setAccountSession(nextAccountSession);
       try {
         const local = await loadDeviceSessions();
-        for (const current of local.sessions) {
+        for (const currentSession of local.sessions) {
           try {
-            const upgraded = await upgradeDeviceToFamily(current, nextAccountSession);
+            const upgraded = await upgradeDeviceToFamily(currentSession, nextAccountSession);
             if (upgraded?.accountToken === nextAccountSession.accessToken) {
-              await updateDeviceSession(upgraded);
+              await updateDeviceSession(upgraded, {current, expectedAccountToken:currentSession.accountToken});
             }
           } catch {
             // 可能是其他家庭的旧绑定；由邀请码流程处理，不删除本地记录。
           }
         }
-        if (!active) return;
+        if (!current()) return;
         await syncAccountDevices(nextAccountSession);
       } catch {
         // 家庭接口尚未部署或网络暂时不可用时，保留原有设备会话和连接流程。
@@ -2014,6 +2067,9 @@ function PhotoWallApp() {
     if (IS_WEB_PREVIEW || !session?.device?.device_id || !session.accountToken || !preferenceProfileLoaded) return undefined;
     let active = true;
     const requestEpoch = preferenceRequestEpochRef.current;
+    const scope = {...wallRequestScopeRef.current};
+    const controller = new AbortController();
+    const current = () => active && sameDeviceBinding(scope, wallRequestScopeRef.current);
     const deviceId = session.device.device_id;
     setHydratedPreferenceDeviceId('');
     setHydratedPreferenceBinding('');
@@ -2021,19 +2077,22 @@ function PhotoWallApp() {
       apiBase: DEFAULT_API_BASE,
       deviceId: session.device.device_id,
       accountToken: session.accountToken,
+      signal: controller.signal,
     }).then(async profile => {
-      if (!active || requestEpoch !== preferenceRequestEpochRef.current) return;
+      if (!current() || requestEpoch !== preferenceRequestEpochRef.current) return;
       await cachePreferenceProfile(profile);
-      if (!active || requestEpoch !== preferenceRequestEpochRef.current) return;
+      if (!current() || requestEpoch !== preferenceRequestEpochRef.current) return;
+      setPreferenceReadError('');
       setPreferenceProfile(profile);
       const revision = getActivePreferenceRevision(profile);
       if (revision?.snapshot) hydratePreferenceSnapshot(revision.snapshot);
-    }).catch(() => {
+    }).catch(caught => {
+      if (current()) setPreferenceReadError([404,405,501].includes(Number(caught.status)) ? '' : serviceFailureMessage(caught));
       // Keep the encrypted local cache while a production node is rolling out
       // the device-level preference API.
-    }).finally(() => { if (active) { setHydratedPreferenceDeviceId(deviceId); setHydratedPreferenceBinding(wallBindingKey); } });
-    return () => { active = false; };
-  }, [session?.device?.device_id, session?.accountToken, preferenceProfileLoaded]);
+    }).finally(() => { if (current()) { setHydratedPreferenceDeviceId(deviceId); setHydratedPreferenceBinding(wallBindingKey); } });
+    return () => { active = false; controller.abort(); };
+  }, [session?.device?.device_id, session?.accountToken, preferenceProfileLoaded, connectionRefresh, historyScopeKey]);
 
   useEffect(() => {
     if (IS_WEB_PREVIEW || !session?.accountToken || !photoAllowed) return undefined;
@@ -2076,23 +2135,22 @@ function PhotoWallApp() {
     if (IS_WEB_PREVIEW || addingDevice || reconfigurationSession) return undefined;
     if (!session?.device?.device_id || !session.accountToken) return undefined;
     let active = true;
-    let invalidStatusCount = 0;
     const poll = createDeviceStatusPoll({
       getScope:() => wallRequestScopeRef.current,
-      isBusy:() => Boolean(wallOperationRef.current),
+      isBusy:() => Boolean(wallOperationRef.current || deviceManagementRef.current),
       readDevice:(request, signal) => readDisplayStatus({ apiBase:DEFAULT_API_BASE,
         deviceId:request.deviceId, accountToken:session.accountToken, signal }),
       onObserved:observation => {
-        invalidStatusCount = 0;
         setDeviceObservation(observation);
         setStatusClock(Date.now());
       },
       onIdle:async (device, request) => {
-        invalidStatusCount = 0;
         // Use the latest local publication mapping; the polling effect's session
         // closure predates publications made on the same connected device.
         const nextSession = { ...latestWallSessionRef.current, apiBase: DEFAULT_API_BASE, device };
-        const stored = await updateDeviceSession(nextSession);
+        const current = () => active && !wallOperationRef.current && !deviceManagementRef.current
+          && isCurrentWallRequest(request, wallRequestScopeRef.current);
+        const stored = await updateDeviceSession(nextSession, {current, expectedAccountToken:session.accountToken});
         if (!active || wallOperationRef.current || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
         latestWallSessionRef.current = nextSession;
         setSession(nextSession);
@@ -2107,39 +2165,18 @@ function PhotoWallApp() {
           if (status.state === 'done' || status.state === 'failed') setDeliveryPending(false);
         }
       },
-      onError:async (caught, request, idle) => {
-        setDeviceObservation(current => ({...(sameDeviceBinding(current, request) ? current : request), readFailed:true}));
-        if (!idle || !active || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
-        const invalidSession = caught.status === 401 || caught.code === 'DEVICE_NOT_FOUND';
-        if (invalidSession) {
-          invalidStatusCount += 1;
-          if (invalidStatusCount >= 2) {
-            const invalidDeviceId = session.device.device_id;
-            const fallback = await removeDeviceSession(invalidDeviceId);
-            if (!active || !isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
-            setDeviceSessions(current => current.filter(item => item.device.device_id !== invalidDeviceId));
-            if (fallback) {
-              const normalized = normalizeDeviceSession(fallback);
-              setSession(normalized);
-              setNotice(`原设备绑定已失效，已切换到“${normalized.device.name || '另一台照片墙'}”。`);
-            } else {
-              await Promise.allSettled([clearPendingDeviceSetup(), clearPhotoSyncPreference()]);
-              clearDeviceRuntimeState();
-              setNotice('这台照片墙的绑定已经失效，请重新连接设备。');
-            }
-          }
-          return;
-        }
-        invalidStatusCount = 0;
-        setOperation(current => current.state === 'idle'
-          ? { ...current, message: `暂时无法读取设备状态：${caught.message}` }
-          : current);
+      onError:async (caught, request) => {
+        if (!active || !sameDeviceBinding(request, wallRequestScopeRef.current) || caught.code === 'DEVICE_BINDING_CHANGED') return;
+        setDeviceObservation(current => ({...(sameDeviceBinding(current, request) ? current : request),
+          readFailed:true, message:serviceFailureMessage(caught)}));
       },
     });
+    deviceStatusPollRef.current = poll;
     poll.refresh();
     const timer = setInterval(poll.refresh, 5000);
-    return () => { active = false; clearInterval(timer); poll.cancel(); };
-  }, [session?.device?.device_id, session?.accountToken, addingDevice, reconfigurationSession?.device?.device_id]);
+    return () => { active = false; clearInterval(timer); poll.cancel();
+      if (deviceStatusPollRef.current === poll) deviceStatusPollRef.current = null; };
+  }, [session?.device?.device_id, session?.accountToken, addingDevice, reconfigurationSession?.device?.device_id, historyScopeKey]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
@@ -2553,7 +2590,7 @@ function PhotoWallApp() {
   }, [photoAllowed, connected, needsOnboarding, session?.accountToken, effectiveSession?.device?.device_id, photoSync, session?.firstWall?.state, firstWall?.state]);
 
   const startFirstWall = async (retryUncertain = false, appliedPreference = null) => {
-    if (wallOperationRef.current || !session?.accountToken || !canPublish || AppState.currentState !== 'active') return;
+    if (wallOperationRef.current || deviceManagementRef.current || !session?.accountToken || !canPublish || AppState.currentState !== 'active') return;
     const request = { ...wallRequestScopeRef.current, sequence: ++wallRequestScopeRef.current.sequence };
     wallOperationRef.current = request;
     const controller = new AbortController();
@@ -2567,11 +2604,12 @@ function PhotoWallApp() {
     const generateOptions = {template:'auto', title:'今日精选', filters:prefer, excludeFilters:exclude,
       deviceId:request.deviceId, preferenceRevisionId:appliedPreference?.revisionId || preferenceProfile?.activeRevisionId || '', selectionSources:selectionSources(photoSync)};
     const stage = state => { if (active()) setFirstWall({ binding: wallBindingKey, state }); };
+    setDismissedFirstWall(null);
     setFirstWall({ binding: wallBindingKey, state: 'preparing' });
     const store = async patch => {
       if (!active()) throw new Error('设备已切换，请重新开始。');
       const next = { ...latestWallSessionRef.current, ...patch };
-      const stored = await updateDeviceSession(next);
+      const stored = await updateDeviceSession(next, {current:active, expectedAccountToken:session.accountToken});
       if (!active()) return;
       latestWallSessionRef.current = next;
       setSession(next);
@@ -2642,13 +2680,28 @@ function PhotoWallApp() {
   }, [preferenceResume, photoWorkRevision, wallBindingKey, photoAllowed, connected, canPublish, preferenceProfileReady]);
   useEffect(() => {
     if (!UNIFIED_SELECTION || IS_WEB_PREVIEW || needsOnboarding || recoveringPreferences || preferenceResume || !preferenceProfileReady || !photoAllowed || !connected || !canPublish
-      || AppState.currentState !== 'active' || wallOperationRef.current || firstWallAttemptRef.current === wallBindingKey
+      || sameDeviceBinding(dismissedFirstWall, wallRequestScopeRef.current)
+      || AppState.currentState !== 'active' || wallOperationRef.current || deviceManagementRef.current || firstWallAttemptRef.current === wallBindingKey
       || !needsFirstWallRun({visibleState:firstWall?.binding === wallBindingKey ? firstWall.state : '', savedState:session?.firstWall?.state, device:session?.device})) return;
     firstWallAttemptRef.current = wallBindingKey;
     firstWallRunRef.current();
-  }, [needsOnboarding, recoveringPreferences, preferenceResume, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey, photoWorkRevision,
+  }, [needsOnboarding, recoveringPreferences, preferenceResume, dismissedFirstWall, preferenceProfileReady, photoAllowed, connected, canPublish, wallBindingKey, photoWorkRevision,
     firstWall?.state, session?.firstWall?.state, session?.device?.revision, session?.device?.state]);
-  const firstWallVisible = firstWall?.binding === wallBindingKey && !recoveringPreferences;
+  const firstWallVisible = firstWall?.binding === wallBindingKey && !recoveringPreferences
+    && !sameDeviceBinding(dismissedFirstWall, wallRequestScopeRef.current);
+  const leaveFirstWall = () => {
+    firstWallAttemptRef.current = wallBindingKey;
+    const attempt = firstWallAbortRef.current;
+    if (attempt) {
+      attempt.resume = false;
+      attempt.controller.abort();
+      wallRequestScopeRef.current.sequence += 1;
+      wallOperationRef.current = null;
+      setFirstWall(current => ({...current, state:'failed', message:'准备已暂停，已完成的步骤会保留。可以继续检查上屏。'}));
+    }
+    setDismissedFirstWall({...wallRequestScopeRef.current});
+    setActiveTab('calendar');
+  };
   const firstWallPeopleError = isPeoplePreferenceError(firstWall);
 
   const requestModelWall = async () => {
@@ -2754,7 +2807,7 @@ function PhotoWallApp() {
       };
       latestWallSessionRef.current = nextSession;
       setSession(nextSession);
-      const stored = await updateDeviceSession(nextSession);
+      const stored = await updateDeviceSession(nextSession, {current:() => !deviceManagementRef.current && isCurrentWallRequest(request, wallRequestScopeRef.current), expectedAccountToken:session.accountToken});
       if (!isCurrentWallRequest(request, wallRequestScopeRef.current)) return;
       setDeviceSessions(stored.sessions.map(normalizeDeviceSession).filter(Boolean));
       if (publishingPetCollage) setPetCollageStage('published');
@@ -2805,6 +2858,9 @@ function PhotoWallApp() {
   };
 
   const onConnected = async next => {
+    const completionEpoch = renderedManagementEpoch;
+    const current = () => !deviceManagementRef.current && completionEpoch === deviceManagementEpochRef.current;
+    if (!current()) throw new Error('设备连接操作已变化，请重新打开连接流程。');
     const wasReconfiguring = Boolean(reconfigurationSession?.device?.device_id);
     if (IS_WEB_PREVIEW) {
       const wasAdding = addingDevice;
@@ -2822,7 +2878,8 @@ function PhotoWallApp() {
       return;
     }
     const wasAdding = addingDevice;
-    let normalized = normalizeDeviceSession(next);
+    let normalized = normalizeDeviceSession(wasReconfiguring ? {...reconfigurationSession, ...next,
+      firstWall:reconfigurationSession.firstWall, publishedWall:reconfigurationSession.publishedWall} : next);
     if (normalized.accountToken) {
       try {
         const nextAccountSession = await prepareAccountSession();
@@ -2831,9 +2888,14 @@ function PhotoWallApp() {
         // 家庭服务不可用不应阻断首次配网；稍后可从“家庭与成员”再次升级。
       }
     }
+    if (!current()) throw new Error('设备连接操作已变化，未恢复旧绑定。');
     const stored = wasReconfiguring
-      ? await updateDeviceSession(normalized)
-      : await saveDeviceSession(normalized);
+      ? await updateDeviceSession(normalized, {current, expectedAccountToken:reconfigurationSession.accountToken})
+      : await saveDeviceSession(normalized, {current});
+    if (!current()) return;
+    deviceManagementEpochRef.current += 1;
+    wallRequestScopeRef.current = {...wallRequestScopeRef.current, bindingEpoch:wallRequestScopeRef.current.bindingEpoch + 1,
+      sequence:wallRequestScopeRef.current.sequence + 1};
     const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
     const activeSession = sessions.find(item => item.device.device_id === stored.activeDeviceId) || normalized;
     setSession(activeSession);
@@ -3008,57 +3070,73 @@ function PhotoWallApp() {
     openBluetoothSetup();
   };
 
-  const removeManagedDevice = async targetSession => {
-    let cleanupWarning = '';
+  const runManagedDeviceAction = async (targetSession, action) => {
+    if (deviceManagementRef.current) throw new Error('上一项设备操作尚未结束，请稍后重试。');
+    const target = latestDeviceSessionsRef.current.find(item => sameManagedDevice(item, targetSession));
+    if (!IS_WEB_PREVIEW && !target) throw new Error('设备绑定已变化，请重新打开设备管理。');
+    const request = {...wallRequestScopeRef.current, sequence:++wallRequestScopeRef.current.sequence};
+    const epoch = ++deviceManagementEpochRef.current;
+    deviceManagementRef.current = request;
+    const current = () => deviceManagementRef.current === request && epoch === deviceManagementEpochRef.current
+      && sameDeviceBinding(request, wallRequestScopeRef.current)
+      && (IS_WEB_PREVIEW || latestDeviceSessionsRef.current.some(item => sameManagedDevice(item, targetSession)));
+    // Stop old saves before sending a destructive command; the saved publish intent is retained.
+    if (firstWallAbortRef.current) {
+      firstWallAbortRef.current.resume = false;
+      firstWallAbortRef.current.controller.abort();
+      firstWallAttemptRef.current = wallBindingKey;
+      setFirstWall(firstWallFailure(new Error('准备已暂停。设备操作结束后，可以继续检查上屏。'), wallBindingKey));
+    }
+    wallOperationRef.current = null;
+    try { return await action(current); }
+    finally {
+      if (deviceManagementRef.current === request) deviceManagementRef.current = null;
+      deviceStatusPollRef.current?.refresh();
+    }
+  };
+
+  const removeManagedDevice = targetSession => runManagedDeviceAction(targetSession, async current => {
     const removedDeviceId = targetSession?.device?.device_id;
-    const sourceSessions = IS_WEB_PREVIEW ? managedDeviceSessions : deviceSessions;
-    const remaining = sourceSessions.filter(item => item.device.device_id !== removedDeviceId);
-    const removingCurrent = removedDeviceId === effectiveSession?.device?.device_id;
-    let fallback = null;
+    if (!removedDeviceId || (!IS_WEB_PREVIEW && !targetSession.accountToken)) throw new Error('无法确认设备权限，已保留本机绑定。');
+    const screen19 = isScreen19Device(targetSession.device);
+    if (!IS_WEB_PREVIEW && !screen19) {
+      try {
+        await removeDisplay({apiBase:DEFAULT_API_BASE, deviceId:removedDeviceId, accountToken:targetSession.accountToken});
+      } catch (caught) {
+        throw new Error(`尚未确认删除，设备仍保留在本机。${serviceFailureMessage(caught)}`);
+      }
+    }
+    if (!current()) throw new Error('设备绑定已变化，未清除新的本机会话。请重新打开设备管理。');
+    let stored;
     if (IS_WEB_PREVIEW) {
       setWebConnected(false);
       setWebPhotoAuthorized(false);
-    } else if (removedDeviceId && targetSession.accountToken) {
-      if (!isScreen19Device(targetSession.device)) {
-        try {
-          await removeDisplay({
-            apiBase: DEFAULT_API_BASE,
-            deviceId: removedDeviceId,
-            accountToken: targetSession.accountToken,
-          });
-        } catch (caught) {
-          // A second client may already have removed the display. The local App
-          // should still discard that unusable binding and allow a clean setup.
-          if (caught.status !== 401 && caught.status !== 404) throw caught;
-        }
-      }
-      const cleanup = await Promise.allSettled([
-        removeDeviceSession(removedDeviceId).then(next => { fallback = next; }),
-        clearPendingDeviceSetup(),
-        ...(!remaining.length ? [clearPhotoSyncPreference()] : []),
-      ]);
-      if (cleanup.some(result => result.status === 'rejected')) {
-        cleanupWarning = '设备已删除；本机安全存储清理未完全完成，如重启后仍显示旧设备，请再次删除。';
-      }
-    }
-    setDeviceSessions(remaining);
-    if (removingCurrent && remaining.length) {
-      const next = normalizeDeviceSession(fallback || remaining[0]);
-      setSession(next);
-      setGeneratedWall(null);
-      setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
-      setSelectionModel(null);
-      setOperation(deliveryStatus(next.device) || EMPTY_OPERATION);
-      setNotice(cleanupWarning || `设备已删除，已切换到“${next.device.name || '另一台照片墙'}”。`);
-    } else if (removingCurrent) {
-      clearDeviceRuntimeState();
-      setNotice(cleanupWarning || (isScreen19Device(targetSession.device)
-        ? '19 寸屏已从 App 设备列表移除，屏幕原连接设置保持不变。'
-        : '设备已删除。屏幕会清除原网络并重新进入连接模式。'));
+      stored = {sessions:[], activeDeviceId:null};
     } else {
-      setNotice(cleanupWarning || `已删除“${targetSession.device.name || '照片墙'}”。`);
+      stored = await removeDeviceSession(removedDeviceId, {current, expectedAccountToken:targetSession.accountToken, returnSnapshot:true});
     }
-  };
+    if (!current()) return;
+    const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
+    const removingCurrent = latestWallSessionRef.current?.device?.device_id === removedDeviceId;
+    latestDeviceSessionsRef.current = sessions;
+    setDeviceSessions(sessions);
+    if (removingCurrent || IS_WEB_PREVIEW) {
+      // Invalidate same-ID/same-account work immediately, before React commits the next binding.
+      wallRequestScopeRef.current = {...wallRequestScopeRef.current, bindingEpoch:wallRequestScopeRef.current.bindingEpoch + 1,
+        sequence:wallRequestScopeRef.current.sequence + 1};
+      const next = sessions.find(item => item.device.device_id === stored.activeDeviceId) || null;
+      latestWallSessionRef.current = next;
+      if (next) {
+        setSession(next);
+        setGeneratedWall(null);
+        setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
+        setSelectionModel(null);
+        setOperation(deliveryStatus(next.device) || EMPTY_OPERATION);
+      } else clearDeviceRuntimeState();
+    }
+    setNotice(screen19 ? '19 寸屏已从 App 设备列表移除，屏幕原连接设置保持不变。'
+      : '设备已移除；屏幕恢复联网后会清除连接设置。');
+  });
 
   const addDevice = () => {
     setDeviceManagerVisible(false);
@@ -3073,6 +3151,9 @@ function PhotoWallApp() {
   };
 
   const addScreen19Device = async () => {
+    const managementEpoch = deviceManagementEpochRef.current;
+    const current = () => !deviceManagementRef.current && managementEpoch === deviceManagementEpochRef.current;
+    if (!current()) return;
     let nextAccountSession = accountSession;
     try {
       nextAccountSession = await prepareAccountSession();
@@ -3103,10 +3184,12 @@ function PhotoWallApp() {
         ...existing,
         accountToken: found.accountToken,
         device: { ...(existing?.device || {}), ...found.device },
-      }));
+      }), {current});
     }
+    if (!current()) return;
     const target = discovered.find(found => !deviceSessions.some(item => item.device.device_id === found.device.device_id)) || discovered[0];
-    const selected = await selectDeviceSession(target.device.device_id);
+    const selected = await selectDeviceSession(target.device.device_id, {current});
+    if (!current()) return;
     const sessions = stored.sessions.map(normalizeDeviceSession).filter(Boolean);
     const activeSession = normalizeDeviceSession(selected);
     setSession(activeSession);
@@ -3119,6 +3202,7 @@ function PhotoWallApp() {
   };
 
   const closeDeviceSetup = async () => {
+    deviceManagementEpochRef.current += 1;
     const wasReconfiguring = Boolean(reconfigurationSession?.device?.device_id);
     setDeviceModal(false);
     setAddingDevice(false);
@@ -3133,33 +3217,30 @@ function PhotoWallApp() {
     }
   };
 
-  const reconfigureManagedDevice = async targetSession => {
-    if (!targetSession?.device?.device_id || !targetSession.accountToken) {
-      throw new Error('这台设备缺少管理员权限，请删除后重新添加');
-    }
-    if (isScreen19Device(targetSession.device)) {
-      throw new Error('19 寸屏无需重新配网');
-    }
+  const reconfigureManagedDevice = targetSession => runManagedDeviceAction(targetSession, async current => {
+    if (!targetSession?.device?.device_id || !targetSession.accountToken) throw new Error('暂时无法确认管理员权限，已保留设备。');
+    if (isScreen19Device(targetSession.device)) throw new Error('19 寸屏无需重新配网');
     if (!IS_WEB_PREVIEW) {
-      await reprovisionDisplay({
-        apiBase: DEFAULT_API_BASE,
-        deviceId: targetSession.device.device_id,
-        accountToken: targetSession.accountToken,
-      });
-      await savePendingDeviceSetup({ kind: 'reconfigure', session: targetSession });
+      await reprovisionDisplay({apiBase:DEFAULT_API_BASE, deviceId:targetSession.device.device_id, accountToken:targetSession.accountToken});
+      if (!current()) throw new Error('设备绑定已变化，请重新打开设备管理。');
+      await savePendingDeviceSetup({kind:'reconfigure', session:targetSession});
     }
+    if (!current()) return;
     setReconfigurationSession(targetSession);
     setAddingDevice(false);
     setInitialSetupDevice(null);
     setDeviceManagerVisible(false);
     setDeviceModal(true);
-    setNotice('已通知照片墙进入配网模式，请保持通电并选择新的 Wi-Fi。');
-  };
+    setNotice('重新配网指令已提交；照片墙恢复联网后会进入连接模式，请保持通电。');
+  });
 
   const switchDevice = async next => {
-    if (preferenceSaveInFlightRef.current) return;
+    if (preferenceSaveInFlightRef.current || deviceManagementRef.current) return;
     if (!next?.device?.device_id || next.device.device_id === session?.device?.device_id) return;
-    const normalized = normalizeDeviceSession(await selectDeviceSession(next.device.device_id));
+    const epoch = deviceManagementEpochRef.current;
+    const current = () => !deviceManagementRef.current && epoch === deviceManagementEpochRef.current;
+    const normalized = normalizeDeviceSession(await selectDeviceSession(next.device.device_id, {current, expectedAccountToken:next.accountToken}));
+    if (!current()) return;
     setSession(normalized);
     setGeneratedWall(null);
     setRecognitionSnapshot(EMPTY_RECOGNITION_SNAPSHOT);
@@ -3213,27 +3294,34 @@ function PhotoWallApp() {
   useEffect(() => {
     if (!historyVisible && (activeTab !== 'calendar' || needsOnboarding)) return undefined;
     let active = true;
-    setDisplayHistory([]);
-    setHistoryBinding('');
-    setHistoryError('');
+    const scope = {...wallRequestScopeRef.current};
+    const controller = new AbortController();
+    const current = () => active && sameDeviceBinding(scope, wallRequestScopeRef.current);
+    if (historyScopeRef.current !== historyScopeKey) {
+      historyScopeRef.current = historyScopeKey;
+      setDisplayHistory([]);
+      setHistoryBinding('');
+      setHistoryError('');
+    }
     if (IS_WEB_PREVIEW || !effectiveSession?.device?.device_id || !session?.accountToken) {
       setHistoryLoading(false);
-      return () => { active = false; };
+      return () => { active = false; controller.abort(); };
     }
     setHistoryLoading(true);
     readDeviceDisplayHistory({
       apiBase: DEFAULT_API_BASE,
       deviceId: effectiveSession.device.device_id,
       accountToken: session.accountToken,
+      signal: controller.signal,
     }).then(result => {
-      if (active) { setDisplayHistory(Array.isArray(result.records) ? result.records : []); setHistoryBinding(wallBindingKey); }
+      if (current()) { setDisplayHistory(result.records); setHistoryBinding(historyScopeKey); setHistoryError(''); }
     }).catch(caught => {
-      if (active) setHistoryError(Number(caught.status) === 404
-        ? '当前服务尚未提供展示记录。'
-        : `暂时无法读取展示记录：${caught.message}`);
-    }).finally(() => { if (active) setHistoryLoading(false); });
-    return () => { active = false; };
-  }, [historyVisible, activeTab, needsOnboarding, historyRefresh, effectiveSession?.device?.device_id, session?.accountToken, nativeWall.confirmedImage, operation.state === 'done']);
+      if (current()) setHistoryError(Number(caught.status) === 404
+        ? '当前服务尚未提供展示记录。已有记录会保留，请稍后重试。'
+        : serviceFailureMessage(caught));
+    }).finally(() => { if (current()) setHistoryLoading(false); });
+    return () => { active = false; controller.abort(); };
+  }, [historyVisible, activeTab, needsOnboarding, historyRefresh, historyScopeKey, nativeWall.confirmedImage, operation.state === 'done']);
 
   const restartFirstRun = () => {
     if (preferenceSaveInFlightRef.current) return;
@@ -3315,6 +3403,7 @@ function PhotoWallApp() {
           <Text style={[styles.preferenceManageText, editingPreferences && styles.preferenceSaveText]}>{savingPreferenceRevision ? '保存中' : editingPreferences ? recoveringPreferences ? '保存并继续' : '保存' : '管理偏好'}</Text>
         </MotionPressable> : null}
       </View> : null}
+      {(firstWallVisible || activeTab !== 'calendar') && (connectionNotice || (activeTab === 'preferences' && preferenceReadError)) ? <View style={{paddingHorizontal:24, paddingBottom:12}}><Text style={styles.landingNote}>{connectionNotice || preferenceReadError}</Text><ActionButton secondary onPress={checkConnection}>检查连接 / 重试</ActionButton></View> : null}
       {firstWallVisible ? (
         <ScrollView contentContainerStyle={[styles.landingContent, { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 28, paddingBottom: 24 }]}>
           <View style={styles.calendarArtwork} accessibilityElementsHidden><View style={styles.calendarPaperBack} /><View style={styles.calendarPaper}><Text style={styles.calendarPaperDay}>{firstWall.state === 'done' ? '✓' : '·'}</Text></View></View>
@@ -3327,9 +3416,13 @@ function PhotoWallApp() {
             {firstWall.canRestart ? <ActionButton secondary onPress={() => startFirstWall(true)}>重新准备并发送</ActionButton> : null}
             {!firstWallPeopleError ? <ActionButton secondary onPress={() => Linking.openSettings()}>调整照片权限</ActionButton> : null}
           </> : firstWall.state === 'done' ? <ActionButton onPress={() => { setFirstWall(null); setActiveTab('calendar'); }}>进入日历</ActionButton> : <Text style={styles.landingNote}>首次准备中，请暂时保持 App 打开。</Text>}
+          {firstWall.state !== 'done' ? <ActionButton secondary onPress={leaveFirstWall}>返回日历</ActionButton> : null}
         </ScrollView>
       ) : !needsOnboarding && preferenceProfileLoaded && activeTab === 'calendar' ? (
-        <MemoryCalendar key={wallBindingKey} records={historyBinding === wallBindingKey ? displayHistory : []} loading={historyLoading} error={historyError} onRetry={() => setHistoryRefresh(value => value + 1)} />
+        <>
+        {sameDeviceBinding(dismissedFirstWall, wallRequestScopeRef.current) && firstWall?.state !== 'done' ? <View style={{paddingHorizontal:24}}><Text style={styles.landingNote}>首次准备已暂停，已完成的步骤会保留。</Text><ActionButton secondary onPress={() => setDismissedFirstWall(null)}>继续首次准备</ActionButton></View> : null}
+        <MemoryCalendar key={historyScopeKey} records={historyBinding === historyScopeKey ? displayHistory : []} loading={historyLoading} error={historyError} onRetry={checkConnection} connectionNotice={connectionNotice} onManageDevice={manageDevice} />
+        </>
       ) : (
       <ScrollView ref={pageScrollRef} contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <Animated.View style={{
@@ -3495,6 +3588,9 @@ function PhotoWallApp() {
         onReconfigure={reconfigureManagedDevice}
         onAdd={addDevice}
         onRemove={removeManagedDevice}
+        activeConnectionLabel={connectionLabel}
+        connectionError={connectionError}
+        onCheckConnection={checkConnection}
       />
       <AddDisplayModal
         visible={addDisplayVisible}
@@ -3893,6 +3989,9 @@ function PhotoWallApp() {
         onReconfigure={reconfigureManagedDevice}
         onAdd={addDevice}
         onRemove={removeManagedDevice}
+        activeConnectionLabel={connectionLabel}
+        connectionError={connectionError}
+        onCheckConnection={checkConnection}
       />
       <AddDisplayModal
         visible={addDisplayVisible}

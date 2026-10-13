@@ -19,6 +19,7 @@ function api(fetch) {
     'react-native': { Platform: { OS: 'ios' } },
     './unifiedSelection': { UNIFIED_SELECTION: true, SELECTION_CONTRACT: 'unified-recollections-v1' },
     './selectionReadiness.cjs': require('../photo-wall-app/src/selectionReadiness.cjs'),
+    './networkRecovery.cjs': require('../photo-wall-app/src/networkRecovery.cjs'),
   };
   const module = { exports: {} };
   vm.compileFunction(code, ['module', 'exports', 'require', 'fetch', 'process', '__DEV__'], { filename })(

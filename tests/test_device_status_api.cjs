@@ -15,6 +15,7 @@ function api(fetch) {
   const mocks = {'react-native':{Platform:{OS:'ios'}},
     './unifiedSelection':{UNIFIED_SELECTION:true,SELECTION_CONTRACT:'unified-recollections-v1'},
     './selectionReadiness.cjs':require('../photo-wall-app/src/selectionReadiness.cjs'),
+    './networkRecovery.cjs':require('../photo-wall-app/src/networkRecovery.cjs'),
     './deviceStatus.cjs':{withDeviceStatusTimeout:(read, options) =>
       status.withDeviceStatusTimeout(read,{...options,timeoutMs:10})}};
   const module = {exports:{}};

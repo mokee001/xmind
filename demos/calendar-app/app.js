@@ -1,5 +1,6 @@
-import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS, DEMO_STALE_PERSON_ID } from './first-wall.js?v=0.3.8';
-import { mountPanel, resetPreferenceDraft } from './panels.js?v=0.3.8';
+import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS, DEMO_STALE_PERSON_ID } from './first-wall.js?v=0.3.9';
+import { mountPanel, resetPreferenceDraft } from './panels.js?v=0.3.9';
+import { createNetworkDemo, NETWORK_SCENARIOS, networkNotice } from './network.js?v=0.3.9';
 import { createOnboarding } from './onboarding.js?v=0.3.7';
 
 const STORAGE_KEY = 'echooo-calendar-demo-v1';
@@ -29,21 +30,26 @@ try {
 let route = '';
 let cleanupPanel = null;
 let calendarPosition = null;
+let calendarReady = false;
 let firstMonth = -3;
 let lastMonth = 3;
 let onboarding;
 let firstWallJourney;
 let preferenceRecovery = null;
 let previewSettingsBeforeOverlay = null;
+let openDeviceOnMount = false;
 let previewHistory = false;
 const FLOW_STAGES = { welcome: 'welcome', 'setup-device': 'device' };
 const LEGACY_FLOW_ROUTES = { setup: 'welcome', 'setup-permissions': 'welcome', 'setup-preferences': 'setup-device', 'setup-schedule': 'setup-device' };
 let toastTimer;
 let sheetController;
 const requestedFirstWallScenario = new URLSearchParams(location.search).get('firstWall');
+const networkScenario = new URLSearchParams(location.search).get('network');
+const network = NETWORK_SCENARIOS.includes(networkScenario) ? createNetworkDemo({ scenario: networkScenario }) : null;
 if (FIRST_WALL_SCENARIOS.includes(requestedFirstWallScenario)) document.querySelector('#first-wall-scenario').value = requestedFirstWallScenario;
 // A direct recovery preview overlays connection/authorization in memory only.
-if (requestedFirstWallScenario === 'people' && location.hash === '#first-wall') {
+if ((requestedFirstWallScenario === 'people' && location.hash === '#first-wall')
+  || (network && ['#calendar', '#first-wall', '#settings'].includes(location.hash))) {
   previewSettingsBeforeOverlay = { ...state.settings };
   state = { ...state, settings: { ...state.settings, connected: true,
     photoAccess: ['all', 'limited'].includes(state.settings.photoAccess) ? state.settings.photoAccess : 'all' } };
@@ -68,7 +74,7 @@ function showFirstWallEvents(snapshot) {
 }
 function firstJourney() {
   if (!firstWallJourney) {
-    firstWallJourney = createFirstWallJourney({ scenario: document.querySelector('#first-wall-scenario')?.value });
+    firstWallJourney = createFirstWallJourney({ scenario: document.querySelector('#first-wall-scenario')?.value, network });
     firstWallJourney.subscribe(showFirstWallEvents);
   }
   return firstWallJourney;
@@ -120,37 +126,104 @@ function updateState(patch) {
   return true;
 }
 function openSheet({ title, body, actions = [] }) {
-  if (dialog.open) dialog.close();
   sheetController?.abort();
   sheetController = new AbortController();
   const controller = sheetController;
   const restoreFocus = document.activeElement;
-  const close = () => { if (dialog.open) dialog.close(); };
+  const close = () => { if (dialog.open && sheetController === controller) dialog.close(); };
   dialog.innerHTML = `<div class="sheet-top"><h2 id="sheet-title">${escapeHtml(title)}</h2><button class="sheet-close" aria-label="关闭">${icon('close', 18)}</button></div><div class="sheet-body">${body}</div>${actions.length ? `<div class="sheet-actions">${actions.map((action, i) => `<button class="${action.primary ? 'primary-button' : 'secondary-button'}" data-sheet-action="${i}">${escapeHtml(action.label)}</button>`).join('')}</div>` : ''}`;
   dialog.addEventListener('click', event => {
     if (event.target.closest('.sheet-close')) close();
     const button = event.target.closest('[data-sheet-action]');
-    if (button) actions[Number(button.dataset.sheetAction)]?.onClick?.();
+    if (button && !button.disabled) actions[Number(button.dataset.sheetAction)]?.onClick?.();
     if (event.target === dialog) {
       const r = dialog.getBoundingClientRect();
       if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) close();
     }
   }, { signal: controller.signal });
   dialog.addEventListener('close', () => {
+    if (dialog.open || sheetController !== controller) return;
     controller.abort();
     if (restoreFocus?.isConnected) restoreFocus.focus({ preventScroll: true });
-  }, { once: true, signal: controller.signal });
-  dialog.showModal();
-  return { dialog, close };
+  }, { signal: controller.signal });
+  if (!dialog.open) dialog.showModal();
+  return { dialog, close, signal: controller.signal, isCurrent: () => dialog.open && sheetController === controller };
+}
+function manageDevice() {
+  openDeviceOnMount = true;
+  if (route === 'settings') renderRoute();
+  else navigate('settings');
+}
+async function checkNetwork(signal) {
+  const result = await network.check({ signal });
+  if (result.canceled) return result;
+  if (result.ok) {
+    network.readHistory();
+    if (result.deviceOnline && route === 'first-wall'
+      && ['service-unreachable', 'device-offline'].includes(firstWallJourney?.snapshot().failure)) firstWallJourney.retry();
+  }
+  return result;
+}
+function networkHelp() {
+  if (!network) { connectionSheet(); return; }
+  const current = network.snapshot(), notice = networkNotice(current);
+  const view = openSheet({ title: '检查连接',
+    body: `<p><strong data-network-label>${escapeHtml(notice.label)}</strong> · 本地模拟</p><p data-network-copy>${escapeHtml(notice.copy)}</p><p>手机可尝试切换 Wi-Fi 或蜂窝网络。照片墙离线时，请检查电源和家庭 Wi-Fi。</p><p data-network-result role="status">检查连接不会更改设备绑定与已有记录。</p>`,
+    actions: [{ label: '重新检查', primary: true, onClick: async () => {
+      const button = view.dialog.querySelector('[data-sheet-action="0"]');
+      button.disabled = true; button.textContent = '正在检查…';
+      const result = await checkNetwork(view.signal);
+      if (!view.isCurrent() || result.canceled) return;
+      button.disabled = false; button.textContent = '重新检查';
+      view.dialog.querySelector('[data-network-result]').textContent = result.ok
+        ? result.deviceOnline ? '模拟服务已恢复，正在重新读取记录。设备上屏仍需独立回执。' : '模拟服务可以访问，照片墙仍离线。请检查屏幕电源和 Wi-Fi。'
+        : '仍无法访问服务，请检查手机网络后重试。设备绑定与已有记录已保留。';
+    } }, { label: '管理设备', onClick: () => { view.close(); manageDevice(); } },
+    { label: 'Demo：模拟恢复连接', onClick: () => {
+      network.recover();
+      view.dialog.querySelector('[data-network-result]').textContent = '已切换为模拟网络恢复。请点“重新检查”，这不会伪造屏幕回执。';
+    } }],
+  });
+  const unsubscribe = network.subscribe(value => {
+    if (!view.isCurrent()) return;
+    const next = networkNotice(value);
+    view.dialog.querySelector('[data-network-label]').textContent = next.label;
+    view.dialog.querySelector('[data-network-copy]').textContent = next.copy;
+  });
+  view.signal.addEventListener('abort', unsubscribe, { once: true });
+}
+function removeNetworkDevice() {
+  if (!network || network.snapshot().removed) return;
+  const view = openSheet({ title: '移除这台照片墙？',
+    body: '<p>由服务确认移除绑定后，才会从设备列表中移除。屏幕清除连接设置需要下一次联网同步。</p><p data-remove-result role="status">这是本地模拟，不会删除真实设备或照片；偏好会保留。</p>',
+    actions: [{ label: '确认移除', primary: true, onClick: async () => {
+      const button = view.dialog.querySelector('[data-sheet-action="0"]');
+      button.disabled = true; button.textContent = '正在确认移除…';
+      const result = await network.remove({ confirmed: true, signal: view.signal });
+      if (!view.isCurrent() || result.canceled) return;
+      if (!result.ok) {
+        button.disabled = false; button.textContent = '重新确认移除';
+        view.dialog.querySelector('[data-remove-result]').textContent = '尚未确认移除。请检查手机网络后重试，设备绑定和偏好已保留。';
+        return;
+      }
+      openSheet({ title: '设备已移除', body: '<p>模拟服务已确认移除。屏幕恢复联网后同步清除连接设置。</p><p>原有偏好与展示记录保留。本次没有操作真实设备。</p>',
+        actions: [{ label: '返回日历', primary: true, onClick: () => { dialog.close(); navigate('calendar'); } }],
+      });
+    } }, { label: '取消', onClick: () => view.close() }],
+  });
 }
 function connectionSheet() {
+  if (network) { networkHelp(); return; }
   const s = state.settings;
   openSheet({ title: s.deviceName || '客厅照片墙', body: `<p><span class="connection-dot"></span> <strong>${s.connected ? '已连接' : '未连接'} · 模拟状态</strong></p><p>${s.connected ? '这版 Demo 用来体验日历与页面导航。' : '连接恢复后，照片墙会继续按偏好更新。'}</p><p>设备、账户与更新时间，都在日历右上角的「设置」里。</p><p style="font-size:10px;margin-top:16px;color:#a0a292">此状态来自本地示例，未连接真实设备。</p>` });
 }
 function renderHeader() {
   if (FLOW_STAGES[route]) return;
   if (route === 'calendar') {
-    header.innerHTML = `<button class="header-action status-pill${state.settings.connected ? '' : ' offline'}" data-action="connection" aria-label="连接状态：${state.settings.connected ? '已连接' : '未连接'}，示例"><i></i>${state.settings.connected ? '已连接' : '未连接'}<small>示例</small></button><div class="header-entries"><button class="header-action preference-entry" data-route="preferences" aria-label="偏好">${icon('sliders', 19)}<span>偏好</span></button><button class="header-action icon-button" data-route="settings" aria-label="设置" title="设置">${icon('settings', 19)}</button></div>`;
+    const networkState = network?.snapshot();
+    const label = networkState ? networkNotice(networkState).label : state.settings.connected ? '已连接' : '未连接';
+    const online = networkState ? networkState.service && networkState.device && !networkState.removed : state.settings.connected;
+    header.innerHTML = `<button class="header-action status-pill${online ? '' : ' offline'}" data-action="connection" aria-label="连接状态：${label}，示例"><i></i>${label}<small>示例</small></button><div class="header-entries"><button class="header-action preference-entry" data-route="preferences" aria-label="偏好">${icon('sliders', 19)}<span>偏好</span></button><button class="header-action icon-button" data-route="settings" aria-label="设置" title="设置">${icon('settings', 19)}</button></div>`;
   } else if (route === 'preferences') {
     header.innerHTML = `<button class="header-action back" data-route="${preferenceRecovery ? 'first-wall' : 'calendar'}" aria-label="${preferenceRecovery ? '返回首次准备' : '返回日历'}">${icon('chevron-left', 18)}<span>${preferenceRecovery ? '返回' : '日历'}</span></button>`;
   } else if (route === 'settings') {
@@ -197,7 +270,7 @@ function monthHtml(offset) {
     cells += `<button class="day${today ? ' today' : ''}${future ? ' future' : ''}${example ? ' historical' : ''}" data-date="${dateKey(date)}" aria-label="${year}年${m + 1}月${day}日${today ? '，今天' : ''}${example ? '，查看示例记录' : future ? '，尚未到来' : '，暂无记录'}"${today ? ' aria-current="date"' : ''}><span class="day-number">${day}</span>${example ? `<span class="day-art">${illustration(example.kind)}</span>` : !today && !future ? '<span class="day-empty-marker" aria-hidden="true"></span>' : ''}</button>`;
   }
   const fresh = state.onboarding.completed && !previewHistory;
-  return `<section class="month-section" data-month-offset="${offset}" aria-label="${year}年${m + 1}月"><div class="month-header"><div class="month-name"><h2>${MONTHS[m]}</h2><span>${year}</span></div><span class="month-meta">${offset > 0 ? '留一点期待' : fresh ? '' : `${count} 天 · 示例记录`}</span></div>${fresh && offset === 0 ? `<div class="calendar-first-use">${icon('leaf', 20)}<div><strong>回忆，会从今天开始。</strong><p>照片墙展示过的内容，会留在对应的日子里。<br>第一次相遇，留给生活中的惊喜。</p></div></div>` : ''}<div class="month-grid">${cells}</div>${offset > 0 ? '<div class="month-empty">下一段日常，会慢慢来到。</div>' : ''}</section>`;
+  return `<section class="month-section" data-month-offset="${offset}" aria-label="${year}年${m + 1}月"><div class="month-header"><div class="month-name"><h2>${MONTHS[m]}</h2><span>${year}</span></div><span class="month-meta">${offset > 0 ? '留一点期待' : fresh ? '' : `${count} 天 · 示例记录`}</span></div>${fresh && offset === 0 && (!network || network.snapshot().history === 'ready') ? `<div class="calendar-first-use">${icon('leaf', 20)}<div><strong>回忆，会从今天开始。</strong><p>照片墙展示过的内容，会留在对应的日子里。<br>第一次相遇，留给生活中的惊喜。</p></div></div>` : ''}<div class="month-grid">${cells}</div>${offset > 0 ? '<div class="month-empty">下一段日常，会慢慢来到。</div>' : ''}</section>`;
 }
 function scrollToCurrent(behavior = 'auto') {
   const section = screen.querySelector('[data-month-offset="0"]');
@@ -209,11 +282,19 @@ function scrollToCurrent(behavior = 'auto') {
 }
 function renderCalendar() {
   screen.innerHTML = `<div class="calendar-hero"><div><span class="eyebrow">THE DAYS WE KEEP</span><h1>回忆日历</h1><p>回看已经展示的日子，留住不经意的美好。</p></div><button class="today-button" data-action="today" aria-label="回到本月今天">${icon('calendar', 13)}今天</button></div><div class="calendar-weekdays" aria-label="星期"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div><div class="calendar-months"><button class="calendar-edge top" data-action="earlier">${icon('arrow-up', 12)}更早的日子</button><div id="months">${Array.from({ length: lastMonth - firstMonth + 1 }, (_, i) => monthHtml(firstMonth + i)).join('')}</div><button class="calendar-edge" data-action="later">再往后看看 ${icon('chevron-right', 12)}</button></div><div class="calendar-hint"><span class="hint-line"></span>只回看已展示内容，未来保持留白<span class="hint-line"></span></div><p class="calendar-bottom-note">${state.onboarding.completed && !previewHistory ? '连接、选片与展示记录均为本地模拟；当前还没有真实展示回执。' : '日期标记与插画均为示例，不是设备展示回执。'}</p>`;
+  const networkState = network?.snapshot();
+  const unfinished = firstWallJourney && !firstWallJourney.snapshot().destroyed
+    && firstWallJourney.snapshot().work.receipt !== 'ready' && !networkState?.removed;
+  if (networkState || unfinished) {
+    const notice = networkState ? networkNotice(networkState) : { title: '首次准备尚未完成', copy: '已完成的准备会保留。可以继续查看日历、偏好或设备设置。' };
+    screen.querySelector('.calendar-hero').insertAdjacentHTML('beforeend', `<section class="calendar-recovery" aria-live="polite"><strong>${escapeHtml(notice.title)}</strong><p>${escapeHtml(notice.copy)}</p>${networkState ? `<small>${networkState.history === 'loading' ? '正在读取记录，仍可使用偏好与设置' : networkState.history === 'error' ? '读取未完成，不代表没有展示记录' : networkState.history === 'ready' ? '示例记录已读取 · 不代表新的上屏回执' : '本地网络情境模拟'}</small>` : ''}<div>${networkState && !networkState.removed ? '<button data-action="check-network">检查连接</button>' : ''}<button data-action="manage-device">设备设置</button>${unfinished ? '<button data-action="resume-first-wall">继续首次准备</button>' : ''}</div></section>`);
+  }
   requestAnimationFrame(() => {
     if (route !== 'calendar') return;
     screen.style.setProperty('--calendar-heading-height', `${screen.querySelector('.calendar-hero').offsetHeight}px`);
     if (calendarPosition === null) scrollToCurrent();
     else screen.scrollTo({ top: calendarPosition, behavior: 'instant' });
+    calendarReady = true;
   });
 }
 function showDay(key) {
@@ -237,6 +318,7 @@ function renderRoute() {
   const next = LEGACY_FLOW_ROUTES[requested] || requested;
   if (next !== requested) history.replaceState(null, '', `#${next}`);
   const target = ['calendar', 'preferences', 'settings', 'first-wall', ...Object.keys(FLOW_STAGES)].includes(next) ? next : state.onboarding.completed ? 'calendar' : 'welcome';
+  if (target === 'first-wall' && network?.snapshot().removed) { location.replace('#calendar'); return; }
   if (target === 'first-wall' && (!state.settings.connected || !['all', 'limited'].includes(state.settings.photoAccess))) {
     location.replace('#welcome'); return;
   }
@@ -252,11 +334,18 @@ function renderRoute() {
   screen.style.scrollBehavior = 'auto';
   screen.scrollTop = 0;
   screen.classList.remove('screen-arrive');
-  if (route === 'calendar') renderCalendar();
+  if (route === 'calendar') {
+    calendarReady = false;
+    renderCalendar();
+    if (network?.snapshot().history === 'idle') network.readHistory();
+  }
   else if (route === 'first-wall') {
     const journey = firstJourney();
     journey.authorize(state.settings.photoAccess); journey.connect();
+    if (network?.snapshot().service && network?.snapshot().device
+      && ['service-unreachable', 'device-offline'].includes(journey.snapshot().failure)) journey.retry();
     cleanupPanel = mountFirstWall({ host: screen, header, journey, onDone: () => navigate('calendar'),
+      onCalendar: () => navigate('calendar'), onManageDevice: manageDevice, onCheckNetwork: networkHelp,
       onAdjustPeople: () => {
         if (journey.snapshot().failure !== 'people') return;
         if (preferenceRecovery?.key !== journey) preferenceRecovery = { key: journey, stalePeople: [DEMO_STALE_PERSON_ID], availablePeople: [] };
@@ -273,6 +362,10 @@ function renderRoute() {
     toast,
     openSheet,
     restartOnboarding,
+    network,
+    networkHelp,
+    removeNetworkDevice,
+    openDeviceOnMount,
     preferenceRecovery,
     onPreferencesSaved: () => {
       if (preferenceRecovery?.key !== firstWallJourney) return;
@@ -281,6 +374,7 @@ function renderRoute() {
       navigate('first-wall');
     },
   });
+  openDeviceOnMount = false;
   document.querySelectorAll('[data-level]').forEach(el => el.classList.toggle('active', el.dataset.level === route));
   document.title = `${route === 'calendar' ? '日历' : route === 'preferences' ? '偏好' : route === 'settings' ? '设置' : route === 'welcome' ? '欢迎' : '首次设置'} · Echooo`;
   requestAnimationFrame(() => screen.classList.add('screen-arrive'));
@@ -325,6 +419,9 @@ screen.addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
   if (button.dataset.date) showDay(button.dataset.date);
+  if (button.dataset.action === 'check-network') networkHelp();
+  if (button.dataset.action === 'manage-device') manageDevice();
+  if (button.dataset.action === 'resume-first-wall') navigate('first-wall');
   if (button.dataset.action === 'today') scrollToCurrent(matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth');
   if (button.dataset.action === 'earlier') {
     const start = screen.scrollHeight;
@@ -349,4 +446,16 @@ window.addEventListener('hashchange', renderRoute);
 window.addEventListener('resize', () => {
   if (route === 'calendar') screen.style.setProperty('--calendar-heading-height', `${screen.querySelector('.calendar-hero').offsetHeight}px`);
 });
+if (network) {
+  const journey = firstJourney(); journey.authorize(state.settings.photoAccess); journey.connect(); journey.pause();
+  network.subscribe(value => {
+    if (value.removed && firstWallJourney) { firstWallJourney.destroy(); firstWallJourney = null; }
+    renderHeader();
+    if (route === 'calendar') { if (calendarReady) calendarPosition = screen.scrollTop; renderCalendar(); }
+    const bound = screen.querySelector('[data-bound-device]');
+    const removed = screen.querySelector('[data-device-removed]');
+    if (bound) bound.hidden = value.removed;
+    if (removed) removed.hidden = !value.removed;
+  });
+}
 renderRoute();
