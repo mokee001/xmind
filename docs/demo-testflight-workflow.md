@@ -118,3 +118,12 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 98 项 App 回归、32 项 Demo 回归、123 项最终签名包核验通过。IPA SHA256 `485cc1522a6bcfc34d4a76f68173d01d11c170bc454e56eac6fb7a044fe8852e`；正式选片开关为 true，包内 Hermes 与实际 Metro 源码对应。
 - 16:06:09（上海）核对 Apple 构建 `4121eed9-ebaa-4d1c-8c85-173830fc4ab8` 为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。**TestFlight → Echooo → 更新至 1.3.14（37）**；状态证据见归档内 `release-status.json` 与 `apple-state.json`。
 - 16:08:24 临时发布凭据与独立钥匙串已清理，其他钥匙串保留。本次没有部署后端、改固件或变更测试成员；真实 iPhone 断网恢复和设备回执仍需安装后验收。旧服务丢失删除回执时仍保留绑定并提示未确认，具体边界见 `docs/calendar-offline-recovery-20261013.md`。
+
+## 2026-10-13 · 检查、移除与重连 App 1.3.15（39）
+
+- 延续用户“直接发包”授权，修复无反馈的连接检查、删除回执丢失与原生 Modal 转场；云端未确认删除时可明确仅从本机移除，再从独立原设备入口请求配网，取消与重启后仍可继续。
+- 最终源提交 `94977ca5f3d940d2deb4d699901f7d4fc22dbf21`，标签 `app-device-reconnect-v1.3.15-build39`；独立 51 文件快照 `4da7ffb938c77fd5c26fd876df87192b8260277a`。归档 `outputs/device-reconnect-20261013/release39/`，IPA SHA256 `a24277fe25ab5ba0c7acf856ad5f45e30765d16b9aa15a07632e20a7b49acb89`。
+- 139 项 App、77 项后端、37 项 Demo、14 次实际 App/API 协议桥请求及 10 项最终源原生 Simulator 检查通过。最终签名包 194 项检查、29 项负向检查通过；生产选片开关及 Hermes/Metro 对应关系核验通过。Simulator 网络为合成注入，不代表实体 BLE/Wi-Fi 已验证。
+- Apple 17:57:43 上传成功；18:01:46（上海）核对构建 `f5ee10d3-8d1f-4158-a1ee-3ce6e566a9fc` 为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 Team (Expo) 组。**TestFlight → Echooo → 更新至 1.3.15（39）**。
+- 38 号曾上传，发现缺少在线屏幕云端唤起后已置为 expired；39 的首个本地候选未上传，补齐本机移除目标入口后重新打包，旧候选保留在 `release39/superseded-local-only/`，不得作为最终交付。
+- 配套后端已于17:44完成最后兼容部署；绑定、墙、固件、历史保持。没有改固件、选片规则或模型，也未上传用户照片。18:02:23 临时发布凭据和独立钥匙串已清理；详见 `docs/device-reconnect-recovery-20261013.md`、`docs/device-recovery-20261013.md` 及归档状态文件。
