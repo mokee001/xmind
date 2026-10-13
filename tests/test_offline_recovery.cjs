@@ -187,7 +187,7 @@ test('real App management lock spans closed views, aborts old work without chang
 function connectedContext(store,overrides={}) {
   const refs={deviceManagementRef:{current:null},deviceManagementEpochRef:{current:4},wallRequestScopeRef:{current:scope()}};
   const changes={},noop=()=>{};
-  const context={...refs,renderedManagementEpoch:4,reconfigurationSession:null,IS_WEB_PREVIEW:false,addingDevice:false,
+  const context={...refs,recoverySetupRef:{current:null},setRecoverySetupSession:()=>{},renderedManagementEpoch:4,reconfigurationSession:null,IS_WEB_PREVIEW:false,addingDevice:false,
     normalizeDeviceSession:x=>x,prepareAccountSession:async()=>({accessToken:'synthetic-owner'}),upgradeDeviceToFamily:async value=>value,
     saveDeviceSession:store.saveDeviceSession,updateDeviceSession:store.updateDeviceSession,
     setSession:value=>changes.session=value,setDeviceSessions:value=>changes.sessions=value,clearPendingDeviceSetup:async()=>{},
@@ -273,7 +273,7 @@ test('late family adoption callback uses its origin epoch and cannot upsert afte
 
 test('leaving a household invalidates earlier account sync before its first queued deletion completes',async()=>{
   const refs={deviceManagementRef:{current:null},deviceManagementEpochRef:{current:4},wallRequestScopeRef:{current:scope()}},gate=deferred();
-  const context={...refs,renderedManagementEpoch:4,deviceSessions:[session()],sameDeviceBinding:status.sameDeviceBinding,
+  const context={...refs,recoverySetupRef:{current:null},setRecoverySetupSession:()=>{},renderedManagementEpoch:4,deviceSessions:[session()],sameDeviceBinding:status.sameDeviceBinding,
     firstWallAbortRef:{current:null},removeDeviceSession:()=>gate.promise,loadDeviceSessions:async()=>({sessions:[],activeDeviceId:null}),
     normalizeDeviceSession:x=>x,setDeviceSessions:()=>{},setSession:()=>{},clearDeviceRuntimeState:()=>{}};
   const pending=value('handleHouseholdLeft',context)({devices:[{device_id:'screen'}]});

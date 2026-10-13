@@ -4,6 +4,7 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -11,7 +12,8 @@ import {
 
 const SYSTEM_FONT = Platform.OS === 'ios' || Platform.OS === 'web' ? 'PingFang SC' : undefined;
 
-export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScreen19, onDismiss }) {
+export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScreen19, onDismiss,
+  recoverySessions = [], recoveryError = '', onReloadRecovery, onReconnect }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -34,6 +36,15 @@ export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScr
     }
   };
 
+  const reconnect = async session => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try { await onReconnect(session); }
+    catch (caught) { setError(caught.message || '暂时无法读取恢复信息，请重试。'); }
+    finally { setBusy(false); }
+  };
+
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} onDismiss={onDismiss}>
       <SafeAreaView style={styles.page}>
@@ -45,8 +56,22 @@ export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScr
           <View style={styles.headerButton} />
         </View>
 
-        <View style={styles.content}>
-          <Text style={styles.title}>选择屏幕类型</Text>
+        <ScrollView contentContainerStyle={styles.content}>
+          {recoverySessions.length || recoveryError ? <>
+            <Text style={styles.title}>重新连接已移除设备</Text>
+            <Text style={styles.description}>这些设备仅从此手机移除。选择原设备后，会请求在线屏幕进入配网；连接成功后才恢复到设备列表。</Text>
+            {recoverySessions.map(session => <Pressable key={session.device.device_id} accessibilityRole="button" disabled={busy}
+              onPress={() => reconnect(session)} style={({ pressed }) => [styles.option, pressed && styles.pressed, busy && styles.disabled]}>
+              <View style={styles.optionMark}><Text style={styles.optionMarkText}>E6</Text></View>
+              <View style={styles.flex}>
+                <Text style={styles.optionTitle}>{session.device.name || session.device.device_id || '照片墙'}</Text>
+                <Text style={styles.optionDescription}>{session.device.device_id} · 重新连接原设备</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>)}
+            {recoveryError ? <><Text style={styles.error}>{recoveryError}</Text><Pressable accessibilityRole="button" onPress={onReloadRecovery} style={styles.headerButton}><Text style={styles.headerButtonText}>重新读取</Text></Pressable></> : null}
+            <Text style={styles.otherTitle}>添加其他设备</Text>
+          </> : <Text style={styles.title}>选择屏幕类型</Text>}
           <Text style={styles.description}>两种屏幕会出现在同一个设备列表中。</Text>
           <Pressable accessibilityRole="button" disabled={busy} onPress={onAddEsp32} style={({ pressed }) => [styles.option, pressed && styles.pressed, busy && styles.disabled]}>
             <View style={styles.optionMark}><Text style={styles.optionMarkText}>E6</Text></View>
@@ -65,7 +90,7 @@ export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScr
             <Text style={styles.chevron}>›</Text>
           </Pressable>
           {error ? <Text style={styles.error}>{error}</Text> : null}
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </Modal>
   );
@@ -79,6 +104,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontFamily: SYSTEM_FONT, color: '#222222', fontSize: 17, fontWeight: '700' },
   content: { padding: 22 },
   title: { fontFamily: SYSTEM_FONT, color: '#222222', fontSize: 25, lineHeight: 32, fontWeight: '700' },
+  otherTitle: { fontFamily: SYSTEM_FONT, color: '#222222', fontSize: 19, fontWeight: '700', marginTop: 16 },
   description: { fontFamily: SYSTEM_FONT, color: '#717171', fontSize: 14, lineHeight: 21, marginTop: 5, marginBottom: 22 },
   option: { minHeight: 88, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 12, borderRadius: 8, borderWidth: 1, borderColor: '#E0E0E0', backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', gap: 13 },
   optionMark: { width: 42, height: 42, borderRadius: 8, backgroundColor: '#222222', alignItems: 'center', justifyContent: 'center' },

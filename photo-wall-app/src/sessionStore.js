@@ -81,6 +81,19 @@ export async function saveDeviceSession(session, guard = {}) {
   return serializeDeviceMutation(async () => {
     const stored = await readDeviceSessions();
     checkMutation(stored, session.device.device_id, guard);
+    if (guard.recoveryTarget) {
+      const recoveries = await readValue(RECOVERY_KEY) || {};
+      const expected = guard.recoveryTarget;
+      const recovery = recoveries[session.device.device_id]?.session;
+      const existing = stored.sessions.find(item => item.device.device_id === session.device.device_id);
+      checkMutation(stored, session.device.device_id, guard);
+      if (expected.device.device_id !== session.device.device_id || recovery?.accountToken !== expected.accountToken
+        || (recovery?.device?.binding_id || '') !== (expected.device.binding_id || '')
+        || (existing && (existing.accountToken !== session.accountToken
+          || (existing.device.binding_id || '') !== (session.device.binding_id || '')))) {
+        throw Object.assign(new Error('设备恢复信息已变化，未覆盖新的连接。'), {code:'DEVICE_BINDING_CHANGED'});
+      }
+    }
     const sessions = upsertSession(stored.sessions, session);
     const activeDeviceId = session.device.device_id;
     await writeValue(DEVICES_KEY, { activeDeviceId, sessions });
@@ -161,6 +174,15 @@ export async function removeDeviceSession(deviceId, guard = {}) {
 export async function loadDeviceRecovery(deviceId) {
   const recoveries = await readValue(RECOVERY_KEY) || {};
   return recoveries[deviceId] || null;
+}
+
+export async function loadDeviceRecoverySessions() {
+  const [recoveries, stored] = await Promise.all([readValue(RECOVERY_KEY), readDeviceSessions()]);
+  return Object.values(recoveries || {})
+    .filter(record => validSession(record?.session) && record.session.accountToken
+      && !stored.sessions.some(item => item.device.device_id === record.session.device.device_id))
+    .sort((a, b) => String(b.removedAt || '').localeCompare(String(a.removedAt || '')))
+    .map(record => record.session);
 }
 
 export async function loadLocallyRemovedDeviceIds() {
@@ -286,11 +308,19 @@ export async function loadPendingDeviceSetup() {
 }
 
 export async function savePendingDeviceSetup(setup) {
-  await writeValue(PENDING_SETUP_KEY, setup);
+  return serializeDeviceMutation(() => writeValue(PENDING_SETUP_KEY, setup));
 }
 
-export async function clearPendingDeviceSetup() {
-  await deleteValue(PENDING_SETUP_KEY);
+export async function clearPendingDeviceSetup(expected) {
+  return serializeDeviceMutation(async () => {
+    if (expected) {
+      const pending = await readValue(PENDING_SETUP_KEY);
+      if (pending?.kind !== expected.kind || pending?.session?.device?.device_id !== expected.session?.device?.device_id
+        || pending?.session?.accountToken !== expected.session?.accountToken
+        || (pending?.session?.device?.binding_id || '') !== (expected.session?.device?.binding_id || '')) return;
+    }
+    await deleteValue(PENDING_SETUP_KEY);
+  });
 }
 
 export async function loadPhotoSyncPreference() {

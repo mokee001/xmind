@@ -103,6 +103,7 @@ export default function DeviceSetupFlow({
   visible,
   session,
   existingSession = null,
+  recoverySession = null,
   isSessionCurrent = () => true,
   wakeStatus = null,
   onWakeRetry,
@@ -315,7 +316,7 @@ export default function DeviceSetupFlow({
       }
       const connected = await adapter.connectProvisioningDevice(device.deviceId);
       if (flowGenerationRef.current !== generation) return;
-      const expectedDeviceId = existingSession?.device?.device_id;
+      const expectedDeviceId = (existingSession || recoverySession)?.device?.device_id;
       if (expectedDeviceId && connected.deviceId !== expectedDeviceId) {
         await adapter?.cancelProvisioning?.();
         throw new Error('这不是正在更换 Wi-Fi 的原照片墙，请返回后选择正确设备');
@@ -415,6 +416,7 @@ export default function DeviceSetupFlow({
         password,
         device: selectedDevice,
         existingSession,
+        recoverySession,
         isCurrent:() => flowGenerationRef.current === generation && isSessionCurrent(),
         newOperation,
       });
@@ -532,12 +534,12 @@ export default function DeviceSetupFlow({
           <View style={styles.deviceDiscoveryHeader}>
             <View style={styles.flex}>
               <Text style={styles.title}>连接照片墙</Text>
-              <Text style={styles.description}>{existingSession
-                ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。照片墙需要先恢复联网，才能接收进入配网模式的请求。`
+              <Text style={styles.description}>{existingSession || recoverySession
+                ? `请选择原照片墙 ${(existingSession || recoverySession).device?.device_id || ''}，重新设置它使用的 Wi-Fi。照片墙需要先恢复联网，才能接收进入配网模式的请求。`
                 : '保持照片墙通电并靠近手机。若搜不到，请先在屏幕上进入配网模式；App 无法唤醒离线屏幕。'}</Text>
             </View>
           </View>
-          {existingSession && wakeStatus ? <View style={styles.errorBox} accessibilityLiveRegion="polite">
+          {(existingSession || recoverySession) && wakeStatus ? <View style={styles.errorBox} accessibilityLiveRegion="polite">
             <Text style={styles.description}>{wakeStatus.message}</Text>
             {wakeStatus.state === 'waking' ? <ActivityIndicator /> : ['failed','paused'].includes(wakeStatus.state) ? <PrimaryButton secondary onPress={onWakeRetry}>重试请求进入配网</PrimaryButton> : null}
             {wakeStatus.canRestart ? <PrimaryButton secondary onPress={onRestartRecovery}>重新开始本次配网</PrimaryButton> : null}

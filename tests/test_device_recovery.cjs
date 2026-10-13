@@ -10,7 +10,7 @@ const ast=babel.parseSync(source,{configFile:false,babelrc:false,parserOpts:{plu
 const status=require('../photo-wall-app/src/deviceStatus.cjs');
 const network=require('../photo-wall-app/src/networkRecovery.cjs');
 const visit=(n,fn)=>{if(!n||typeof n!=='object')return;fn(n);for(const v of Object.values(n))if(Array.isArray(v))v.forEach(x=>visit(x,fn));else if(v&&typeof v==='object')visit(v,fn)};
-function value(name,context){let n;visit(ast,x=>{if(x.type==='VariableDeclarator'&&x.id.name===name)n=x.init});assert.ok(n,name);return vm.compileFunction('return ('+source.slice(n.start,n.end)+')',Object.keys(context))(...Object.values(context))}
+function value(name,context){context={recoverySetupRef:{current:null},setRecoverySetupSession:()=>{},...context};let n;visit(ast,x=>{if(x.type==='VariableDeclarator'&&x.id.name===name)n=x.init});assert.ok(n,name);return vm.compileFunction('return ('+source.slice(n.start,n.end)+')',Object.keys(context))(...Object.values(context))}
 function effect(fragment,context){let n;visit(ast,x=>{if(x.type==='CallExpression'&&x.callee.name==='useEffect'&&source.slice(x.arguments[0].start,x.arguments[0].end).includes(fragment))n=x.arguments[0]});assert.ok(n,fragment);return vm.compileFunction('return ('+source.slice(n.start,n.end)+')',Object.keys(context))(...Object.values(context))()}
 function moduleAt(file,mocks={},globals={}){const filename=path.join(app,file),module={exports:{}};const code=babel.transformFileSync(filename,{configFile:false,babelrc:false,plugins:[resolve('@babel/plugin-transform-modules-commonjs')]}).code;vm.compileFunction(code,['module','exports','require',...Object.keys(globals)],{filename})(module,module.exports,name=>mocks[name]||{},...Object.values(globals));return module.exports}
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return{promise,resolve,reject}};
@@ -291,7 +291,97 @@ test('explicit new-operation permission is consumed once even if authorization f
   visit(parsed,x=>{if(x.type==='VariableDeclarator'&&x.id.name==='connectWifi')n=x.init});const flags=[],noop=()=>{},ref={current:true};
   const context={provisionRequestRef:{current:false},selectedNetwork:{ssid:'synthetic',secure:false},password:'',flowGenerationRef:{current:0},
     setBusy:noop,setError:noop,setProgress:noop,setStatusText:noop,transition:noop,previewMode:false,newRecoveryOperationRef:ref,selectedDevice:{deviceId:'screen'},
-    existingSession:s(),isSessionCurrent:()=>true,setRecoveryConflict:noop,adapter:{provisionWifi:async options=>{flags.push(options.newOperation);throw Object.assign(Error('lost response'),{code:'SERVICE_TIMEOUT'})}}};
+    existingSession:s(),recoverySession:null,isSessionCurrent:()=>true,setRecoveryConflict:noop,adapter:{provisionWifi:async options=>{flags.push(options.newOperation);throw Object.assign(Error('lost response'),{code:'SERVICE_TIMEOUT'})}}};
   const connect=vm.compileFunction('return ('+content.slice(n.start,n.end)+')',Object.keys(context))(...Object.values(context));
   await connect();await connect();assert.deepEqual(flags,[true,false]);assert.equal(ref.current,false);
+});
+
+function removedFlow(f, overrides={}) {
+  const state={surfaces:[],wakes:[]},noop=()=>{};
+  const context={recoverySetupRef:{current:null},reprovisionWakeRef:{current:null},deviceManagementRef:{current:null},deviceManagementEpochRef:{current:0},latestDeviceSessionsRef:{current:[]},
+    sameManagedDevice:network.sameManagedDevice,loadDeviceRecoverySessions:f.store.loadDeviceRecoverySessions,savePendingDeviceSetup:f.store.savePendingDeviceSetup,clearPendingDeviceSetup:f.store.clearPendingDeviceSetup,
+    setRecoverySetupSession:x=>state.target=x,setReconfigurationSession:noop,setAddingDevice:noop,setInitialSetupDevice:noop,
+    openDeviceSurface:x=>state.surfaces.push(x),setReprovisionWake:x=>state.wakes.push(x),serviceFailureMessage:network.serviceFailureMessage,
+    IS_WEB_PREVIEW:false,reconfigurationSession:null,pendingDeviceSurfaceRef:{current:null},setDeviceModal:noop,setError:assert.fail,...overrides};
+  context.wakeReconfiguration=value('wakeReconfiguration',context);
+  return {state,context,reconnect:value('reconnectRemovedDevice',context),close:value('closeDeviceSetup',context)};
+}
+
+test('removed device picker is local read-only and excludes active bindings without restoring or waking any device',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());
+  const writes=f.events.length;const sessions=await f.store.loadDeviceRecoverySessions();assert.equal(sessions.length,1);assert.equal(sessions[0].accountToken,s().accountToken);
+  assert.equal(f.events.length,writes);assert.equal((await f.store.loadDeviceSessions()).sessions.length,0);
+  // An orphaned recovery entry from an interrupted save must not become a second restoration choice.
+  f.values.set('photowall-device-sessions-v2',JSON.stringify({sessions:[{...s(),device:{...s().device,binding_id:'new'}}],activeDeviceId:'screen'}));
+  assert.deepEqual(await f.store.loadDeviceRecoverySessions(),[]);
+});
+
+test('explicit removed-device click opens setup before cloud completion and shares the durable operation with physical proof',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());const gate=deferred(),posts=[];
+  const send=operationRunner(f,{post:async args=>{posts.push(args);if(args.phase==='enter_setup')await gate.promise;return{device:s().device,operation:{stage:args.phase==='authorize'?'authorized':'entered'}}}});
+  const flow=removedFlow(f,{sendReprovisionOperation:send});assert.equal(posts.length,0);
+  await flow.reconnect(s());assert.equal(flow.state.surfaces.at(-1),'setup');await flush();assert.equal(posts.length,1);assert.equal(flow.state.wakes[0].state,'waking');
+  assert.equal((await f.store.loadDeviceSessions()).sessions.length,0);assert.equal((await f.store.loadPendingDeviceSetup()).kind,'local-recovery');
+  const device={deviceId:'screen',setupToken:'fresh-proof',recoverySession:(await f.store.loadDeviceRecovery('screen')).session};
+  // Real coordinator authorize call uses the same secure operation even while enter is still pending.
+  const authorized=await send({session:device.recoverySession,phase:'authorize',setupToken:device.setupToken});
+  assert.equal(posts[0].operation.operationId,posts[1].operation.operationId);assert.equal(authorized.operation.stage,'authorized');
+  gate.resolve();await flush();assert.equal(flow.state.wakes.at(-1).state,'requested');
+});
+
+test('closing explicit recovery preserves credentials and operation, clears only pending UI, and returns to the target picker',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());const flow=removedFlow(f,{sendReprovisionOperation:operationRunner(f)});
+  await flow.reconnect(s());await flush();const before=await f.store.loadDeviceReprovision(s());assert.ok(before);
+  await flow.close();assert.equal(flow.state.surfaces.at(-1),'add');assert.equal(flow.context.recoverySetupRef.current,null);
+  assert.equal(await f.store.loadPendingDeviceSetup(),null);assert.ok(await f.store.loadDeviceRecovery('screen'));assert.deepEqual(await f.store.loadDeviceReprovision(s()),before);
+  await flow.reconnect(s());await flush();assert.deepEqual(await f.store.loadDeviceReprovision(s()),before);assert.equal((await f.store.loadDeviceSessions()).sessions.length,0);
+});
+
+test('pending removed-device recovery after App restart opens only the explicit picker and never activates or wakes its target',async()=>{
+  const f=storage(),state={},noop=()=>{};await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());await f.store.savePendingDeviceSetup({kind:'local-recovery',session:s()});
+  const cleanup=effect('Promise.all([loadDeviceSessions(), loadPendingDeviceSetup()])',{IS_WEB_PREVIEW:false,deviceManagementEpochRef:{current:0},deviceManagementRef:{current:null},
+    loadDeviceSessions:f.store.loadDeviceSessions,loadPendingDeviceSetup:f.store.loadPendingDeviceSetup,normalizeDeviceSession:x=>x,sameManagedDevice:network.sameManagedDevice,
+    setDeviceSessions:x=>state.sessions=x,setSession:assert.fail,setReconfigurationSession:assert.fail,setReprovisionWake:assert.fail,openDeviceSurface:x=>state.surface=x,
+    setActiveTab:noop,setError:assert.fail,loadPhotoSyncPreference:async()=>null,setPhotoSync:noop,refreshPermission:async()=>{}});
+  await flush();assert.equal(state.surface,'add');assert.deepEqual(state.sessions,[]);assert.equal(await f.store.loadDeviceReprovision(s()),null);cleanup();
+});
+
+test('cancelled local target selection and failed pending persistence cannot dispatch cloud wake or reinsert a session',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());const gate=deferred();let sent=0;
+  let flow=removedFlow(f,{loadDeviceRecoverySessions:()=>gate.promise,sendReprovisionOperation:async()=>sent++});
+  const selecting=flow.reconnect(s());flow.context.deviceManagementEpochRef.current++;gate.resolve([s()]);await selecting;
+  assert.equal(sent,0);assert.deepEqual(flow.state.surfaces,[]);assert.equal(await f.store.loadPendingDeviceSetup(),null);
+  flow=removedFlow(f,{savePendingDeviceSetup:async()=>{throw Error('keychain unavailable')},sendReprovisionOperation:async()=>sent++});
+  await assert.rejects(flow.reconnect(s()),/keychain/);assert.equal(sent,0);assert.equal((await f.store.loadDeviceSessions()).sessions.length,0);
+});
+
+test('removed-target wake failure remains explicit without restoring a device, and stale target binding cannot be selected',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());const flow=removedFlow(f,{sendReprovisionOperation:async()=>{throw Object.assign(Error('offline'),{code:'SERVICE_TIMEOUT'})}});
+  await flow.reconnect(s());await flush();assert.equal(flow.state.surfaces.at(-1),'setup');assert.equal(flow.state.wakes.at(-1).state,'failed');assert.ok(await f.store.loadDeviceRecovery('screen'));
+  await assert.rejects(flow.reconnect({...s(),device:{...s().device,binding_id:'other'}}),/恢复信息已变化/);
+  assert.equal((await f.store.loadDeviceSessions()).sessions.length,0);
+});
+
+test('explicit recovery target cannot authorize another owner or binding, while 401 with physical proof still uses normal claim',async()=>{
+  let f=adapter(),device=await f.api.connectProvisioningDevice('screen');
+  for(const wrong of [{...s(),accountToken:'other'},{...s(),device:{...s().device,binding_id:'other'}}])await assert.rejects(f.api.provisionWifi({device,recoverySession:wrong}),/恢复信息已变化/);
+  assert.equal(f.events.length,0);
+  f=adapter({reprovisionDisplay:async()=>{throw Object.assign(Error('deleted'),{status:401})}});device=await f.api.connectProvisioningDevice('screen');
+  const result=await f.api.provisionWifi({device,recoverySession:s()});assert.equal(result.accountToken,'new-owner');assert.equal(result.publishedWall,undefined);assert.ok(f.events.includes('claim'));
+});
+
+test('recovery save queue rejects a newer active binding and a newer retained authority; matching explicit restore clears only that target',async()=>{
+  const f=storage();await f.store.saveDeviceSession(s());await f.store.forgetDeviceSession(s());const captured=await f.store.loadDeviceRecovery('screen');
+  await f.store.saveDeviceSession({...s(),device:{...s().device,binding_id:'new'}});
+  await assert.rejects(f.store.saveDeviceSession(s(),{recoveryTarget:captured.session}),{code:'DEVICE_BINDING_CHANGED'});
+  assert.equal((await f.store.loadDeviceSession()).device.binding_id,'new');
+  const fresh=await f.store.loadDeviceSession();await f.store.forgetDeviceSession(fresh);
+  await assert.rejects(f.store.saveDeviceSession(s(),{recoveryTarget:captured.session}),{code:'DEVICE_BINDING_CHANGED'});
+  await f.store.saveDeviceSession(fresh,{recoveryTarget:fresh});assert.equal(await f.store.loadDeviceRecovery('screen'),null);
+});
+
+test('adding a different ESP32 clears the selected recovery target without waking it or deleting its credentials',()=>{
+  const state={},ref={current:{session:s()}},context={recoverySetupRef:ref,setRecoverySetupSession:x=>state.target=x,setReconfigurationSession:x=>state.existing=x,setReprovisionWake:x=>state.wake=x,
+    setAddDisplayVisible:()=>{},setAddingDevice:x=>state.adding=x,setInitialSetupDevice:()=>{},openDeviceSurface:x=>state.surface=x};
+  value('addEsp32Device',context)();assert.equal(ref.current,null);assert.equal(state.target,null);assert.equal(state.existing,null);assert.equal(state.surface,'setup');assert.equal(state.adding,true);
 });
