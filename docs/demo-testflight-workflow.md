@@ -110,3 +110,11 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 75 项 App 回归、77 项最终签名包核验通过；IPA SHA256 `949cf369977489fea0374454dd94fb9b72d41c88f2454f554842db2c2ac3d4c3`。首次本地包因缺失 production 选片开关被拦截且未上传，重建后所有核验通过。
 - 22:03:08（上海）核对 Apple 构建 `d8e1e598-aac8-4914-b939-37a770d03a97` 为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 Team (Expo) 组。**TestFlight → Echooo → 更新至 1.3.13（36）**。
 - 临时凭据和独立钥匙串已清理；没有部署后端、改固件或增加测试成员。真实照片生成与设备回执仍需用户手机验收；详见 `docs/first-wall-preference-recovery-20261012.md`。
+
+## 2026-10-13 · 网络异常与设备管理恢复 App 1.3.14（37）
+
+- 用户查看本次 Demo 后明确要求“直接发包”。日历读取和设备管理请求增加等待上限；服务访问失败与屏幕离线分别提示，保留已有记录、绑定及偏好/设置入口。
+- 功能提交 `1c552ad`，发布提交 `5a015a0`，标签 `app-offline-recovery-v1.3.14-build37`；独立源码快照 `36391ac8cadfeb9235727ed581fb7218cda2e6fd`。归档 `outputs/offline-recovery-20261013/release/`，包含 51 个源码文件、签名安装包及实际 Metro 源码。
+- 98 项 App 回归、32 项 Demo 回归、123 项最终签名包核验通过。IPA SHA256 `485cc1522a6bcfc34d4a76f68173d01d11c170bc454e56eac6fb7a044fe8852e`；正式选片开关为 true，包内 Hermes 与实际 Metro 源码对应。
+- 16:06:09（上海）核对 Apple 构建 `4121eed9-ebaa-4d1c-8c85-173830fc4ab8` 为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。**TestFlight → Echooo → 更新至 1.3.14（37）**；状态证据见归档内 `release-status.json` 与 `apple-state.json`。
+- 16:08:24 临时发布凭据与独立钥匙串已清理，其他钥匙串保留。本次没有部署后端、改固件或变更测试成员；真实 iPhone 断网恢复和设备回执仍需安装后验收。旧服务丢失删除回执时仍保留绑定并提示未确认，具体边界见 `docs/calendar-offline-recovery-20261013.md`。

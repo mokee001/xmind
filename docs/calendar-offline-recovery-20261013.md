@@ -35,7 +35,7 @@
 
 ## 交付与验证状态
 
-本次仍处于 Demo 确认阶段，App 修改一并准备并执行回归；没有递增 App 版本或构建号，没有上传新的 TestFlight。此前已发布版本为 1.3.13（36）。
+用户查看本次 Demo 后明确要求“直接发包”。对应修复以 1.3.14（37）打包提交，前一版为 1.3.13（36）；最终 Apple 处理及原测试组可见性以 `outputs/offline-recovery-20261013/release/release-status.json` 的核对记录为准。
 
 - App 相关回归 98/98 通过，输出保存在 `outputs/offline-recovery-20261013/app-tests.log`；包括请求与响应体超时、历史保留、真实队列提交时的绑定保护、同设备重绑、家庭回调、首次任务恢复及既有人物偏好。
 - Demo 回归 32/32 通过，输出保存在同目录 `demo-tests.log`；覆盖持续故障、明确模拟恢复、嵌套弹层生命周期和旧回调隔离。
@@ -44,4 +44,14 @@
 
 旧服务仍有一个明确边界：如果云端已完成 DELETE，但手机没有收到成功回执，再次请求可能只返回 401。现有接口没有可验证的幂等删除回执，因此本次保留本机绑定并提示未确认，不能自动断言已移除。彻底解决需补充服务端回执；不以空列表或权限错误推断成功。
 
-按根目录 `AGENTS.md` 的既定流程，用户确认本次预览后，直接将对应修改打包上传 TestFlight，并核对 Apple 处理状态及原测试组关联。真实 iPhone 断网、恢复与设备回执仍需该版本安装后验证，浏览器模拟和请求单测不替代真机验收。
+真实 iPhone 断网、恢复与设备回执仍需该版本安装后验证，浏览器模拟和请求单测不替代真机验收。
+
+## 发布归档
+
+- 功能提交 `1c552ad`；发布提交 `5a015a0`；GitHub 标签 `app-offline-recovery-v1.3.14-build37`。
+- 独立源码快照 `36391ac8cadfeb9235727ed581fb7218cda2e6fd`，包含 51 个文件及完整原生模块源码；归档目录 `outputs/offline-recovery-20261013/release/`。
+- 签名安装包 `photo-wall-offline-recovery.ipa`，SHA256 `485cc1522a6bcfc34d4a76f68173d01d11c170bc454e56eac6fb7a044fe8852e`。
+- 123 项包体验证通过，保留前一版 77 项并增加 46 项离线恢复检查。包内 Hermes 对应实际 Metro 源码 SHA1 `edd95cb1f5ced64c4ae6350701dae964878918ab`；正式选片开关为 true，iOS 最低版本为 17.0。
+- Apple 上传成功，交付 ID `4121eed9-ebaa-4d1c-8c85-173830fc4ab8`。本次仅发布 App，没有部署后端或固件，没有变更测试成员。
+- 2026-10-13 16:06:09（上海）核对同一 Apple 构建为 `VALID / IN_BETA_TESTING`、未过期，精确关联原 `Team (Expo)` 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。`release-status.json` 已记录 `ready_for_user_update: true`；手机从 **TestFlight → Echooo → 更新至 1.3.14（37）**。
+- 16:08:24 已清理本次临时发布凭据与独立钥匙串，保留原有及其他任务的钥匙串；清理核对见同目录 `signing-cleanup.json`。源码快照、签名安装包及 Apple 核对记录继续保留。
