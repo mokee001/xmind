@@ -1,0 +1,662 @@
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -18,6 +18,7 @@
+ from __future__ import annotations
+ 
+ import datetime
++import asyncio
+ import glob
+ import hashlib
+ import hmac
+@@ -46,7 +47,7 @@
+ sys.path.insert(0, _ROOT)
+ import engine  # noqa: E402
+ 
+-from . import display_history
++from . import display_history, device_recovery
+ from . import dedup, eink_push, faces, pet_collage, selector, stickers, store, tagger, template_packages, templates_mgr, trainer  # noqa: E402
+ from .routers import content  # noqa: E402  内容创作端点（贴纸/模板/Studio）由 B 维护
+ 
+@@ -1204,8 +1205,13 @@
+     public = {
+         key: value
+         for key, value in device.items()
+-        if key not in ("device_token", "account_token")
++        if key not in ("device_token", "account_token",
++                       "setup_token_digest", "setup_token_expires_at",
++                       "reprovision_setup_token_digest", "reprovision_setup_token_expires_at",
++                       "_delete_receipts", "_delete_tombstone", "_bootstrap_receipt")
+     }
++    if device.get("claimed"):
++        public["binding_id"] = device_recovery.binding_id(device)
+     if hub.connected(str(device.get("device_id", ""))):
+         public["last_seen"] = time.time()
+     return public
+@@ -1292,20 +1298,24 @@
+     return JSONResponse(status_code=202, content=job)
+ 
+ 
+-def _queue_reprovision(device: dict[str, Any]) -> None:
+-    """Retain device auth until the display acknowledges an unbind command."""
++def _queue_reprovision(device: dict[str, Any], preserve_binding: bool = False) -> None:
++    """Keep DELETE semantics; explicit Wi-Fi reconfiguration retains ownership."""
++    device.pop("_bootstrap_receipt", None)
+     device["pending_command"] = {
+         "type": "reprovision",
+-        "preserve_binding": False,
++        "preserve_binding": bool(preserve_binding),
+         "created_at": time.time(),
+     }
+-    device["claimed"] = False
+-    device["account_token"] = ""
+     device["state"] = "reprovision_pending"
+     device["progress"] = 0.0
+     device["error"] = ""
+-    device.pop("setup_token_digest", None)
+-    device.pop("setup_token_expires_at", None)
++    device.pop("reprovision_setup_token_digest", None)
++    device.pop("reprovision_setup_token_expires_at", None)
++    if not preserve_binding:
++        device["claimed"] = False
++        device["account_token"] = ""
++        device.pop("setup_token_digest", None)
++        device.pop("setup_token_expires_at", None)
+ 
+ 
+ def _july_calendar_plan(photos: list[dict]) -> tuple[dict[str, Any], int]:
+@@ -1424,6 +1434,7 @@
+ 
+ 
+ @app.post("/api/devices/bootstrap")
++@device_recovery.serialized
+ def device_bootstrap(req: DeviceBootstrapReq) -> Response:
+     """设备连上 Wi-Fi 后首次登记；后续启动使用已保存的 device token 报到。"""
+     if not _DEVICE_ID_RE.fullmatch(req.device_id) or not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+@@ -1432,7 +1443,14 @@
+     device_family = _infer_device_family(req.device_id)
+     devices_data = _devices()
+     existing = devices_data.get(req.device_id)
++    previous_receipts = device_recovery.receipts(existing)
++    if existing and existing.get("_delete_tombstone"):
++        existing = None
++    issued_device_token = not existing
+     if existing and existing.get("device_token") and not _device_auth(existing, req.device_token):
++        if not req.device_token and device_recovery.can_replay_bootstrap(existing, req.setup_token.strip()):
++            return JSONResponse({"device_id": req.device_id, "device_token": existing["device_token"],
++                                 "claimed": bool(existing.get("claimed")), "poll_seconds": 15})
+         pending = existing.get("pending_command")
+         reset_is_pending = (
+             not req.device_token and
+@@ -1442,8 +1460,26 @@
+             pending.get("type") == "reprovision" and
+             not pending.get("preserve_binding")
+         )
++        setup_token = req.setup_token.strip()
++        retained_reset_is_authorized = (
++            not req.device_token and
++            len(setup_token) >= 24 and
++            existing.get("claimed") and existing.get("account_token") and
++            isinstance(pending, dict) and
++            pending.get("type") == "reprovision" and
++            pending.get("preserve_binding") is True and
++            float(existing.get("reprovision_setup_token_expires_at", 0)) >= time.time() and
++            secrets.compare_digest(
++                str(existing.get("reprovision_setup_token_digest", "")),
++                hashlib.sha256(setup_token.encode()).hexdigest(),
++            )
++        )
+         if reset_is_pending:
+             existing = None
++            issued_device_token = True
++        elif retained_reset_is_authorized:
++            existing["device_token"] = secrets.token_urlsafe(32)
++            issued_device_token = True
+         else:
+             return JSONResponse(status_code=401, content={"error": "设备凭据无效，请恢复出厂后重新配网"})
+ 
+@@ -1458,6 +1494,8 @@
+         "revision": "",
+         "displayed_revision": "",
+     }
++    if previous_receipts:
++        device["_delete_receipts"] = previous_receipts
+     device.update({
+         "device_family": device_family,
+         "pairing_code": req.pairing_code,
+@@ -1468,13 +1506,29 @@
+         "error": "",
+     })
+     setup_token = req.setup_token.strip()
++    pending = device.get("pending_command")
++    if (len(setup_token) >= 24 and device.get("claimed") and device.get("account_token")
++            and isinstance(pending, dict) and pending.get("type") == "reprovision"
++            and pending.get("preserve_binding") is True
++            and float(device.get("reprovision_setup_token_expires_at", 0)) >= now
++            and secrets.compare_digest(
++                str(device.get("reprovision_setup_token_digest", "")),
++                hashlib.sha256(setup_token.encode()).hexdigest(),
++            )):
++        # Only the proof registered by the owner immediately before new Wi-Fi
++        # setup completes this command. A normal reboot may carry an old proof.
++        device.pop("pending_command", None)
++        device.pop("reprovision_setup_token_digest", None)
++        device.pop("reprovision_setup_token_expires_at", None)
+     if not device.get("claimed") and setup_token:
+         token_digest = hashlib.sha256(setup_token.encode()).hexdigest()
+         if device.get("setup_token_digest") != token_digest:
+             device["setup_token_digest"] = token_digest
+             device["setup_token_expires_at"] = now + 600
++    if issued_device_token:
++        device_recovery.remember_bootstrap(device, setup_token)
+     devices_data[req.device_id] = device
+-    store.save("eink_devices", devices_data)
++    device_recovery.save_devices(devices_data)
+     return JSONResponse({
+         "device_id": req.device_id,
+         "device_token": device["device_token"],
+@@ -1484,6 +1538,7 @@
+ 
+ 
+ @app.post("/api/devices/claim")
++@device_recovery.serialized
+ def device_claim(req: DeviceClaimReq) -> Response:
+     """App 使用屏幕/机身上的六位码绑定最近在线的设备。"""
+     if not _PAIRING_CODE_RE.fullmatch(req.pairing_code):
+@@ -1495,17 +1550,26 @@
+     device = max(matches, key=lambda item: float(item.get("last_seen", 0)))
+     if time.time() - float(device.get("last_seen", 0)) > 300:
+         return JSONResponse(status_code=409, content={"error": "设备已离线，请确认配网状态"})
++    pending = device.get("pending_command")
++    if isinstance(pending, dict) and pending.get("type") == "reprovision" and not pending.get("preserve_binding"):
++        return JSONResponse(status_code=409, content={"error": "设备正在解除旧绑定，请通过蓝牙重新连接", "code": "device_recovery_pending"})
++    previous_owner = str(device.get("account_token", ""))
+     if not device.get("account_token"):
+         device["account_token"] = secrets.token_urlsafe(32)
++    if not device.get("claimed") or str(device.get("account_token", "")) != previous_owner:
++        device_recovery.start_binding(device)
+     device["claimed"] = True
++    device.pop("setup_token_digest", None)
++    device.pop("setup_token_expires_at", None)
+     device["name"] = req.name.strip()[:40] or "客厅照片墙"
+     _remember_account(str(device["account_token"]))
+     devices_data[device["device_id"]] = device
+-    store.save("eink_devices", devices_data)
++    device_recovery.save_devices(devices_data)
+     return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+ 
+ 
+ @app.post("/api/devices/auto-claim")
++@device_recovery.serialized
+ def device_auto_claim(req: DeviceAutoClaimReq, x_account_token: str = Header(default="")) -> Response:
+     """Bind a display using the single-use token read from its local setup AP."""
+     setup_token = req.setup_token.strip()
+@@ -1524,6 +1588,7 @@
+     if not expected_digest or time.time() > expires_at or not hmac.compare_digest(expected_digest, supplied_digest):
+         return JSONResponse(status_code=403, content={"error": "自动绑定已过期，请重新开始设备配网"})
+ 
++    previous_owner = str(device.get("account_token", ""))
+     account_token = x_account_token.strip()
+     if account_token:
+         if not _known_account(devices_data, account_token):
+@@ -1531,6 +1596,8 @@
+         device["account_token"] = account_token
+     elif not device.get("account_token"):
+         device["account_token"] = secrets.token_urlsafe(32)
++    if not device.get("claimed") or str(device.get("account_token", "")) != previous_owner:
++        device_recovery.start_binding(device)
+     device["claimed"] = True
+     device["name"] = req.name.strip()[:40] or "客厅照片墙"
+     _remember_account(str(device["account_token"]))
+@@ -1545,7 +1612,7 @@
+         for key in ("frame_path", "preview_url", "published_at"):
+             device.pop(key, None)
+     devices_data[req.device_id] = device
+-    store.save("eink_devices", devices_data)
++    device_recovery.save_devices(devices_data)
+     return JSONResponse({"device": _public_device(device), "account_token": device["account_token"]})
+ 
+ 
+@@ -1556,30 +1623,77 @@
+     return JSONResponse({"devices": visible})
+ 
+ 
+-@app.delete("/api/devices/{device_id}")
+-def device_delete(device_id: str, x_account_token: str = Header(default="")) -> Response:
+-    """Unbind a display and ask an E Ink display to re-enter BLE setup."""
++class DeviceReprovisionReq(BaseModel):
++    setup_token: str = ""
++
++
++@app.post("/api/devices/{device_id}/reprovision")
++@device_recovery.serialized
++def device_reprovision(
++    device_id: str,
++    req: DeviceReprovisionReq | None = None,
++    x_account_token: str = Header(default=""),
++) -> Response:
++    """Legacy owner-only Wi-Fi change, never an implicit DELETE or new claim."""
+     devices_data = _devices()
+     device = devices_data.get(device_id)
+-    if not device or not _account_auth(device, x_account_token):
++    if not device or not device.get("claimed") or not _account_auth(device, x_account_token):
+         return JSONResponse(status_code=401, content={"error": "设备授权无效"})
++    if _device_family(device) == DEVICE_FAMILY_WALNUTPI_19IN:
++        return JSONResponse(status_code=400, content={"error": "19 寸屏无需重新配网"})
++    setup_token = req.setup_token.strip() if req else ""
++    if setup_token and not 24 <= len(setup_token) <= 256:
++        return JSONResponse(status_code=400, content={"error": "设备配网凭据无效"})
++    _queue_reprovision(device, preserve_binding=True)
++    if setup_token:
++        device["reprovision_setup_token_digest"] = hashlib.sha256(setup_token.encode()).hexdigest()
++        device["reprovision_setup_token_expires_at"] = time.time() + 600
++    devices_data[device_id] = device
++    device_recovery.save_devices(devices_data)
++    return JSONResponse(status_code=202, content={
++        "device": _public_device(device), "reprovision_required": True,
++    })
++
++
++@app.delete("/api/devices/{device_id}")
++@device_recovery.serialized
++def device_delete(
++    device_id: str,
++    x_account_token: str = Header(default=""),
++    x_device_binding: str = Header(default=""),
++    x_delete_request_id: str = Header(default=""),
++) -> Response:
++    """Revoke one binding once; replay only its authenticated deletion receipt."""
++    requested_binding = x_device_binding.strip()
++    request_id = x_delete_request_id.strip()
++    if bool(requested_binding) != bool(request_id):
++        return JSONResponse(status_code=400, content={"error": "删除操作信息不完整，请重新检查设备", "code": "delete_identity_required"})
++    if requested_binding and (not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", requested_binding)
++                              or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", request_id)):
++        return JSONResponse(status_code=400, content={"error": "删除操作信息无效", "code": "delete_identity_invalid"})
++    devices_data = _devices()
++    device = devices_data.get(device_id)
++    # New bindings never accept an unscoped legacy delete or legacy receipt.
++    if device and (requested_binding or not device.get("binding_id")):
++        receipt = device_recovery.find_receipt(device, x_account_token, requested_binding, request_id)
++        if receipt:
++            return JSONResponse(status_code=202, content=device_recovery.receipt_response(receipt, replay=True))
++    if not device or not device.get("claimed") or not _account_auth(device, x_account_token):
++        return JSONResponse(status_code=401, content={"error": "设备授权无效"})
++    if device.get("binding_id") and not requested_binding:
++        return JSONResponse(status_code=409, content={"error": "设备绑定已更新，请检查连接后重新确认删除", "code": "device_binding_required"})
++    if requested_binding and requested_binding != device_recovery.binding_id(device):
++        return JSONResponse(status_code=409, content={"error": "设备绑定已变化，未删除新绑定", "code": "device_binding_changed"})
+     _remember_account(x_account_token)
++    receipt = device_recovery.record_receipt(device, x_account_token, request_id)
+     if _device_family(device) == DEVICE_FAMILY_WALNUTPI_19IN:
+-        devices_data.pop(device_id, None)
+-        store.save("eink_devices", devices_data)
+-        return JSONResponse({"deleted": True, "device_id": device_id})
+-    _queue_reprovision(device)
+-    devices_data[device_id] = device
+-    store.save("eink_devices", devices_data)
+-    return JSONResponse(
+-        status_code=202,
+-        content={
+-            "deleted": True,
+-            "removed": True,
+-            "device_id": device_id,
+-            "reprovision_required": True,
+-        },
+-    )
++        receipt["reprovision_required"] = False
++        devices_data[device_id] = device_recovery.tombstone(device)
++    else:
++        _queue_reprovision(device)
++        devices_data[device_id] = device
++    device_recovery.save_devices(devices_data)
++    return JSONResponse(status_code=202, content=device_recovery.receipt_response(receipt, replay=False))
+ 
+ 
+ @app.post("/api/devices/{device_id}/publish")
+@@ -1597,6 +1711,7 @@
+     device = devices_data.get(device_id)
+     if not device or not _account_auth(device, x_account_token):
+         return JSONResponse(status_code=401, content={"error": "设备授权无效"})
++    publication_identity = device_recovery.publication_identity(device)
+     if not _is_eink_device(device):
+         return JSONResponse(status_code=409, content={"error": "19 寸屏使用实时展示通道，不支持墨水屏帧发布"})
+     if fit not in ("contain", "cover") or rotation not in (0, 90, 180, 270):
+@@ -1633,8 +1748,9 @@
+         "error": "",
+     })
+     display_history.stage(device, revision, title="照片墙画面", image_url=device["preview_url"])
+-    devices_data[device_id] = device
+-    store.save("eink_devices", devices_data)
++    device = await asyncio.to_thread(device_recovery.commit_publication, device, publication_identity)
++    if device is None:
++        return JSONResponse(status_code=409, content={"error": "设备绑定或待展示内容已变化，请重新检查", "code": "device_binding_changed"})
+     return JSONResponse({"device": _public_device(device), "revision": revision})
+ 
+ 
+@@ -1649,6 +1765,7 @@
+     device = devices_data.get(device_id)
+     if not device or not _account_auth(device, x_account_token):
+         return JSONResponse(status_code=401, content={"error": "设备授权无效"})
++    publication_identity = device_recovery.publication_identity(device)
+     scope = _account_scope(str(device.get("account_token", "")))
+     wall = store.load(_scoped_store_name("last_wall", scope), {})
+     requested_wall_id = str(req.wall_id if req else "")
+@@ -1675,8 +1792,9 @@
+             "error": "",
+         })
+         display_history.stage(device, revision, title=wall.get("title", "照片墙画面"), image_url=image_url)
+-        devices_data[device_id] = device
+-        store.save("eink_devices", devices_data)
++        device = await asyncio.to_thread(device_recovery.commit_publication, device, publication_identity)
++        if device is None:
++            return JSONResponse(status_code=409, content={"error": "设备绑定或待展示内容已变化，请重新检查", "code": "device_binding_changed"})
+         await hub.broadcast({"type": "wall", **wall}, target_device_ids={device_id})
+         return JSONResponse({
+             "device": _public_device(device),
+@@ -1688,8 +1806,9 @@
+         return JSONResponse(status_code=409, content={"error": "当前设备不支持墨水屏帧发布"})
+     with open(image_path, "rb") as image_file:
+         revision, _ = _queue_device_image(device, image_file.read(), title=wall.get("title", "照片墙画面"))
+-    devices_data[device_id] = device
+-    store.save("eink_devices", devices_data)
++    device = await asyncio.to_thread(device_recovery.commit_publication, device, publication_identity)
++    if device is None:
++        return JSONResponse(status_code=409, content={"error": "设备绑定或待展示内容已变化，请重新检查", "code": "device_binding_changed"})
+     return JSONResponse({"device": _public_device(device), "revision": revision, "wall": wall})
+ 
+ 
+@@ -1707,6 +1826,7 @@
+     device = devices_data.get(device_id)
+     if not device or not _account_auth(device, x_account_token):
+         return JSONResponse(status_code=401, content={"error": "设备授权无效"})
++    publication_identity = device_recovery.publication_identity(device)
+     if not _is_eink_device(device):
+         return JSONResponse(status_code=409, content={"error": "七月日历仅支持 ESP32 墨水屏"})
+ 
+@@ -1738,8 +1858,9 @@
+     except (GenerationError, OSError, ValueError) as exc:
+         return JSONResponse(status_code=500, content={"error": f"七月日历生成失败：{exc}"})
+ 
+-    devices_data[device_id] = device
+-    store.save("eink_devices", devices_data)
++    device = await asyncio.to_thread(device_recovery.commit_publication, device, publication_identity)
++    if device is None:
++        return JSONResponse(status_code=409, content={"error": "设备绑定或待展示内容已变化，请重新检查", "code": "device_binding_changed"})
+     return JSONResponse({
+         "device": _public_device(device),
+         "revision": revision,
+@@ -1753,6 +1874,7 @@
+ 
+ 
+ @app.get("/api/devices/{device_id}/next")
++@device_recovery.serialized
+ def device_next(device_id: str, revision: str = "", token: str = "") -> Response:
+     devices_data = _devices()
+     device = devices_data.get(device_id)
+@@ -1763,12 +1885,12 @@
+     if _device_family(device) == DEVICE_FAMILY_WALNUTPI_19IN:
+         device["state"] = "online"
+         devices_data[device_id] = device
+-        store.save("eink_devices", devices_data)
++        device_recovery.save_devices(devices_data)
+         return Response(status_code=204)
+     if not isinstance(pending, dict):
+         device["state"] = "online" if not device.get("revision") else device.get("state", "online")
+     devices_data[device_id] = device
+-    store.save("eink_devices", devices_data)
++    device_recovery.save_devices(devices_data)
+     if (isinstance(pending, dict) and pending.get("type") == "reprovision"
+             and pending.get("preserve_binding") is False
+             and not device.get("claimed") and not device.get("account_token")
+@@ -1778,7 +1900,7 @@
+     if isinstance(pending, dict) and pending.get("type") == "reprovision":
+         return JSONResponse({
+             "command": "reprovision",
+-            "preserve_binding": False,
++            "preserve_binding": bool(pending.get("preserve_binding")),
+         })
+     target = str(device.get("revision", ""))
+     if not target or target == revision:
+@@ -1813,6 +1935,7 @@
+ 
+ 
+ @app.post("/api/devices/{device_id}/status")
++@device_recovery.serialized
+ def device_status(device_id: str, req: DeviceStatusReq, token: str = "") -> Response:
+     devices_data = _devices()
+     device = devices_data.get(device_id)
+@@ -1820,11 +1943,19 @@
+         return JSONResponse(status_code=401, content={"error": "设备凭据无效"})
+     pending = device.get("pending_command")
+     if req.state == "unbound":
+-        if not isinstance(pending, dict) or pending.get("type") != "reprovision":
++        if (not isinstance(pending, dict) or pending.get("type") != "reprovision"
++                or pending.get("preserve_binding")):
+             return JSONResponse(status_code=409, content={"error": "设备没有待执行的删除命令"})
+-        devices_data.pop(device_id, None)
+-        store.save("eink_devices", devices_data)
++        devices_data[device_id] = device_recovery.tombstone(device)
++        device_recovery.save_devices(devices_data)
+         return JSONResponse({"ok": True, "removed": True})
++    if req.state == "reprovisioning":
++        if (not isinstance(pending, dict) or pending.get("type") != "reprovision"
++                or pending.get("preserve_binding") is not True):
++            return JSONResponse(status_code=409, content={"error": "设备没有待执行的重新配网命令"})
++        device.pop("pending_command", None)
++        device.pop("reprovision_setup_token_digest", None)
++        device.pop("reprovision_setup_token_expires_at", None)
+     device.update({
+         "state": req.state[:24],
+         "progress": max(0.0, min(float(req.progress), 100.0)),
+@@ -1837,7 +1968,7 @@
+         if not req.error:
+             display_history.confirm(device, req.revision)
+     devices_data[device_id] = device
+-    store.save("eink_devices", devices_data)
++    device_recovery.save_devices(devices_data)
+     return JSONResponse({"ok": True})
+ 
+ 
+--- /dev/null
++++ b/backend/device_recovery.py
+@@ -0,0 +1,200 @@
++"""Device binding transactions and deletion receipts. No image processing."""
++from __future__ import annotations
++
++from contextlib import contextmanager
++import copy
++import fcntl
++import functools
++import hashlib
++import hmac
++import inspect
++import json
++import os
++import secrets
++import stat
++import tempfile
++import threading
++import time
++
++from . import store
++
++_LOCK = threading.Lock()
++_RECEIPT_TTL = 7 * 24 * 3600
++_RECEIPT_LIMIT = 16
++_WALL_FIELDS = ("revision", "frame_path", "preview_url",
++                "published_at", "state", "progress", "error")
++
++
++@contextmanager
++def transaction():
++    """Called in a sync route/worker thread, never across render or await."""
++    with _LOCK:
++        descriptor = os.open(store._path("eink_devices") + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
++        try:
++            fcntl.flock(descriptor, fcntl.LOCK_EX)
++            yield
++        finally:
++            fcntl.flock(descriptor, fcntl.LOCK_UN)
++            os.close(descriptor)
++
++
++def serialized(function):
++    if inspect.iscoroutinefunction(function):
++        raise TypeError("Device transaction decorator is synchronous only")
++
++    @functools.wraps(function)
++    def wrapped(*args, **kwargs):
++        with transaction():
++            return function(*args, **kwargs)
++    # FastAPI resolves forward references against the wrapper module otherwise.
++    wrapped.__signature__ = inspect.signature(function, eval_str=True)
++    return wrapped
++
++
++def save_devices(data):
++    """Atomically save the device and its receipts in the same durable file."""
++    path = store._path("eink_devices")
++    directory = os.path.dirname(path)
++    descriptor, temporary = tempfile.mkstemp(prefix=".devices-", dir=directory)
++    try:
++        mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o600
++        os.fchmod(descriptor, mode)
++        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
++            json.dump(data, output, ensure_ascii=False, indent=2)
++            output.flush()
++            os.fsync(output.fileno())
++        os.replace(temporary, path)
++        directory_fd = os.open(directory, os.O_RDONLY)
++        try:
++            os.fsync(directory_fd)
++        finally:
++            os.close(directory_fd)
++    finally:
++        if os.path.exists(temporary):
++            os.unlink(temporary)
++
++
++def binding_id(device):
++    explicit = str(device.get("binding_id", ""))
++    if explicit:
++        return explicit
++    # Stable upgrade identity; legacy clients can still delete the existing
++    # binding once. This is not an account credential or an authorization grant.
++    identity = [device.get("device_id"), device.get("account_token"), device.get("created_at")]
++    return "legacy-" + hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
++
++
++def account_proof(token):
++    return hashlib.sha256(("device-delete-owner:" + token).encode()).hexdigest()
++
++
++def receipts(device):
++    now = time.time()
++    values = device.get("_delete_receipts", []) if isinstance(device, dict) else []
++    return [copy.deepcopy(row) for row in values if isinstance(row, dict)
++            and isinstance(row.get("at"), (int, float))
++            and 0 <= now - row["at"] <= _RECEIPT_TTL][-_RECEIPT_LIMIT:]
++
++
++def find_receipt(device, token, requested_binding, request_id):
++    if not token:
++        return None
++    for row in reversed(receipts(device)):
++        if not hmac.compare_digest(str(row.get("owner_proof", "")), account_proof(token)):
++            continue
++        if request_id != row.get("request_id", ""):
++            continue
++        if requested_binding and requested_binding != row.get("binding_id"):
++            continue
++        # New-style receipts always require the binding id. A legacy retry has
++        # neither header and can replay only its own legacy receipt.
++        if not requested_binding and (request_id or not row.get("legacy_request")):
++            continue
++        return row
++    return None
++
++
++def record_receipt(device, token, request_id):
++    row = {"device_id": device["device_id"], "binding_id": binding_id(device),
++           "request_id": request_id, "owner_proof": account_proof(token),
++           "at": time.time(), "legacy_request": not request_id,
++           "reprovision_required": device.get("device_family") != "walnutpi_19in"}
++    device["_delete_receipts"] = (receipts(device) + [row])[-_RECEIPT_LIMIT:]
++    return row
++
++
++def receipt_response(row, *, replay):
++    return {"device_id": row["device_id"], "removed": True, "deleted": True,
++            "binding_id": row["binding_id"], "request_id": row["request_id"],
++            "reprovision_required": row["reprovision_required"], "already_removed": replay}
++
++
++def tombstone(device):
++    return {"device_id": device["device_id"], "device_family": device.get("device_family"),
++            "created_at": device.get("created_at"), "claimed": False,
++            "account_token": "", "device_token": "", "state": "unbound",
++            "_delete_tombstone": True, "_delete_receipts": receipts(device)}
++
++
++def start_binding(device):
++    device.pop("_bootstrap_receipt", None)
++    device["binding_id"] = secrets.token_urlsafe(24)
++    # The existing history key contains created_at. Change it only when starting
++    # a new binding, never for Wi-Fi reconfiguration, to isolate old history.
++    device["created_at"] = time.time()
++
++
++def _bootstrap_identity(device):
++    return {"device_id": str(device.get("device_id", "")),
++            "binding_id": binding_id(device),
++            "owner_proof": account_proof(str(device.get("account_token", ""))),
++            "device_token_digest": hashlib.sha256(str(device.get("device_token", "")).encode()).hexdigest()}
++
++
++def remember_bootstrap(device, setup_token):
++    """Issued once with a new hardware token, never renewed by a replay."""
++    if len(setup_token) < 24:
++        return
++    device["_bootstrap_receipt"] = {
++        **_bootstrap_identity(device),
++        "setup_digest": hashlib.sha256(setup_token.encode()).hexdigest(),
++        "issued_at": time.time(),
++    }
++
++
++def can_replay_bootstrap(device, setup_token):
++    """Same proof may recover the same token for 60s, without mutation."""
++    receipt = device.get("_bootstrap_receipt")
++    if (not isinstance(receipt, dict) or device.get("pending_command")
++            or not device.get("device_token") or len(setup_token) < 24):
++        return False
++    issued = receipt.get("issued_at")
++    if not isinstance(issued, (int, float)) or not 0 <= time.time() - issued <= 60:
++        return False
++    expected = {**_bootstrap_identity(device),
++                "setup_digest": hashlib.sha256(setup_token.encode()).hexdigest()}
++    return all(hmac.compare_digest(str(receipt.get(key, "")), value)
++               for key, value in expected.items())
++
++
++def publication_identity(device):
++    return (binding_id(device), account_proof(str(device.get("account_token", ""))),
++            str(device.get("revision", "")))
++
++
++def commit_publication(proposed, identity):
++    """Merge only wall fields after rendering; reject obsolete/withdrawn binds."""
++    with transaction():
++        devices = store.load("eink_devices", {})
++        current = devices.get(proposed["device_id"])
++        if (not current or not current.get("claimed") or not current.get("account_token")
++                or publication_identity(current) != identity or current.get("pending_command")):
++            return None
++        for field in _WALL_FIELDS:
++            if field in proposed:
++                current[field] = proposed[field]
++            elif field in ("frame_path", "preview_url"):
++                current.pop(field, None)
++        devices[current["device_id"]] = current
++        save_devices(devices)
++        return copy.deepcopy(current)

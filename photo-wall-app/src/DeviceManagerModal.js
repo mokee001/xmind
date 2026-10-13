@@ -45,6 +45,7 @@ export default function DeviceManagerModal({
   sessions,
   activeDeviceId,
   onClose,
+  onDismiss,
   onSelect,
   onReconfigure,
   onAdd,
@@ -52,15 +53,19 @@ export default function DeviceManagerModal({
   activeConnectionLabel,
   connectionError,
   onCheckConnection,
+  connectionCheck,
+  onForget,
 }) {
   const [removalTarget, setRemovalTarget] = useState(null);
   const [busyDeviceId, setBusyDeviceId] = useState('');
   const [error, setError] = useState('');
+  const [confirmingLocalRemoval, setConfirmingLocalRemoval] = useState(false);
   const busyRef = useRef(false);
 
   useEffect(() => {
     if (!visible && !busyRef.current) {
       setRemovalTarget(null);
+      setConfirmingLocalRemoval(false);
       setError('');
     }
   }, [visible]);
@@ -88,9 +93,17 @@ export default function DeviceManagerModal({
       setRemovalTarget(null);
     });
   };
+  const confirmLocalRemoval = async () => {
+    if (!removalTarget || !confirmingLocalRemoval) return;
+    await runDeviceAction(removalTarget, async session => {
+      await onForget(session);
+      setRemovalTarget(null);
+      setConfirmingLocalRemoval(false);
+    });
+  };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose} onDismiss={onDismiss}>
       <SafeAreaView style={styles.page}>
         <View style={styles.header}>
           <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
@@ -103,25 +116,31 @@ export default function DeviceManagerModal({
         {removalTarget ? (
           <View style={styles.confirmation}>
             <View style={styles.warningMark}><Text style={styles.warningMarkText}>!</Text></View>
-            <Text style={styles.confirmationTitle}>删除这台照片墙？</Text>
+            <Text style={styles.confirmationTitle}>{confirmingLocalRemoval ? '仅从此手机移除？' : '删除这台照片墙？'}</Text>
             <Text style={styles.confirmationName}>{deviceName(removalTarget)}</Text>
             <Text style={styles.confirmationId}>{deviceId(removalTarget)}</Text>
-            <Text style={styles.confirmationDescription}>{isScreen19(removalTarget)
+            <Text style={styles.confirmationDescription}>{confirmingLocalRemoval
+              ? '这不会解除云端绑定，也不会清除屏幕的 Wi-Fi。恢复连接所需的信息会安全保留在此手机，之后可以重新添加同一设备。不会在后台自动重试删除。'
+              : isScreen19(removalTarget)
               ? '删除后，这台屏幕只会从 App 的设备列表移除，不会改变屏幕原有的连接设置。'
               : '服务确认移除后，管理员权限会被撤销；屏幕恢复联网后会清除连接设置。再次连接请从“添加设备”开始。'}</Text>
             {error ? <Text style={styles.error}>{error}</Text> : null}
             <Pressable
               accessibilityRole="button"
               disabled={Boolean(busyDeviceId)}
-              onPress={confirmRemoval}
+              onPress={confirmingLocalRemoval ? confirmLocalRemoval : confirmRemoval}
               style={({ pressed }) => [styles.dangerButton, pressed && styles.pressed, busyDeviceId && styles.disabled]}
             >
-              <Text style={styles.dangerButtonText}>{busyDeviceId ? '正在删除…' : '确认删除'}</Text>
+              <Text style={styles.dangerButtonText}>{busyDeviceId ? '正在处理…' : confirmingLocalRemoval ? '确认仅从此手机移除' : '确认删除'}</Text>
             </Pressable>
+            {error && !confirmingLocalRemoval && onForget ? <Pressable accessibilityRole="button" disabled={Boolean(busyDeviceId)}
+              onPress={() => {setConfirmingLocalRemoval(true);setError('');}} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>仅从此手机移除并重新连接</Text>
+            </Pressable> : null}
             <Pressable
               accessibilityRole="button"
               disabled={Boolean(busyDeviceId)}
-              onPress={() => { setRemovalTarget(null); setError(''); }}
+              onPress={() => { if (confirmingLocalRemoval) setConfirmingLocalRemoval(false); else setRemovalTarget(null); setError(''); }}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, busyDeviceId && styles.disabled]}
             >
               <Text style={styles.secondaryButtonText}>取消</Text>
@@ -201,9 +220,9 @@ export default function DeviceManagerModal({
             </ScrollView>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
-            {connectionError ? <View style={styles.connectionError}>
-              <Text style={styles.error}>{connectionError}</Text>
-              <Pressable accessibilityRole="button" onPress={onCheckConnection} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>检查连接 / 重试</Text></Pressable>
+            {connectionError || connectionCheck ? <View style={styles.connectionError} accessibilityLiveRegion="polite">
+              <Text style={styles.error}>{connectionCheck?.message || connectionError}</Text>
+              <Pressable accessibilityRole="button" disabled={connectionCheck?.state === 'checking'} onPress={onCheckConnection} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{connectionCheck?.state === 'checking' ? '正在检查…' : '检查连接 / 重试'}</Text></Pressable>
             </View> : null}
             <View style={styles.footer}>
               <Pressable accessibilityRole="button" disabled={Boolean(busyDeviceId)} onPress={onAdd} style={({ pressed }) => [styles.addButton, pressed && styles.pressed, busyDeviceId && styles.disabled]}>

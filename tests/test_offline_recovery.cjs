@@ -157,7 +157,7 @@ test('real App delete never removes local binding for timeout, authorization, mi
   const original=session();
   for(const error of [Object.assign(Error('timeout'),{code:'SERVICE_TIMEOUT'}),Object.assign(Error('auth'),{status:401}),Object.assign(Error('missing'),{status:404}),Object.assign(Error('bad'),{code:'INVALID_SERVICE_RESPONSE'})]) {
     let removed=0;const remove=value('removeManagedDevice',{runManagedDeviceAction:(_,action)=>action(()=>true),IS_WEB_PREVIEW:false,
-      isScreen19Device:()=>false,removeDisplay:async()=>{throw error},DEFAULT_API_BASE:options.apiBase,
+      isScreen19Device:()=>false,withDeviceStatusTimeout:status.withDeviceStatusTimeout,prepareDeviceRemoval:async()=>({bindingId:'binding',requestId:'request'}),removeDisplay:async()=>{throw error},DEFAULT_API_BASE:options.apiBase,
       removeDeviceSession:async()=>removed++,serviceFailureMessage:network.serviceFailureMessage});
     await assert.rejects(remove(original),/尚未确认删除/);assert.equal(removed,0);assert.equal(original.firstWall.state,'publishing');
   }
@@ -166,7 +166,7 @@ test('real App delete never removes local binding for timeout, authorization, mi
 test('real App rejects late delete after binding changes, before local storage mutation',async()=>{
   const gate=deferred();let current=true,removed=0;
   const remove=value('removeManagedDevice',{runManagedDeviceAction:(_,action)=>action(()=>current),IS_WEB_PREVIEW:false,
-    isScreen19Device:()=>false,removeDisplay:()=>gate.promise,DEFAULT_API_BASE:options.apiBase,
+    isScreen19Device:()=>false,withDeviceStatusTimeout:status.withDeviceStatusTimeout,prepareDeviceRemoval:async()=>({bindingId:'binding',requestId:'request'}),removeDisplay:()=>gate.promise,DEFAULT_API_BASE:options.apiBase,
     removeDeviceSession:async()=>removed++,serviceFailureMessage:network.serviceFailureMessage});
   const pending=remove(session());current=false;gate.resolve({device_id:'screen',removed:true});
   await assert.rejects(pending,/绑定已变化/);assert.equal(removed,0);
@@ -191,7 +191,7 @@ function connectedContext(store,overrides={}) {
     normalizeDeviceSession:x=>x,prepareAccountSession:async()=>({accessToken:'synthetic-owner'}),upgradeDeviceToFamily:async value=>value,
     saveDeviceSession:store.saveDeviceSession,updateDeviceSession:store.updateDeviceSession,
     setSession:value=>changes.session=value,setDeviceSessions:value=>changes.sessions=value,clearPendingDeviceSetup:async()=>{},
-    setReconfigurationSession:noop,setAddingDevice:noop,setInitialSetupDevice:noop,setDeviceModal:noop,setDeviceManagerVisible:noop,
+    setReconfigurationSession:noop,setAddingDevice:noop,setInitialSetupDevice:noop,setDeviceModal:noop,setDeviceManagerVisible:noop,openDeviceSurface:noop,
     needsOnboarding:false,setOnboardingStep:noop,setOnboardingDeviceConnectedNow:noop,setActiveTab:noop,setNotice:noop,...overrides};
   return{context,refs,changes};
 }

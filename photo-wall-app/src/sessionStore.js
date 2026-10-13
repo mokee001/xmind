@@ -5,6 +5,8 @@ const KEY = 'photowall-device-session-v1';
 const DEVICES_KEY = 'photowall-device-sessions-v2';
 const PENDING_SETUP_KEY = 'photowall-pending-setup-v1';
 const PHOTO_SYNC_KEY = 'photowall-photo-sync-v1';
+const RECOVERY_KEY = 'photowall-device-recovery-v1';
+const REMOVALS_KEY = 'photowall-device-removal-attempts-v1';
 let deviceMutationQueue = Promise.resolve();
 
 async function readValue(key) {
@@ -82,13 +84,20 @@ export async function saveDeviceSession(session, guard = {}) {
     const activeDeviceId = session.device.device_id;
     await writeValue(DEVICES_KEY, { activeDeviceId, sessions });
     await writeValue(KEY, session);
+    // Only an explicit successful connection restores a locally removed device.
+    const recoveries = await readValue(RECOVERY_KEY) || {};
+    if (recoveries[activeDeviceId]) {
+      delete recoveries[activeDeviceId];
+      await writeValue(RECOVERY_KEY, recoveries);
+    }
     return { activeDeviceId, sessions };
   });
 }
 
-function checkMutation(stored, deviceId, { current, expectedAccountToken } = {}) {
+function checkMutation(stored, deviceId, { current, expectedAccountToken, expectedBindingId } = {}) {
   const existing = stored?.sessions.find(item => item.device.device_id === deviceId);
-  if ((current && !current()) || (expectedAccountToken !== undefined && existing?.accountToken !== expectedAccountToken)) {
+  if ((current && !current()) || (expectedAccountToken !== undefined && existing?.accountToken !== expectedAccountToken)
+    || (expectedBindingId !== undefined && (existing?.device?.binding_id || '') !== expectedBindingId)) {
     throw Object.assign(new Error('设备绑定已变化，请重新打开设备管理。'), { code: 'DEVICE_BINDING_CHANGED' });
   }
 }
@@ -97,6 +106,9 @@ export async function updateDeviceSession(session, guard = {}) {
   if (!validSession(session)) throw new Error('设备会话无效');
   return serializeDeviceMutation(async () => {
     const stored = await readDeviceSessions();
+    checkMutation(stored, session.device.device_id, guard);
+    const recoveries = await readValue(RECOVERY_KEY) || {};
+    if (recoveries[session.device.device_id] && !stored.sessions.some(item => item.device.device_id === session.device.device_id)) throw Object.assign(new Error('这台设备已从此手机移除，请通过添加设备重新连接。'), {code:'DEVICE_LOCALLY_REMOVED'});
     checkMutation(stored, session.device.device_id, guard);
     const sessions = upsertSession(stored.sessions, session);
     const activeDeviceId = sessions.some(item => item.device.device_id === stored.activeDeviceId)
@@ -142,6 +154,67 @@ export async function removeDeviceSession(deviceId, guard = {}) {
     }
     if (!sessions.length) await deleteValue(PHOTO_SYNC_KEY);
     return guard.returnSnapshot ? {activeDeviceId, sessions} : activeSession;
+  });
+}
+
+export async function loadDeviceRecovery(deviceId) {
+  const recoveries = await readValue(RECOVERY_KEY) || {};
+  return recoveries[deviceId] || null;
+}
+
+export async function loadLocallyRemovedDeviceIds() {
+  const [recoveries,stored] = await Promise.all([readValue(RECOVERY_KEY),readDeviceSessions()]);
+  return Object.keys(recoveries || {}).filter(deviceId => !stored.sessions.some(item => item.device.device_id === deviceId));
+}
+
+export async function forgetDeviceSession(target, guard = {}) {
+  const deviceId = target?.device?.device_id;
+  if (!deviceId || !target.accountToken) throw new Error('无法安全保存设备恢复信息，请稍后重试。');
+  return serializeDeviceMutation(async () => {
+    const stored = await readDeviceSessions();
+    checkMutation(stored, deviceId, {...guard, expectedAccountToken:target.accountToken,expectedBindingId:target.device.binding_id || ''});
+    const recoveries = await readValue(RECOVERY_KEY) || {};
+    const actual = stored.sessions.find(item => item.device.device_id === deviceId);
+    checkMutation(stored, deviceId, {...guard, expectedAccountToken:target.accountToken,expectedBindingId:target.device.binding_id || ''});
+    recoveries[deviceId] = {session:{...actual,...(target.recoveryPreferenceProfile ? {recoveryPreferenceProfile:target.recoveryPreferenceProfile} : {})}, removedAt:new Date().toISOString(), reason:'local-only-removal'};
+    // Save recovery credentials before removing the visible binding. Never dispatch DELETE here.
+    await writeValue(RECOVERY_KEY, recoveries);
+    checkMutation(stored, deviceId, {...guard, expectedAccountToken:target.accountToken,expectedBindingId:target.device.binding_id || ''});
+    const sessions = stored.sessions.filter(item => item.device.device_id !== deviceId);
+    const activeDeviceId = stored.activeDeviceId === deviceId ? sessions[0]?.device?.device_id || null : stored.activeDeviceId;
+    const active = sessions.find(item => item.device.device_id === activeDeviceId);
+    await writeValue(DEVICES_KEY, {activeDeviceId,sessions});
+    if (active) await writeValue(KEY,active); else await deleteValue(KEY);
+    const pending = await readValue(PENDING_SETUP_KEY);
+    if (pending?.session?.device?.device_id === deviceId) await deleteValue(PENDING_SETUP_KEY);
+    return {activeDeviceId,sessions};
+  });
+}
+
+export async function prepareDeviceRemoval(target, guard = {}) {
+  const deviceId = target?.device?.device_id, bindingId = target?.device?.binding_id;
+  if (!deviceId) throw new Error('设备信息不完整。');
+  return serializeDeviceMutation(async () => {
+    const stored = await readDeviceSessions();
+    checkMutation(stored, deviceId, {...guard,expectedAccountToken:target.accountToken});
+    const attempts = await readValue(REMOVALS_KEY) || {};
+    checkMutation(stored, deviceId, {...guard,expectedAccountToken:target.accountToken});
+    let attempt = attempts[deviceId];
+    if (!bindingId && (!attempt || attempt.accountToken !== target.accountToken)) {
+      throw Object.assign(new Error('服务暂未提供安全解绑信息。可以仅从此手机移除，再重新连接。'), {code:'DEVICE_BINDING_REQUIRED'});
+    }
+    const localBinding = stored.sessions.find(item => item.device.device_id === deviceId)?.device?.binding_id;
+    if (localBinding && (bindingId || attempt?.bindingId) !== localBinding) throw Object.assign(new Error('设备绑定已变化，请重新检查后操作。'), {code:'DEVICE_BINDING_CHANGED'});
+    if (!attempt || (bindingId && attempt.bindingId !== bindingId) || attempt.accountToken !== target.accountToken) {
+      // Correlation ID, not an authentication secret; authorization remains the account token + binding.
+      const requestId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
+        const random = Math.floor(Math.random() * 16); return (char === 'x' ? random : (random & 3) | 8).toString(16);
+      });
+      attempt = {deviceId,bindingId,requestId,accountToken:target.accountToken};
+      attempts[deviceId] = attempt;
+      await writeValue(REMOVALS_KEY,attempts);
+    }
+    return {deviceId:attempt.deviceId,bindingId:attempt.bindingId,requestId:attempt.requestId};
   });
 }
 

@@ -116,8 +116,8 @@ function actualSheetHarness(network) {
     open: false, closeCalls: 0, showCalls: 0, buttons: [], fields: {},
     set innerHTML(value) {
       this.html = value;
-      this.buttons = [...value.matchAll(/data-sheet-action="(\d+)">([^<]*)<\/button>/g)]
-        .map(match => ({ dataset: { sheetAction: match[1] }, textContent: match[2], disabled: false }));
+      this.buttons = [...value.matchAll(/<button[^>]*?( hidden)? data-sheet-action="(\d+)">([^<]*)<\/button>/g)]
+        .map(match => ({ dataset: { sheetAction: match[2] }, textContent: match[3], hidden: !!match[1], disabled: false }));
       this.fields = Object.fromEntries(['data-remove-result', 'data-network-result', 'data-network-label', 'data-network-copy']
         .map(name => [`[${name}]`, { textContent: '' }]));
     },
@@ -142,9 +142,11 @@ function actualSheetHarness(network) {
     },
     flushClose() { while (queued.length) queued.shift()(); },
   };
-  const factory = new Function('dialog', 'document', 'escapeHtml', 'icon', 'network', 'navigate', 'networkNotice',
+  let reconnects = 0; const routes = [];
+  const factory = new Function('dialog', 'document', 'escapeHtml', 'icon', 'network', 'navigate', 'networkNotice', 'onboarding',
     `let sheetController; const route = 'calendar'; const manageDevice = () => {}; ${openSource}\n${networkSource}\n${removeSource}\nreturn {openSheet, networkHelp, removeNetworkDevice};`);
-  return { dialog, ...factory(dialog, { activeElement: null }, String, () => '', network, () => {}, networkNotice) };
+  return { dialog, routes, reconnects: () => reconnects,
+    ...factory(dialog, { activeElement: null }, String, () => '', network, route => routes.push(route), networkNotice, { beginReconnect() { reconnects++; } }) };
 }
 
 test('actual nested sheets keep new buttons active and ignore an old queued close event', () => {
@@ -172,23 +174,26 @@ test('actual removal sheet disables only its request button and restores retry a
   ui.dialog.click(0);
   assert.equal(ui.dialog.buttons[0].textContent, '正在确认移除…');
   assert.equal(ui.dialog.buttons[0].disabled, true);
-  assert.equal(ui.dialog.buttons[1].disabled, false);
+  assert.equal(ui.dialog.buttons[2].disabled, false);
+  assert.equal(ui.dialog.buttons[1].hidden, true);
   ui.dialog.click(0); assert.equal(h.tasks.size, 1, 'repeated confirmation cannot queue another request');
   h.advance(10000); await Promise.resolve();
   assert.equal(ui.dialog.buttons[0].disabled, false);
   assert.equal(ui.dialog.buttons[0].textContent, '重新确认移除');
   assert.match(ui.dialog.fields['[data-remove-result]'].textContent, /设备绑定和偏好已保留/);
+  assert.equal(ui.dialog.buttons[1].hidden, false);
   assert.equal(h.network.snapshot().removed, false);
-  ui.dialog.click(1); ui.dialog.flushClose(); assert.equal(ui.dialog.open, false);
+  ui.dialog.click(2); ui.dialog.flushClose(); assert.equal(ui.dialog.open, false);
   h.network.destroy(); h.journey.destroy();
 });
 
 test('actual network sheet updates its status after recovery and stops listening after replacement', async () => {
   const h = harness('success', undefined, { scenario: 'service-unreachable' });
   const ui = actualSheetHarness(h.network); ui.networkHelp();
-  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '暂时连不上服务');
-  ui.dialog.click(0);
-  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '确认连接中');
+  assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '正在检查连接…');
+  assert.equal(ui.dialog.buttons[0].disabled, true);
+  assert.equal(h.tasks.size, 1, 'opening check must immediately start one bounded request');
+  ui.dialog.click(0); assert.equal(h.tasks.size, 1);
   h.advance(8000); await Promise.resolve(); await Promise.resolve();
   assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '暂时连不上服务');
   ui.dialog.click(2);
@@ -197,12 +202,81 @@ test('actual network sheet updates its status after recovery and stops listening
   assert.equal(h.journey.snapshot().work.receipt, 'idle');
   ui.dialog.click(0); h.advance(650); await Promise.resolve(); await Promise.resolve();
   assert.equal(ui.dialog.fields['[data-network-label]'].textContent, '已连接');
-  assert.match(ui.dialog.fields['[data-network-result]'].textContent, /模拟服务已恢复/);
+  assert.match(ui.dialog.fields['[data-network-result]'].textContent, /连接正常 · 模拟结果/);
   const oldLabel = ui.dialog.fields['[data-network-label]'];
   ui.openSheet({ title: '另一张', body: '' });
   ui.dialog.fields = {};
   h.network.recover(); h.advance(650);
   assert.equal(oldLabel.textContent, '已连接', 'the replaced sheet subscription must have been removed');
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('failed cloud removal requires a separate local-only confirmation before opening reconnect', async () => {
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  const ui = actualSheetHarness(h.network); ui.removeNetworkDevice();
+  ui.dialog.click(1); assert.equal(ui.reconnects(), 0, 'hidden fallback cannot run before a failed request');
+  ui.dialog.click(0); h.advance(10000); await Promise.resolve();
+  ui.dialog.click(1);
+  assert.match(ui.dialog.html, /云端绑定尚未解除/);
+  assert.match(ui.dialog.html, /不会清除照片墙上的连接设置/);
+  assert.equal(h.network.snapshot().removed, false);
+  ui.dialog.click(1); ui.dialog.flushClose();
+  assert.equal(ui.reconnects(), 0); assert.equal(h.network.snapshot().removed, false);
+  ui.removeNetworkDevice(); ui.dialog.click(0); h.advance(10000); await Promise.resolve();
+  ui.dialog.click(1); ui.dialog.click(0);
+  assert.equal(h.network.snapshot().removed, true);
+  assert.equal(h.network.snapshot().removalKind, 'local');
+  assert.equal(h.network.snapshot().service, false);
+  assert.equal(h.network.snapshot().removalPendingDevice, false);
+  assert.match(networkNotice(h.network.snapshot()).copy, /云端绑定尚未解除/);
+  assert.equal(ui.reconnects(), 1); assert.deepEqual(ui.routes, ['setup-device']);
+  assert.equal(h.tasks.size, 0, 'local removal does not enqueue a cloud request');
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('local removal does not pretend the cloud binding is removed or restore it merely on network recovery', () => {
+  const h = harness('success', undefined, { scenario: 'device-offline' });
+  assert.equal(h.network.removeLocal().confirmationRequired, true);
+  assert.equal(h.network.snapshot().removed, false);
+  assert.deepEqual(h.network.removeLocal({ confirmed: true }), { ok: true, localOnly: true, cloudBindingRemoved: false, simulated: true });
+  h.network.restoreService(); assert.equal(h.network.snapshot().device, false);
+  assert.equal(h.network.completeReconnect(), false);
+  assert.equal(h.network.snapshot().removed, true);
+  assert.equal(h.network.completeReconnect({ confirmed: true }), true);
+  assert.equal(h.network.snapshot().removed, false);
+  assert.equal(h.network.snapshot().removalKind, null);
+  h.network.destroy(); h.journey.destroy();
+});
+
+test('actual reconnect completion needs service confirmation and keeps the scenario out of stored settings', () => {
+  const source = fs.readFileSync('demos/calendar-app/app.js', 'utf8');
+  const completeSource = source.slice(source.indexOf('function completeOnboarding('), source.indexOf("header.addEventListener('click'"));
+  const h = harness('success', undefined, { scenario: 'service-unreachable' });
+  h.network.removeLocal({ confirmed: true });
+  const original = { settings: { deviceName: '书房照片墙', connected: false, photoAccess: 'limited', updateFrequency: '每周', updateTime: '18:30' },
+    preferences: { people: ['saved-person'], topics: ['food'] }, onboarding: { completed: true, completedAt: 'earlier' } };
+  let stored = 0, connected = 0; const routes = [];
+  const factory = new Function('initialState', 'network', 'updateState', 'firstJourney', 'navigate',
+    `let state = initialState, previewHistory = true, calendarPosition = 20;
+     const onboarding = { isRecovery: () => true }, toast = () => {}, resetPreferenceDraft = () => {};
+     ${completeSource}
+     return { completeOnboarding, state: () => state };`);
+  const app = factory(structuredClone(original), h.network, () => { stored++; return true; },
+    () => ({ connect: () => connected++ }), route => routes.push(route));
+  const result = { settings: { connected: true, photoAccess: 'limited' }, onboarding: { completed: true } };
+  assert.equal(app.completeOnboarding(result), false);
+  assert.deepEqual(app.state(), original);
+  assert.equal(h.network.snapshot().removalKind, 'local');
+  h.network.restoreService();
+  assert.equal(app.completeOnboarding(result), true);
+  assert.equal(stored, 0, 'a network Demo recovery must never commit its simulated connection to normal saved settings');
+  assert.equal(connected, 1); assert.deepEqual(routes, ['first-wall']);
+  assert.equal(h.network.snapshot().history, 'loading', 'confirmed reconnect starts a fresh history read');
+  assert.equal(app.state().settings.deviceName, original.settings.deviceName);
+  assert.equal(app.state().settings.updateTime, '18:30');
+  assert.equal(app.state().settings.updateFrequency, '每周');
+  assert.deepEqual(app.state().preferences, original.preferences);
+  assert.equal(h.network.snapshot().removed, false);
   h.network.destroy(); h.journey.destroy();
 });
 

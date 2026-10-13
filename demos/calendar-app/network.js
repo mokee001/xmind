@@ -7,9 +7,10 @@ export function createNetworkDemo({ scenario, schedule = setTimeout, cancel = cl
   let service = scenario !== 'service-unreachable', device = scenario !== 'device-offline';
   let history = 'idle', checking = false, removing = false, removed = false;
   let removalPendingDevice = false, destroyed = false;
+  let removalKind = null;
   const listeners = new Set(), requests = new Map();
   const snapshot = () => ({ service, device: service ? device : null, history, checking, removing,
-    removed, removalPendingDevice, simulated: true });
+    removed, removalKind, removalPendingDevice, simulated: true });
   const emit = () => listeners.forEach(listener => listener(snapshot()));
   function request(kind, timeout, callback, signal) {
     if (destroyed || signal?.aborted) return Promise.resolve({ canceled: true });
@@ -70,10 +71,22 @@ export function createNetworkDemo({ scenario, schedule = setTimeout, cancel = cl
         try { response = removalResponse ? removalResponse() : { device_id: deviceId, removed: true, reprovision_required: true }; }
         catch { return { ok: false, reason: 'unconfirmed', simulated: true }; }
         if (response?.device_id !== deviceId || response.removed !== true) return { ok: false, reason: 'unconfirmed', simulated: true };
-        removed = true; removalPendingDevice = !device;
+        removed = true; removalKind = 'cloud'; removalPendingDevice = !device;
         return { ok: true, removed: true, pendingDevice: removalPendingDevice, simulated: true };
       }, signal);
     },
+    removeLocal({ confirmed = false } = {}) {
+      if (!confirmed || destroyed) return { ok: false, confirmationRequired: !confirmed };
+      requests.get('remove')?.abort();
+      removed = true; removalKind = 'local'; removalPendingDevice = false; emit();
+      return { ok: true, localOnly: true, cloudBindingRemoved: false, simulated: true };
+    },
+    completeReconnect({ confirmed = false } = {}) {
+      if (!confirmed || !service || destroyed) return false;
+      removed = false; removalKind = null; removalPendingDevice = false; device = true; emit();
+      return true;
+    },
+    restoreService() { service = true; emit(); },
     recover() { service = true; device = true; emit(); },
     destroy() {
       destroyed = true;
@@ -84,9 +97,12 @@ export function createNetworkDemo({ scenario, schedule = setTimeout, cancel = cl
 }
 
 export function networkNotice(state) {
+  if (state.removed && state.removalKind === 'local') return { label: '此手机未连接', title: '已从此手机移除',
+    copy: '云端绑定尚未解除。重新连接完成前，不会显示为已连接。' };
   if (state.removed) return { label: '未连接', title: '设备已移除',
     copy: state.removalPendingDevice ? '模拟服务已确认移除。屏幕恢复联网后同步清除连接设置。' : '模拟服务已确认移除设备。原有偏好仍保留。' };
-  if (!state.service) return { label: state.checking || state.history === 'loading' ? '确认连接中' : '暂时连不上服务',
+  if (state.checking) return { label: '正在检查连接…', title: '正在检查连接…', copy: '正在确认手机与服务、照片墙的连接状态。' };
+  if (!state.service) return { label: state.history === 'loading' ? '确认连接中' : '暂时连不上服务',
     title: state.history === 'loading' ? '正在读取展示记录…' : '暂时无法读取展示记录',
     copy: '请检查手机网络后重试。暂时无法确认照片墙状态，已有记录会保留。' };
   if (!state.device) return { label: '照片墙离线', title: '照片墙暂时离线',

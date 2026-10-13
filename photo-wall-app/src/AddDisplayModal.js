@@ -11,7 +11,7 @@ import {
 
 const SYSTEM_FONT = Platform.OS === 'ios' || Platform.OS === 'web' ? 'PingFang SC' : undefined;
 
-export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScreen19 }) {
+export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScreen19, onDismiss }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -35,7 +35,7 @@ export default function AddDisplayModal({ visible, onClose, onAddEsp32, onAddScr
   };
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose} onDismiss={onDismiss}>
       <SafeAreaView style={styles.page}>
         <View style={styles.header}>
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.headerButton}>

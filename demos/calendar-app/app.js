@@ -1,7 +1,7 @@
-import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS, DEMO_STALE_PERSON_ID } from './first-wall.js?v=0.3.9';
-import { mountPanel, resetPreferenceDraft } from './panels.js?v=0.3.9';
-import { createNetworkDemo, NETWORK_SCENARIOS, networkNotice } from './network.js?v=0.3.9';
-import { createOnboarding } from './onboarding.js?v=0.3.7';
+import { mountFirstWall, createFirstWallJourney, FIRST_WALL_SCENARIOS, DEMO_STALE_PERSON_ID } from './first-wall.js?v=0.3.10';
+import { mountPanel, resetPreferenceDraft } from './panels.js?v=0.3.10';
+import { createNetworkDemo, NETWORK_SCENARIOS, networkNotice } from './network.js?v=0.3.10';
+import { createOnboarding } from './onboarding.js?v=0.3.10';
 
 const STORAGE_KEY = 'echooo-calendar-demo-v1';
 const DEFAULT = {
@@ -131,11 +131,11 @@ function openSheet({ title, body, actions = [] }) {
   const controller = sheetController;
   const restoreFocus = document.activeElement;
   const close = () => { if (dialog.open && sheetController === controller) dialog.close(); };
-  dialog.innerHTML = `<div class="sheet-top"><h2 id="sheet-title">${escapeHtml(title)}</h2><button class="sheet-close" aria-label="关闭">${icon('close', 18)}</button></div><div class="sheet-body">${body}</div>${actions.length ? `<div class="sheet-actions">${actions.map((action, i) => `<button class="${action.primary ? 'primary-button' : 'secondary-button'}" data-sheet-action="${i}">${escapeHtml(action.label)}</button>`).join('')}</div>` : ''}`;
+  dialog.innerHTML = `<div class="sheet-top"><h2 id="sheet-title">${escapeHtml(title)}</h2><button class="sheet-close" aria-label="关闭">${icon('close', 18)}</button></div><div class="sheet-body">${body}</div>${actions.length ? `<div class="sheet-actions">${actions.map((action, i) => `<button class="${action.primary ? 'primary-button' : 'secondary-button'}"${action.hidden ? ' hidden' : ''} data-sheet-action="${i}">${escapeHtml(action.label)}</button>`).join('')}</div>` : ''}`;
   dialog.addEventListener('click', event => {
     if (event.target.closest('.sheet-close')) close();
     const button = event.target.closest('[data-sheet-action]');
-    if (button && !button.disabled) actions[Number(button.dataset.sheetAction)]?.onClick?.();
+    if (button && !button.disabled && !button.hidden) actions[Number(button.dataset.sheetAction)]?.onClick?.();
     if (event.target === dialog) {
       const r = dialog.getBoundingClientRect();
       if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) close();
@@ -167,18 +167,21 @@ async function checkNetwork(signal) {
 function networkHelp() {
   if (!network) { connectionSheet(); return; }
   const current = network.snapshot(), notice = networkNotice(current);
+  async function runCheck() {
+    const button = view.dialog.querySelector('[data-sheet-action="0"]');
+    if (!view.isCurrent() || button.disabled) return;
+    button.disabled = true; button.textContent = '正在检查…';
+    view.dialog.querySelector('[data-network-result]').textContent = '正在检查，请稍候。';
+    const result = await checkNetwork(view.signal);
+    if (!view.isCurrent() || result.canceled) return;
+    button.disabled = false; button.textContent = '重新检查';
+    view.dialog.querySelector('[data-network-result]').textContent = result.ok
+      ? result.deviceOnline ? '连接正常 · 模拟结果。正在重新读取记录。' : '手机可以访问服务，但照片墙离线。请检查屏幕电源和 Wi-Fi，或在设备管理中重新连接。'
+      : '暂时无法访问服务。请检查手机网络；也可以进入设备管理重新连接。';
+  }
   const view = openSheet({ title: '检查连接',
-    body: `<p><strong data-network-label>${escapeHtml(notice.label)}</strong> · 本地模拟</p><p data-network-copy>${escapeHtml(notice.copy)}</p><p>手机可尝试切换 Wi-Fi 或蜂窝网络。照片墙离线时，请检查电源和家庭 Wi-Fi。</p><p data-network-result role="status">检查连接不会更改设备绑定与已有记录。</p>`,
-    actions: [{ label: '重新检查', primary: true, onClick: async () => {
-      const button = view.dialog.querySelector('[data-sheet-action="0"]');
-      button.disabled = true; button.textContent = '正在检查…';
-      const result = await checkNetwork(view.signal);
-      if (!view.isCurrent() || result.canceled) return;
-      button.disabled = false; button.textContent = '重新检查';
-      view.dialog.querySelector('[data-network-result]').textContent = result.ok
-        ? result.deviceOnline ? '模拟服务已恢复，正在重新读取记录。设备上屏仍需独立回执。' : '模拟服务可以访问，照片墙仍离线。请检查屏幕电源和 Wi-Fi。'
-        : '仍无法访问服务，请检查手机网络后重试。设备绑定与已有记录已保留。';
-    } }, { label: '管理设备', onClick: () => { view.close(); manageDevice(); } },
+    body: `<p><strong data-network-label>${escapeHtml(notice.label)}</strong> · 本地模拟</p><p data-network-copy>${escapeHtml(notice.copy)}</p><p data-network-result role="status">正在检查，请稍候。</p>`,
+    actions: [{ label: '重新检查', primary: true, onClick: runCheck }, { label: '管理设备', onClick: () => { view.close(); manageDevice(); } },
     { label: 'Demo：模拟恢复连接', onClick: () => {
       network.recover();
       view.dialog.querySelector('[data-network-result]').textContent = '已切换为模拟网络恢复。请点“重新检查”，这不会伪造屏幕回执。';
@@ -191,6 +194,23 @@ function networkHelp() {
     view.dialog.querySelector('[data-network-copy]').textContent = next.copy;
   });
   view.signal.addEventListener('abort', unsubscribe, { once: true });
+  runCheck();
+}
+function reconnectNetworkDevice() {
+  if (!network) return;
+  onboarding.beginReconnect();
+  if (route === 'setup-device') renderRoute();
+  else navigate('setup-device');
+}
+function confirmLocalRemoval() {
+  if (!network || network.snapshot().removed) return;
+  const view = openSheet({ title: '仅从此手机移除？',
+    body: '<p>云端绑定尚未解除，此操作不会清除照片墙上的连接设置。只从当前手机移除设备，然后重新查找并连接。</p><p>偏好和照片保留。接下来需要让照片墙进入蓝牙配网模式。</p><p class="flow-sheet-note">本地 Demo 模拟，不操作真实手机绑定或硬件。</p>',
+    actions: [{ label: '仅从此手机移除并重新连接', primary: true, onClick: () => {
+      const result = network.removeLocal({ confirmed: true });
+      if (result.ok) { view.close(); reconnectNetworkDevice(); }
+    } }, { label: '取消', onClick: () => view.close() }],
+  });
 }
 function removeNetworkDevice() {
   if (!network || network.snapshot().removed) return;
@@ -203,13 +223,15 @@ function removeNetworkDevice() {
       if (!view.isCurrent() || result.canceled) return;
       if (!result.ok) {
         button.disabled = false; button.textContent = '重新确认移除';
-        view.dialog.querySelector('[data-remove-result]').textContent = '尚未确认移除。请检查手机网络后重试，设备绑定和偏好已保留。';
+        view.dialog.querySelector('[data-remove-result]').textContent = '云端尚未确认移除，设备绑定和偏好已保留。可以重试，或仅从此手机移除后重新连接。';
+        view.dialog.querySelector('[data-sheet-action="1"]').hidden = false;
         return;
       }
       openSheet({ title: '设备已移除', body: '<p>模拟服务已确认移除。屏幕恢复联网后同步清除连接设置。</p><p>原有偏好与展示记录保留。本次没有操作真实设备。</p>',
         actions: [{ label: '返回日历', primary: true, onClick: () => { dialog.close(); navigate('calendar'); } }],
       });
-    } }, { label: '取消', onClick: () => view.close() }],
+    } }, { label: '仅从此手机移除并重新连接', hidden: true, onClick: confirmLocalRemoval },
+    { label: '取消', onClick: () => view.close() }],
   });
 }
 function connectionSheet() {
@@ -365,6 +387,7 @@ function renderRoute() {
     network,
     networkHelp,
     removeNetworkDevice,
+    reconnectNetworkDevice,
     openDeviceOnMount,
     preferenceRecovery,
     onPreferencesSaved: () => {
@@ -397,7 +420,11 @@ function completeOnboarding(result) {
     toast('请确认更新频次与时间');
     return false;
   }
-  if (!updateState({ ...result, onboarding: { completed: true, completedAt: new Date().toISOString() } })) {
+  if (network && onboarding.isRecovery()) {
+    if (!network.completeReconnect({ confirmed: true })) return false;
+    network.readHistory();
+    state = { ...state, settings, onboarding: { ...state.onboarding, completed: true } };
+  } else if (!updateState({ ...result, onboarding: { completed: true, completedAt: new Date().toISOString() } })) {
     toast('暂时无法保存，请保留此页面后重试');
     return false;
   }
@@ -434,6 +461,9 @@ screen.addEventListener('click', event => {
 });
 onboarding = createOnboarding({ host: screen, header, icon, openSheet, toast, getState: () => clone(state), onComplete: completeOnboarding,
   onPhotoAccess: access => firstJourney().authorize(access),
+  getRecoveryNetwork: () => network?.snapshot(),
+  onRecoveryServiceRestored: () => network?.restoreService(),
+  onRecoveryExit: () => navigate('settings'),
 });
 document.querySelector('#experience-setup').addEventListener('click', restartOnboarding);
 document.querySelector('#experience-calendar').addEventListener('click', () => {

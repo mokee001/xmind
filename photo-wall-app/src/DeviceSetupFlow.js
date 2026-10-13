@@ -103,6 +103,7 @@ export default function DeviceSetupFlow({
   session,
   existingSession = null,
   onClose,
+  onDismiss,
   onConnected,
   onRemoveDevice,
   previewMode = false,
@@ -518,8 +519,8 @@ export default function DeviceSetupFlow({
             <View style={styles.flex}>
               <Text style={styles.title}>连接照片墙</Text>
               <Text style={styles.description}>{existingSession
-                ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。`
-                : '保持照片墙通电并靠近手机。准备好后，搜索附近的照片墙。'}</Text>
+                ? `请选择原照片墙 ${existingSession.device?.device_id || ''}，重新设置它使用的 Wi-Fi。若屏幕离线且搜不到，请在屏幕上重新进入配网模式。`
+                : '保持照片墙通电并靠近手机。若搜不到，请先在屏幕上进入配网模式；App 无法唤醒离线屏幕。'}</Text>
             </View>
           </View>
           <View style={styles.discoveryArt}>
@@ -689,7 +690,7 @@ export default function DeviceSetupFlow({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={close}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={close} onDismiss={onDismiss}>
       <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.sheet}>
           {header}

@@ -150,10 +150,13 @@ test('idle refresh keeps the existing persistence path and concurrent refreshes 
     readDevice:() => { calls++; return waiting.promise; },onObserved:() => { observed++; },
     onIdle:status => { assert.equal(status.last_seen,1000); saved++; },onError:assert.fail});
   const pending = poll.refresh();
-  await poll.refresh();
+  const joined = poll.refresh();
+  assert.equal(joined,pending);
   assert.equal(calls,1);
   waiting.resolve(device(1000));
-  await pending;
+  const result = await joined;
+  assert.equal(result.ok,true);
+  assert.equal(result.device.last_seen,1000);
   assert.equal(observed,1);
   assert.equal(saved,1);
   poll.cancel();

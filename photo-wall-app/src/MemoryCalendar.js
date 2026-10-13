@@ -189,7 +189,7 @@ export default function MemoryCalendar({ records = EMPTY_RECORDS, loading = fals
 
   const openDay = useCallback(key => setSelectedDay(key), []);
   const closeDay = useCallback(() => setSelectedDay(null), []);
-  const retry = useCallback(() => { if (!loading && canRetry) onRetry(); }, [loading, canRetry, onRetry]);
+  const retry = useCallback(() => { if (canRetry) onRetry(); }, [loading, canRetry, onRetry]);
   const futureSelection = selectedDay && selectedDay > todayKey;
   const todaySelection = selectedDay === todayKey;
 

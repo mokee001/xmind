@@ -53,28 +53,46 @@ function createDeviceStatusPoll({ getScope, isBusy, readDevice, onObserved, onId
   const binding = {...getScope()};
   const current = scope => active && sameDeviceBinding(scope, getScope());
   return {
-    async refresh() {
-      if (!active || pending || !sameDeviceBinding(binding, getScope())) return;
+    refresh() {
+      if (!active || !sameDeviceBinding(binding, getScope())) return Promise.resolve({cancelled:true});
+      if (pending) return pending.promise;
       const scope = {...getScope()}, busyAtStart = isBusy();
       const controller = new AbortController();
-      pending = controller;
-      try {
-        const device = await readDevice(scope, controller.signal);
-        if (!current(scope) || device.device_id !== scope.deviceId) return;
-        onObserved({...scope, device:{device_id:device.device_id, last_seen:device.last_seen,
-          state:device.state, error:device.error}, receivedAt:now(), readFailed:false});
-        // A read started during an operation must not later overwrite its result.
-        if (!busyAtStart && !isBusy() && scope.sequence === getScope().sequence) await onIdle(device, scope);
-      } catch (error) {
-        if (current(scope) && !controller.signal.aborted) {
-          await onError(error, scope, !busyAtStart && !isBusy() && scope.sequence === getScope().sequence);
+      const request = {controller, promise:null};
+      pending = request;
+      request.promise = (async () => {
+        try {
+          const device = await readDevice(scope, controller.signal);
+          if (!current(scope) || device.device_id !== scope.deviceId) return {cancelled:true};
+          onObserved({...scope, device:{device_id:device.device_id, last_seen:device.last_seen,
+            state:device.state, error:device.error}, receivedAt:now(), readFailed:false});
+          // A read started during an operation must not later overwrite its result.
+          if (!busyAtStart && !isBusy() && scope.sequence === getScope().sequence) await onIdle(device, scope);
+          return {ok:true, device};
+        } catch (error) {
+          if (current(scope) && !controller.signal.aborted) {
+            await onError(error, scope, !busyAtStart && !isBusy() && scope.sequence === getScope().sequence);
+          }
+          return {ok:false, error};
+        } finally {
+          if (pending === request) pending = null;
         }
-      } finally {
-        if (pending === controller) pending = null;
-      }
+      })();
+      return request.promise;
     },
-    cancel() { active = false; pending?.abort(); },
+    cancel() { active = false; pending?.controller.abort(); },
   };
 }
 
-module.exports = { sameDeviceBinding, deviceConnectionStatus, withDeviceStatusTimeout, createDeviceStatusPoll };
+function connectionCheckResult(result, now = Date.now()) {
+  if (result?.cancelled) return null;
+  if (!result?.ok) return {state:'failed', message:result?.error?.message || '暂时无法连接服务，请检查手机网络后重试。'};
+  const device = result.device;
+  if (device?.error || ['error','failed'].includes(device?.state)) return {state:'device-error', message:'已连通服务，但照片墙报告异常。请检查设备后重试。'};
+  if (Number(device?.last_seen) > 0 && now / 1000 - Number(device.last_seen) <= 90) {
+    return {state:'connected', message:'连接检查完成：服务可访问，照片墙在线。'};
+  }
+  return {state:'offline', message:'服务可访问，照片墙暂时离线。请检查屏幕电源和 Wi-Fi；无需反复点击检查。'};
+}
+
+module.exports = { sameDeviceBinding, deviceConnectionStatus, withDeviceStatusTimeout, createDeviceStatusPoll, connectionCheckResult };

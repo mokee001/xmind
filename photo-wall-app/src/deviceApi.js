@@ -238,12 +238,12 @@ export async function provisionDisplay({ provisionUrl = DEFAULT_PROVISION_URL, s
 }
 
 export async function autoClaimDisplay({ apiBase, deviceId, setupToken, name = '客厅照片墙' }) {
-  const response = await fetch(`${baseUrl(apiBase)}/api/devices/auto-claim`, {
+  const result = await requestJson(`${baseUrl(apiBase)}/api/devices/auto-claim`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ device_id: deviceId, setup_token: setupToken, name }),
-  });
-  return responseJson(response);
+  }, 10000);
+  return result;
 }
 
 export async function publishDisplayPhoto({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, asset, onProgress }) {
@@ -897,13 +897,15 @@ export async function reprovisionDisplay({ apiBase = DEFAULT_API_BASE, deviceId,
   return result;
 }
 
-export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal }) {
+export async function removeDisplay({ apiBase = DEFAULT_API_BASE, deviceId, accountToken, signal, bindingId, requestId }) {
   const result = await requestJson(
     `${baseUrl(apiBase)}/api/devices/${encodeURIComponent(deviceId)}`,
-    { method: 'DELETE', headers: { 'X-Account-Token': accountToken }, signal },
+    { method: 'DELETE', headers: { 'X-Account-Token': accountToken,
+      ...(bindingId ? {'X-Device-Binding':bindingId} : {}), ...(requestId ? {'X-Delete-Request-Id':requestId} : {}) }, signal },
     10000,
   );
-  if (result?.device_id !== deviceId || result.removed !== true) {
+  if (result?.device_id !== deviceId || result.removed !== true
+    || (bindingId && result.binding_id !== bindingId) || (requestId && result.request_id !== requestId)) {
     throw invalidResponse('服务尚未确认删除这台设备，已保留本机绑定。');
   }
   return result;

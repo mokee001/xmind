@@ -42,12 +42,14 @@ export function createOnboarding(api) {
   let epoch = 0;
   let submitting = false;
   let storageWarningShown = false;
+  let recovery = null;
   const scenarioFromUrl = new URLSearchParams(location.search).get('connection');
   let connectionScenario = ['cloud-offline', 'cloud-temporary', 'wrong-password'].includes(scenarioFromUrl) ? scenarioFromUrl : 'success';
   let cloudAttempt = 0;
   const timers = new Set();
 
   function persistDraft() {
+    if (recovery) return;
     try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); }
     catch {
       if (!storageWarningShown) api.toast('暂时无法保存体验进度，留在本页仍可继续。');
@@ -75,6 +77,7 @@ export function createOnboarding(api) {
   function nextConnectionPermission() { return !draft.bluetooth ? 'bluetooth' : !draft.localNetwork ? 'network' : null; }
   function ready() { return draft.photoAccess !== 'none' && !nextConnectionPermission(); }
   function progress() {
+    if (recovery) return '<p class="flow-inline-note">重新连接 · 本地模拟</p>';
     const step = stage === 'welcome' ? 0 : 1;
     return `<ol class="flow-steps" aria-label="开始使用，第 ${step + 1} 步，共 2 步">${['授权照片', '连接照片墙'].map((name, i) => `<li class="${i === step ? 'is-current' : i < step ? 'is-done' : ''}"${i === step ? ' aria-current="step"' : ''}><span class="flow-step-number">${i + 1}</span><span>${name}</span></li>`).join('')}</ol>`;
   }
@@ -86,7 +89,7 @@ export function createOnboarding(api) {
   function renderHeader() {
     header.innerHTML = stage === 'welcome'
       ? '<span class="flow-brand">echooo<span>®</span></span><button type="button" class="flow-demo-button" data-flow-action="info">演示说明</button>'
-      : `<button type="button" class="header-action back" data-flow-action="back">${icon('chevron-left', 17)}<span>上一步</span></button><button type="button" class="flow-demo-button" data-flow-action="info">演示说明</button>`;
+      : `<button type="button" class="header-action back" data-flow-action="back">${icon('chevron-left', 17)}<span>${recovery ? '设置' : '上一步'}</span></button><button type="button" class="flow-demo-button" data-flow-action="info">演示说明</button>`;
   }
   function renderWelcome() {
     const granted = draft.photoAccess !== 'none';
@@ -110,7 +113,7 @@ export function createOnboarding(api) {
       if (denied) { draft.connected = false; draft.wifiConnected = false; }
       closeSheet(); persistDraft();
       if (key === 'photo') {
-        api.onPhotoAccess?.(draft.photoAccess);
+        if (!recovery) api.onPhotoAccess?.(draft.photoAccess);
         if (denied) renderWelcome(); else go('device');
       }
       else if (denied) { phase = 'permissions'; renderDevice(); }
@@ -131,15 +134,16 @@ export function createOnboarding(api) {
       'cloud-unreachable': { title: '暂时连不上服务', copy: '照片墙仍连接着 Wi-Fi。<br>可以直接重试，不用重新输入密码。', graphic: 'wifi', label: '重试连接服务', action: 'retry-cloud' },
       connected: { title: '连接成功', copy: `${escapeHtml(draft.deviceName)}已准备好。`, graphic: 'check', label: submitting ? '正在保存…' : '进入回忆日历', action: 'finish', disabled: submitting },
       'save-failed': { title: '已连接，设置还未保存', copy: '请重试保存，无需重新连接照片墙。', graphic: 'check', label: '重试保存', action: 'finish' },
-      'not-found': { title: '暂时没有发现设备', copy: '确认照片墙已通电，让手机靠近后重试。', graphic: 'device', label: '重新查找', action: 'search' },
+      'not-found': { title: '暂时没有发现设备', copy: recovery ? '请让照片墙进入蓝牙配网模式，再靠近查找。<br>手机无法通过离线的云端替屏幕进入配网模式。' : '确认照片墙已通电，让手机靠近后重试。', graphic: 'device', label: '重新查找', action: 'search' },
       failed: { title: 'Wi-Fi 没有连接成功', copy: '请检查网络是否可用，再试一次。', graphic: 'wifi', label: '重新连接 Wi-Fi', action: 'choose-network' },
       'wrong-password': { title: 'Wi-Fi 密码不正确', copy: '请检查 Wi-Fi 密码后重新连接。', graphic: 'wifi', label: '重新输入密码', action: 'choose-network' },
     };
     const current = states[phase];
     const cloudPhase = phase.startsWith('cloud-');
     const connectionStatus = draft.wifiConnected ? `<p class="flow-connection-status">${icon('check', 13)} Wi-Fi 已连接 · ${escapeHtml(draft.network)}</p>` : '';
+    const recoveryControls = recovery ? `<button type="button" data-flow-action="setup-help">设备操作说明</button>${!recovery.setupMode ? '<button type="button" data-flow-action="demo-setup-mode">Demo：模拟已进入配网模式</button>' : ''}` : '';
     const demoActions = ready() ? `<button type="button" data-flow-action="demo-cloud-temporary">演示自动恢复</button><button type="button" data-flow-action="demo-cloud-offline">演示服务不可达</button><button type="button" data-flow-action="demo-wrong-password">演示密码错误</button>${cloudPhase ? '<button type="button" data-flow-action="demo-service-restored">模拟服务恢复</button>' : ''}${phase === 'wrong-password' ? '<button type="button" data-flow-action="demo-password-corrected">模拟密码已更正</button>' : ''}` : '';
-    host.innerHTML = `<div class="flow-shell${cloudPhase ? ' flow-recovery' : ''}"><div class="flow-scroll">${progress()}<h1>${cloudPhase ? '连接照片墙。' : '连接你的<br>照片墙。'}</h1><p class="flow-lead">${cloudPhase ? '连接完成后，自动准备第一幅回忆。' : '让手机靠近已通电的照片墙。<br>连好后，就可以开始了。'}</p><div class="flow-device-card" role="status" aria-live="polite"><span class="flow-device-symbol${['searching', 'connecting', 'cloud-connecting', 'cloud-retrying'].includes(phase) ? ' is-searching' : ''}${draft.connected ? ' is-connected' : ''}">${icon(current.graphic, 34)}</span><strong>${current.title}</strong><p>${current.copy}</p>${connectionStatus}<span class="flow-simulation-pill">模拟设备状态</span></div>${draft.permissionDenied && phase === 'permissions' ? `<p class="flow-inline-note flow-warning" role="status">尚未允许${permissionName}，准备好后可再次允许。</p>` : ''}<p class="flow-inline-note">${arrangementNote()}</p><details class="flow-device-help"><summary>连接帮助${icon('chevron-right', 15)}</summary><p>${cloudPhase ? '照片墙已经连上所选 Wi-Fi。服务连接暂时中断时，直接重试即可；无需删除设备。' : '确认照片墙已通电，手机靠近设备，所选网络可用。'}</p><div class="flow-help-actions"><button type="button" data-flow-action="demo-not-found">演示找不到设备</button><button type="button" data-flow-action="demo-failed">演示 Wi-Fi 断开</button>${demoActions}</div><p class="flow-sheet-note">仅为本地模拟，演示重试时间已缩短。服务恢复由演示控制决定，不代表实体屏幕连接成功。</p></details></div>${footer(primary(current.label, current.action || '', current.disabled) + (phase === 'cloud-unreachable' ? '<button type="button" class="flow-secondary" data-flow-action="choose-network">选择其他 Wi-Fi</button>' : ''))}</div>`;
+    host.innerHTML = `<div class="flow-shell${cloudPhase ? ' flow-recovery' : ''}"><div class="flow-scroll">${progress()}<h1>${recovery ? '重新连接<br>照片墙。' : cloudPhase ? '连接照片墙。' : '连接你的<br>照片墙。'}</h1><p class="flow-lead">${recovery ? '先通过蓝牙找到身边的照片墙。<br>查找不需要等待云端连接成功。' : cloudPhase ? '连接完成后，自动准备第一幅回忆。' : '让手机靠近已通电的照片墙。<br>连好后，就可以开始了。'}</p><div class="flow-device-card" role="status" aria-live="polite"><span class="flow-device-symbol${['searching', 'connecting', 'cloud-connecting', 'cloud-retrying'].includes(phase) ? ' is-searching' : ''}${draft.connected ? ' is-connected' : ''}">${icon(current.graphic, 34)}</span><strong>${current.title}</strong><p>${current.copy}</p>${connectionStatus}<span class="flow-simulation-pill">模拟设备状态</span></div>${draft.permissionDenied && phase === 'permissions' ? `<p class="flow-inline-note flow-warning" role="status">尚未允许${permissionName}，准备好后可再次允许。</p>` : ''}<p class="flow-inline-note">${arrangementNote()}</p><details class="flow-device-help"${recovery && phase === 'not-found' ? ' open' : ''}><summary>连接帮助${icon('chevron-right', 15)}</summary><p>${cloudPhase ? '照片墙已经连上所选 Wi-Fi。服务连接暂时中断时，直接重试即可；无需删除设备。' : recovery ? '设备离线时，需要在照片墙本机操作，使其进入蓝牙配网模式。' : '确认照片墙已通电，手机靠近设备，所选网络可用。'}</p><div class="flow-help-actions">${recoveryControls}<button type="button" data-flow-action="demo-not-found">演示找不到设备</button><button type="button" data-flow-action="demo-failed">演示 Wi-Fi 断开</button>${demoActions}</div><p class="flow-sheet-note">仅为本地模拟，演示重试时间已缩短。服务恢复由演示控制决定，不代表实体屏幕连接成功。</p></details></div>${footer(primary(current.label, current.action || '', current.disabled) + (phase === 'cloud-unreachable' ? '<button type="button" class="flow-secondary" data-flow-action="choose-network">选择其他 Wi-Fi</button>' : ''))}</div>`;
   }
   function advanceDevice() {
     clearAsync();
@@ -155,7 +159,7 @@ export function createOnboarding(api) {
     if (!active || stage !== 'device' || ['searching', 'connecting'].includes(phase)) return;
     if (!ready()) { advanceDevice(); return; }
     clearAsync(); draft.connected = false; draft.wifiConnected = false; phase = 'searching'; persistDraft(); renderDevice();
-    later(() => { phase = 'found'; renderDevice(); }, 550);
+    later(() => { phase = recovery && !recovery.setupMode ? 'not-found' : 'found'; renderDevice(); }, 550);
   }
   function connectDevice() {
     if (stage !== 'device' || phase !== 'found') return;
@@ -188,7 +192,9 @@ export function createOnboarding(api) {
     phase = 'cloud-connecting'; cloudAttempt++; renderDevice();
     later(() => {
       if (!draft.wifiConnected) { phase = 'failed'; renderDevice(); return; }
-      if (connectionScenario === 'success' || (connectionScenario === 'cloud-temporary' && cloudAttempt === 3)) {
+      const cloudReady = recovery ? api.getRecoveryNetwork?.()?.service === true
+        : connectionScenario === 'success' || (connectionScenario === 'cloud-temporary' && cloudAttempt === 3);
+      if (cloudReady) {
         draft.connected = true; phase = 'connected'; persistDraft(); renderDevice(); later(submit, 400);
       } else if (cloudAttempt < 3) {
         phase = 'cloud-retrying'; renderDevice(); later(attemptCloud, cloudAttempt === 1 ? 1000 : 1800);
@@ -204,13 +210,13 @@ export function createOnboarding(api) {
     // Existing preferences and schedule remain owned by the app; onboarding only changes connection fields.
     const completed = api.onComplete({ settings: { connected: true, photoAccess: draft.photoAccess }, onboarding: { completed: true } });
     if (!completed) { submitting = false; phase = 'save-failed'; renderDevice(); return; }
-    try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* Main state was saved successfully. */ }
+    if (!recovery) { try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* Main state was saved successfully. */ } }
     clearAsync(); closeSheet();
   }
   function demoInfo() {
     openSheet({ title: '关于这次体验', body: '<p>只需授权照片、连接照片墙。偏好和更新时间可以之后再调整。</p><p>权限、设备发现与 Wi-Fi 均为本地模拟，不读取照片或操作真实设备。</p><p>连接后自动准备并投送第一幅回忆，再进入日历。已保存的偏好与更新时间保持不变。</p>' });
   }
-  function back() { if (active && stage === 'device') go('welcome'); }
+  function back() { if (active && stage === 'device') { if (recovery) api.onRecoveryExit?.(); else go('welcome'); } }
   function bind() {
     listenerController = new AbortController();
     const click = event => {
@@ -228,7 +234,14 @@ export function createOnboarding(api) {
       else if (action === 'choose-network') chooseNetwork();
       else if (action === 'retry-cloud' && phase === 'cloud-unreachable') retryCloud();
       else if (action === 'finish') submit();
+      else if (action === 'setup-help' && recovery) {
+        openSheet({ title: '让照片墙进入配网模式', body: '<p>照片墙离线时，需要在设备本机操作，使它进入蓝牙配网模式，再用手机查找。</p><p>请按这台设备对应的操作说明进行；手机上的重新查找不会远程重置离线设备。</p><p class="flow-sheet-note">本 Demo 不操作硬件。可使用“模拟已进入配网模式”体验后续步骤。</p>' });
+      }
+      else if (action === 'demo-setup-mode' && recovery) {
+        recovery.setupMode = true; search();
+      }
       else if (action === 'demo-service-restored' && phase.startsWith('cloud-')) {
+        if (recovery) api.onRecoveryServiceRestored?.();
         connectionScenario = 'success'; api.toast('已模拟服务恢复。点击重试可继续；正在重试时会自动继续。');
       }
       else if (action === 'demo-password-corrected' && phase === 'wrong-password') {
@@ -253,15 +266,24 @@ export function createOnboarding(api) {
     draft.deviceName = freshDraft(api.getState()).deviceName;
     stage = requested === 'device' && draft.photoAccess !== 'none' ? 'device' : 'welcome';
     if (requested !== stage) { location.replace(ROUTES[stage]); return; }
-    api.onPhotoAccess?.(draft.photoAccess);
+    if (!recovery) api.onPhotoAccess?.(draft.photoAccess);
     bind(); renderHeader(); host.scrollTop = 0;
     if (stage === 'welcome') renderWelcome();
     else { phase = 'permissions'; advanceDevice(); }
   }
   function reset() {
+    recovery = null;
     clearAsync(); closeSheet(); draft = freshDraft(api.getState()); phase = 'permissions'; submitting = false; storageWarningShown = false;
     try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* Fresh draft remains in memory. */ }
   }
   function destroy() { active = false; clearAsync(); closeSheet(); listenerController?.abort(); }
-  return { show, back, reset, destroy };
+  function beginReconnect() {
+    destroy();
+    const state = api.getState(), old = draft;
+    recovery = { setupMode: false };
+    draft = { ...freshDraft(state), photoAccess: ['all', 'limited'].includes(state.settings.photoAccess) ? state.settings.photoAccess : old.photoAccess,
+      bluetooth: old.bluetooth, localNetwork: old.localNetwork };
+    connectionScenario = 'success'; phase = 'permissions'; submitting = false;
+  }
+  return { show, back, reset, destroy, beginReconnect, isRecovery: () => !!recovery };
 }
