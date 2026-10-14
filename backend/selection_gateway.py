@@ -41,6 +41,45 @@ def _selection_failure(error, phase):
     return {'code': 'selection_invalid', 'retryable': False}
 
 
+def _preparation_failure(error, phase, progress, input_revision=None):
+    failure = _selection_failure(error, phase)
+    code = failure['code']
+    public = {key: progress[key] for key in (
+        'stage', 'workerActive', 'currentRevisionComplete', 'resumeRequired')}
+    action = 'review'
+    if code in ('selection_pending', 'insufficient_candidates', 'people_pending', 'people_selection_changed'):
+        if progress['currentRevisionComplete'] and progress['_input_count'] < 12 and code.startswith('people_'):
+            # A batch smaller than the frozen album minimum cannot establish
+            # person absence in first-layer results, even when analysis finished.
+            failure = {'code': 'people_pending', 'retryable': True}
+            action = 'upload'
+        elif progress['currentRevisionComplete'] and code.startswith('people_'):
+            failure = {'code': 'people_selection_changed', 'retryable': False}
+        elif code == 'people_selection_changed' and input_revision == progress['_revision']:
+            # A current promoted nonempty canonical snapshot is already decisive,
+            # including snapshots created before worker-completion metadata existed.
+            pass
+        elif progress['_state'] == 'failed' and not progress['resumeRequired']:
+            failure = {'code': 'selection_worker_failed', 'retryable': False}
+        elif progress['stage'] == 'needs_photos':
+            action = 'upload'
+            failure = {**failure, 'retryable': True}
+        elif code.startswith('people_'):
+            failure = {'code': 'people_pending', 'retryable': True}
+            action = 'wait'
+        elif progress['currentRevisionComplete']:
+            action = 'upload'
+        else:
+            action = 'wait'
+    return {**failure, **public, 'action': action}
+
+
+def _preparation_reason(error, failure):
+    if failure['code'] == 'selection_worker_failed':
+        return '照片准备服务本次处理未完成，请稍后继续准备；原有照片范围已保留。'
+    return str(error)
+
+
 def _generation_rejection(req, detail, failure, diagnostics, template):
     """Log categories/counts only; never include the request or error text."""
     counts = {
@@ -109,6 +148,7 @@ def _select_requested_wall(req, account, scope, template, snapshot=None, diagnos
     if diagnostics is not None:
         diagnostics['phase'] = snapshot.get('phase') if snapshot.get('phase') in ('provisional', 'canonical') else 'unknown'
         diagnostics['candidate_count'] = len(snapshot['photos'])
+        diagnostics['input_revision'] = snapshot.get('input_revision')
     history_key = existing._scoped_store_name('recent_shown', account)
     recent = existing.store.load(history_key, [])
     chosen, provenance = selection.select(scope, count, prefer=req.filters,
@@ -126,13 +166,23 @@ def readiness(req: GenerateRequest, x_account_token: str = Header(default='')):
     account, scope, template = _selection_request(req, x_account_token)
     snapshot = None
     try:
+        progress = selection.preparation(scope)
+    except selection.SelectionUnavailable as error:
+        return {'contract': selection.CONTRACT, 'ready': False, 'reason': str(error),
+                'code': 'selection_invalid', 'retryable': False, 'action': 'review',
+                'stage': 'failed', 'workerActive': False, 'currentRevisionComplete': False,
+                'resumeRequired': False}
+    try:
         snapshot = selection.candidates(scope)
         _, provenance, _, _, _ = _select_requested_wall(req, account, scope, template, snapshot)
     except selection.SelectionUnavailable as error:
-        failure = _selection_failure(error, snapshot.get('phase') if snapshot else None)
+        failure = _preparation_failure(error, snapshot.get('phase') if snapshot else None, progress,
+                                       snapshot.get('input_revision') if snapshot else None)
         return {'contract': selection.CONTRACT, 'ready': False,
-                'reason': str(error), **failure}
-    return {'contract': selection.CONTRACT, 'ready': True,
+                'reason': _preparation_reason(error, failure), **failure}
+    return {'contract': selection.CONTRACT, 'ready': True, 'action': 'generate',
+            'stage': 'ready', 'workerActive': progress['workerActive'],
+            'currentRevisionComplete': progress['currentRevisionComplete'], 'resumeRequired': False,
             'snapshot_id': provenance.get('snapshot_id'),
             'input_revision': provenance.get('input_revision')}
 
@@ -160,7 +210,13 @@ async def generate(req: GenerateRequest, x_account_token: str = Header(default='
                 [p['path'] for p in chosen], {'title':req.title,'date':req.date,'nickname':req.title})
         except (selection.SelectionUnavailable, ValueError, FileNotFoundError) as error:
             if isinstance(error, selection.SelectionUnavailable):
-                failure = _selection_failure(error, diagnostics.get('phase'))
+                try:
+                    decision = _preparation_failure(error, diagnostics.get('phase'),
+                        selection.preparation(scope), diagnostics.get('input_revision'))
+                    failure = {key: decision[key] for key in ('code', 'retryable')}
+                except selection.SelectionUnavailable:
+                    failure = {'code': 'selection_invalid', 'retryable': False}
+                error = selection.SelectionUnavailable(_preparation_reason(error, failure))
             else:
                 code = 'render_dependency_missing' if isinstance(error, FileNotFoundError) else 'render_failed'
                 failure = {'code': code, 'retryable': False}

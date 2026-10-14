@@ -126,6 +126,7 @@ def enqueue(scope):
         _running.add(scope)
     def work():
         processed_revision = None
+        phase = 'provisional'
         failed = False
         try:
             # Read a new snapshot after each completed batch; don't mutate an
@@ -142,7 +143,8 @@ def enqueue(scope):
                         return
                     job = root/'jobs'/revision
                     atomic(job/'input.json', library)
-                atomic(root/'status.json', {'state':'running', 'phase':'provisional', 'revision':revision})
+                phase = 'provisional'
+                atomic(root/'status.json', {'state':'queued', 'phase':phase, 'revision':revision})
                 cmd = [os.environ.get('PHOTOWALL_RECOLLECTION_PYTHON', sys.executable),
                        str(Path(__file__).resolve().parents[1]/'tools/run_production_recollections.py'),
                        '--runtime', str(runtime()), '--job', str(job), '--scope', scope]
@@ -151,6 +153,7 @@ def enqueue(scope):
                     # Model runtime is large and its generated harness is shared.
                     # Serialize across accounts; input/output directories stay isolated.
                     with _inference:
+                        atomic(root/'status.json', {'state':'running', 'phase':phase, 'revision':revision})
                         run_inference([*cmd, '--phase', 'provisional'], log)
                     quick = provisional_snapshot(scope, library, revision)
                     if quick is None:
@@ -170,8 +173,10 @@ def enqueue(scope):
                             return
                     # Once a first wall can be made, let this immutable input
                     # finish even as uploads continue; do not starve formal albums.
+                    phase = 'canonical'
+                    atomic(root/'status.json', {'state':'queued', 'phase':phase, 'revision':revision})
                     with _inference:
-                        atomic(root/'status.json', {'state':'running', 'phase':'canonical', 'revision':revision})
+                        atomic(root/'status.json', {'state':'running', 'phase':phase, 'revision':revision})
                         run_inference([*cmd, '--phase', 'canonical'], log)
                 result = read(job/'result.json')
                 publish(scope, result, library)
@@ -179,7 +184,8 @@ def enqueue(scope):
         except Exception as error:
             failed = True
             # Keep the last valid snapshot; never pretend old features are new.
-            atomic(root/'status.json', {'state':'failed', 'error':str(error), 'retry_after':time.time()+60})
+            atomic(root/'status.json', {'state':'failed', 'phase':phase, 'revision':processed_revision,
+                                      'error':str(error), 'retry_after':time.time()+60})
         finally:
             with _guard:
                 _running.discard(scope)
@@ -297,20 +303,77 @@ def provisional_snapshot(scope, library, revision):
     return {**quick, 'photos':photos, 'snapshot_id':'provisional-'+revision, 'phase':'provisional'}
 
 
+def canonical_snapshot(scope, library):
+    """A promoted canonical result can be valid and contain no selected albums."""
+    root = directory(scope)
+    pointer = read(root/'current.json', {})
+    if pointer.get('scope') != scope or not re.fullmatch(r'[a-f0-9]{64}', pointer.get('id', '')):
+        return None
+    result = read(root/'snapshots'/f"{pointer['id']}.json", {})
+    if (result.get('scope') != scope or result.get('baseline_commit') != BASELINE
+            or result.get('engine') != 'recollection-feed-v1'
+            or not isinstance(result.get('photos'), list)
+            or not isinstance(result.get('albums'), list)):
+        return None
+    # Deleted/replaced source assets must never survive through a cache.
+    current = library.get('photos', {})
+    photos = [p for p in result['photos']
+              if p.get('sha256') in current and p.get('path') == current[p['sha256']].get('path')
+              and Path(p['path']).is_file()]
+    return {**result, 'photos': photos, '_source_complete': len(photos) == len(result['photos']),
+            'snapshot_id': pointer['id'], 'phase': 'canonical'}
+
+
+def preparation(scope):
+    """Read immutable-result and worker evidence without starting or restarting work.
+
+    Completion refers to this exact current library revision. An empty old result
+    or a failed/queued newer job cannot establish that current people are absent.
+    Internal entries are never returned directly by the API.
+    """
+    root = directory(scope)
+    library = read(root/'library.json', {})
+    if library and library.get('scope') != scope:
+        raise SelectionUnavailable('候选图库归属不符')
+    status = read(root/'status.json', {})
+    canonical = canonical_snapshot(scope, library) if library else None
+    revision = library.get('revision')
+    complete = bool(revision and canonical and canonical.get('input_revision') == revision
+                    and canonical['_source_complete']
+                    and status.get('state') == 'ready' and status.get('completed_revision') == revision)
+    with _guard:
+        active = scope in _running
+    state = status.get('state', 'missing')
+    input_count = len(library.get('photos', {}))
+    has_input = input_count >= 8
+    # A new process can read a persisted running record without owning its worker.
+    # Clients may resume it through /session, while readiness remains read-only.
+    retry_allowed = state != 'failed' or status.get('retry_after', 0) <= time.time()
+    resume = bool(has_input and not active and not complete and retry_allowed
+                  and not (state == 'awaiting_photos' and status.get('revision') == revision))
+    if complete:
+        stage = 'ready'
+    elif state == 'failed' and not retry_allowed:
+        stage = 'failed'
+    elif (state == 'awaiting_photos' and status.get('revision') == revision) or not has_input:
+        stage = 'needs_photos'
+    elif state == 'queued' or resume:
+        stage = 'queued'
+    else:
+        stage = 'people' if status.get('phase') == 'canonical' else 'provisional'
+    return {'stage': stage, 'workerActive': active, 'currentRevisionComplete': complete,
+            'resumeRequired': resume, '_canonical': canonical, '_state': state,
+            '_revision': revision, '_input_count': input_count}
+
+
 def candidates(scope):
     root = directory(scope)
     library = read(root/'library.json', {})
     if not library or library.get('scope') != scope:
         raise SelectionUnavailable('尚无当前账户的合格照片')
-    pointer = read(root/'current.json', {})
-    if pointer.get('scope') == scope and re.fullmatch(r'[a-f0-9]{64}', pointer.get('id','')):
-        result = read(root/'snapshots'/f"{pointer['id']}.json")
-        # Deleted/replaced source assets must never survive through a cache.
-        current = library['photos']
-        result = {**result, 'photos':[p for p in result['photos']
-                  if p['sha256'] in current and Path(p['path']).is_file()]}
-        if result['photos']:
-            return {**result, 'snapshot_id':pointer['id'], 'phase':'canonical'}
+    result = canonical_snapshot(scope, library)
+    if result and result['photos']:
+        return result
     # Before the first formal feed is ready, use only the worker's verified
     # strong-rule candidates. This is a provisional wall, not a 12-photo album.
     status = read(root/'status.json', {})

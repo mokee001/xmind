@@ -195,7 +195,12 @@ def register(app, account_scope, account_authorized=None):
         except (ValueError, TypeError):
             raise HTTPException(422, '照片来源范围无效')
         try:
-            result = selection.candidates(scope)
+            progress = selection.preparation(scope)
+            # Empty current canonical results are still a completed recognition
+            # result. Exposing that truth lets users explicitly review saved old
+            # person choices without pretending a stale/failed job completed.
+            result = (progress['_canonical'] if progress['currentRevisionComplete']
+                      else selection.candidates(scope))
         except selection.SelectionUnavailable:
             return {'total':0,'goodTotal':0,'peopleAvailable':False,'people':[],'albums':[]}
         library = selection.read(selection.directory(scope)/'library.json', {})
