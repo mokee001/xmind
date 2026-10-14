@@ -3462,16 +3462,22 @@ function PhotoWallApp() {
           && !latestDeviceSessionsRef.current.some(item => item.device.device_id === targetSession.device.device_id)));
     setReprovisionWake({state:'waking',message:'正在请求照片墙进入配网模式…'});
     try {
-      if (recoverySetupRef.current?.session === targetSession) {
-        const recoveries = await loadDeviceRecoverySessions();
-        if (!current()) return;
-        if (!recoveries.some(item => sameManagedDevice(item,targetSession)
-          && (item.device.binding_id || '') === (targetSession.device.binding_id || ''))) {
-          throw new Error('设备恢复信息已变化，请返回后重新选择。');
+      const result = await withDeviceStatusTimeout(async signal => {
+        const active = () => current() && !signal.aborted;
+        const assertActive = () => { if (!active()) throw Object.assign(new Error('本次配网请求已结束。'), {name:'AbortError'}); };
+        assertActive();
+        if (recoverySetupRef.current?.session === targetSession) {
+          const recoveries = await loadDeviceRecoverySessions();
+          assertActive();
+          if (!recoveries.some(item => sameManagedDevice(item,targetSession)
+            && (item.device.binding_id || '') === (targetSession.device.binding_id || ''))) {
+            throw new Error('设备恢复信息已变化，请返回后重新选择。');
+          }
         }
-      }
-      const result = await sendReprovisionOperation({session:targetSession,phase:'enter_setup',
-        signal:request.controller.signal,isCurrent:current,newOperation});
+        assertActive();
+        return sendReprovisionOperation({session:targetSession,phase:'enter_setup',
+          signal,isCurrent:active,newOperation});
+      }, {signal:request.controller.signal,timeoutMs:10000});
       if (!current()) return;
       setReprovisionWake({state:'requested',message:result.operation.stage === 'completed'
         ? '这次配网已在服务端完成。若仍需更换网络，可以重新开始本次配网。'

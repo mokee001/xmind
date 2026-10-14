@@ -18,6 +18,7 @@ const PAIRING_RETRY_MS = 750;
 const ADVERTISING_RECOVERY_MS = 1100;
 
 let manager;
+let discoveryGeneration = 0;
 let connectedDevice;
 let connectedInfo;
 let eventSubscription;
@@ -154,7 +155,7 @@ async function releaseProvisioningConnection(reason) {
   }
 }
 
-async function releaseOrphanedConnections() {
+async function releaseOrphanedConnections(isCurrent = () => true) {
   let orphaned = [];
   try {
     orphaned = await getManager().connectedDevices([SERVICE_UUID]);
@@ -163,6 +164,7 @@ async function releaseOrphanedConnections() {
     return;
   }
   for (const device of orphaned) {
+    if (!isCurrent()) return;
     logBle('orphaned_connection_released', { transportId: String(device.id || '') });
     try { await device.cancelConnection(); } catch {}
     lastConnectionReleasedAt = Date.now();
@@ -402,20 +404,43 @@ async function awaitPhysicalConfirmation() {
   }
 }
 
-export async function startDeviceDiscovery(onDevice, { includeCached = true } = {}) {
+async function stopNativeDeviceDiscovery() {
+  if (!manager) return;
+  try { await manager.stopDeviceScan(); } catch {}
+  logBle('discovery_stopped');
+}
+
+export async function startDeviceDiscovery(onDevice, { includeCached = true, signal } = {}) {
+  const generation = ++discoveryGeneration;
+  const current = () => generation === discoveryGeneration && !signal?.aborted;
+  const assertCurrent = () => { if (!current()) throw Object.assign(new Error('本次搜索已结束。'), {name:'AbortError'}); };
+  const stop = async () => {
+    signal?.removeEventListener('abort', cancel);
+    if (generation !== discoveryGeneration) return;
+    discoveryGeneration += 1;
+    await stopNativeDeviceDiscovery();
+  };
+  const cancel = () => { stop().catch(() => {}); };
+  signal?.addEventListener('abort', cancel, {once:true});
   try {
+    assertCurrent();
     logBle('discovery_started');
     await waitForBluetooth();
-    await stopDeviceDiscovery();
+    assertCurrent();
+    await stopNativeDeviceDiscovery();
+    assertCurrent();
     const cachedDevices = includeCached ? [...discoveredDevices.values()] : [];
     // 首次进入 App 的发现弹窗只应该由真实、正在广播的设备触发；
     // 否则 iOS 进程内缓存会把已经离开的旧设备误显示为“就在附近”。
     if (!includeCached) discoveredDevices.clear();
     await releaseProvisioningConnection('discovery_restarted');
+    assertCurrent();
     // Recover connections left open by an interrupted/older App process. A BLE
     // peripheral does not advertise while iOS still considers it connected.
-    await releaseOrphanedConnections();
+    await releaseOrphanedConnections(current);
+    assertCurrent();
     await waitForPeripheralAdvertising();
+    assertCurrent();
 
     for (const device of cachedDevices) {
       discoveredDevices.set(device.id, device);
@@ -425,6 +450,7 @@ export async function startDeviceDiscovery(onDevice, { includeCached = true } = 
     // An unfiltered scan avoids iOS service-filter caching after a rapid
     // disconnect/re-advertise cycle. We still filter results before exposing them.
     await getManager().startDeviceScan(null, { allowDuplicates: true }, (error, device) => {
+      if (!current()) return;
       if (error) {
         emitStatus({ status: 'error', message: friendlyBleError(error).message, errorCode: 'ble_scan_failed' });
         return;
@@ -449,16 +475,18 @@ export async function startDeviceDiscovery(onDevice, { includeCached = true } = 
       }
       onDevice?.(deviceSummary(device, -127));
     });
-    return stopDeviceDiscovery;
+    assertCurrent();
+    return stop;
   } catch (error) {
+    signal?.removeEventListener('abort', cancel);
+    if (error.name === 'AbortError') throw error;
     throw friendlyBleError(error);
   }
 }
 
 export async function stopDeviceDiscovery() {
-  if (!manager) return;
-  try { await manager.stopDeviceScan(); } catch {}
-  logBle('discovery_stopped');
+  discoveryGeneration += 1;
+  await stopNativeDeviceDiscovery();
 }
 
 export async function connectProvisioningDevice(deviceId) {

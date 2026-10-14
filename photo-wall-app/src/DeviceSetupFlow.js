@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { withDeviceStatusTimeout } from './deviceStatus.cjs';
 
 const COLORS = {
   canvas: '#FAF9F6',
@@ -137,7 +138,7 @@ export default function DeviceSetupFlow({
   const stageMotion = useRef(new Animated.Value(1)).current;
   const pulseMotion = useRef(new Animated.Value(0)).current;
   const discoveryStopRef = useRef(null);
-  const discoveryTimeoutRef = useRef(null);
+  const discoveryAttemptRef = useRef(null);
   const flowGenerationRef = useRef(0);
   const requestSequenceRef = useRef(0);
   const wifiScanRequestRef = useRef(0);
@@ -200,51 +201,73 @@ export default function DeviceSetupFlow({
     flowGenerationRef.current += 1;
     wifiScanRequestRef.current = 0;
     deviceConnectionRef.current = false;
-    if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
+    discoveryAttemptRef.current?.controller.abort();
     discoveryStopRef.current?.();
   }, []);
 
   const discoverDevices = async () => {
-    const generation = flowGenerationRef.current;
-    if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
-    await discoveryStopRef.current?.();
-    if (flowGenerationRef.current !== generation) return;
+    discoveryAttemptRef.current?.controller.abort();
+    const request = {controller:new AbortController(),generation:flowGenerationRef.current,started:false,timedOut:false};
+    discoveryAttemptRef.current = request;
+    const previousStop = discoveryStopRef.current;
     discoveryStopRef.current = null;
+    const sameAttempt = () => discoveryAttemptRef.current === request && flowGenerationRef.current === request.generation;
+    const current = () => sameAttempt() && !request.controller.signal.aborted;
+    let found = false;
     setBusy(true);
     setError('');
+    setStatusText('正在搜索附近设备…');
     setDevices([]);
-    let scanContinues = false;
+    request.timer = setTimeout(() => {
+      if (!current()) return;
+      request.timedOut = true;
+      setBusy(false);
+      if (!found) setError('暂时没有发现附近的照片墙。屏幕可能仍在进入配网模式；会继续查找，也可以重新搜索。');
+    }, 20000);
+    request.controller.signal.addEventListener('abort', () => clearTimeout(request.timer), {once:true});
     try {
-      if (previewMode) {
-        await wait(650);
-        if (flowGenerationRef.current !== generation) return;
-        setDevices(PREVIEW_DEVICES);
-        return;
-      }
-      if (!adapter?.startDeviceDiscovery) {
-        throw new Error('蓝牙连接能力正在接入，请等待固件接口完成后使用真机测试。');
-      }
-      const stop = await adapter.startDeviceDiscovery(device => {
-        if (flowGenerationRef.current !== generation) return;
-        if (!device?.deviceId) return;
-        setDevices(current => {
-          const next = current.filter(item => item.deviceId !== device.deviceId);
-          return [...next, device].sort((left, right) => right.signalStrength - left.signalStrength);
-        });
-        setBusy(false);
-      });
-      if (flowGenerationRef.current !== generation) {
-        if (typeof stop === 'function') await stop();
-        return;
-      }
-      discoveryStopRef.current = typeof stop === 'function' ? stop : adapter.stopDeviceDiscovery;
-      discoveryTimeoutRef.current = setTimeout(() => setBusy(false), 20000);
-      scanContinues = true;
+      await withDeviceStatusTimeout(async signal => {
+        const active = () => current() && !signal.aborted;
+        const assertActive = () => { if (!active()) throw Object.assign(new Error('本次搜索已结束。'), {name:'AbortError'}); };
+        const cancelStartup = () => request.controller.abort();
+        signal.addEventListener('abort', cancelStartup, {once:true});
+        try {
+          await previousStop?.();
+          assertActive();
+          if (previewMode) {
+            await wait(650);
+            assertActive();
+            setDevices(PREVIEW_DEVICES);
+            return;
+          }
+          if (!adapter?.startDeviceDiscovery) throw new Error('蓝牙连接能力正在接入，请等待固件接口完成后使用真机测试。');
+          const stop = await adapter.startDeviceDiscovery(device => {
+            if (!current() || !device?.deviceId) return;
+            found = true;
+            if (request.timedOut) setError('');
+            setDevices(currentDevices => [...currentDevices.filter(item => item.deviceId !== device.deviceId), device]
+              .sort((left, right) => right.signalStrength - left.signalStrength));
+            setBusy(false);
+          }, {signal:request.controller.signal});
+          if (!active()) {
+            if (typeof stop === 'function') Promise.resolve(stop()).catch(() => {});
+            return;
+          }
+          request.started = true;
+          discoveryStopRef.current = typeof stop === 'function' ? stop : adapter.stopDeviceDiscovery;
+        } finally { signal.removeEventListener('abort', cancelStartup); }
+      }, {signal:request.controller.signal,timeoutMs:20000});
     } catch (caught) {
-      if (flowGenerationRef.current !== generation) return;
-      setError(caught.message || '没有发现附近的照片墙');
+      if (!sameAttempt()) return;
+      if (caught.code === 'DEVICE_STATUS_TIMEOUT') setError('蓝牙搜索准备超时，请重新搜索附近设备。');
+      else if (caught.name !== 'AbortError') setError(caught.message || '没有发现附近的照片墙');
     } finally {
-      if (flowGenerationRef.current === generation && !scanContinues) setBusy(false);
+      // A running scan stays active after the UI wait ends: cloud wake + reboot can take longer.
+      if (discoveryAttemptRef.current === request && !request.started) {
+        request.controller.abort();
+        discoveryAttemptRef.current = null;
+        if (flowGenerationRef.current === request.generation) setBusy(false);
+      }
     }
   };
 
@@ -298,7 +321,8 @@ export default function DeviceSetupFlow({
     if (deviceConnectionRef.current) return;
     const generation = flowGenerationRef.current;
     deviceConnectionRef.current = true;
-    if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
+    discoveryAttemptRef.current?.controller.abort();
+    discoveryAttemptRef.current = null;
     await discoveryStopRef.current?.();
     if (flowGenerationRef.current !== generation) return;
     discoveryStopRef.current = null;
@@ -477,7 +501,7 @@ export default function DeviceSetupFlow({
     wifiScanRequestRef.current = 0;
     deviceConnectionRef.current = false;
     provisionRequestRef.current = false;
-    if (discoveryTimeoutRef.current) clearTimeout(discoveryTimeoutRef.current);
+    discoveryAttemptRef.current?.controller.abort();
     discoveryStopRef.current?.();
     discoveryStopRef.current = null;
     if (!previewMode && !session && stage !== 'success') {
