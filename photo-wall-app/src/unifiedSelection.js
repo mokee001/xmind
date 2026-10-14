@@ -74,10 +74,18 @@ async function request(url, options, timeout = 60000) {
 }
 
 export function createFirstWallReadiness({ apiBase, accountToken, options, active, signal }) {
-  return createReadinessProbe({active, check:() => request(apiBase.replace(/\/+$/, '')+'/api/selection/readiness', {
-    method:'POST', signal, headers:{'Content-Type':'application/json','X-Account-Token':accountToken,
-      'X-Selection-Contract':SELECTION_CONTRACT}, body:JSON.stringify(generationPayload(options)),
-  }, 1500)});
+  const base = apiBase.replace(/\/+$/, '');
+  const headers = {'Content-Type':'application/json','X-Account-Token':accountToken,
+    'X-Selection-Contract':SELECTION_CONTRACT};
+  const probe = createReadinessProbe({active, check:() => request(base+'/api/selection/readiness', {
+    method:'POST', signal, headers, body:JSON.stringify(generationPayload(options)),
+  }, 5000)});
+  return {...probe, async resume() {
+    if (!active() || signal?.aborted) return;
+    const result = await request(base+'/api/selection/session', {method:'POST', signal, headers,
+      body:JSON.stringify({sources:options.selectionSources || ['all']})}, 10000);
+    if (result.contract !== SELECTION_CONTRACT) throw new Error('选片服务版本不匹配');
+  }};
 }
 
 export function selectionSources(album) {
@@ -91,7 +99,7 @@ async function json(response) {
   try { value = await response.json(); }
   catch (error) { if (response.ok) throw error; }
   if (!response.ok) throw Object.assign(new Error(value?.detail || value?.error || `HTTP ${response.status}`), {
-    status:response.status, photoErrorCode:response.headers?.get('X-Photo-Error-Code') || '',
+    status:response.status, data:value, photoErrorCode:response.headers?.get('X-Photo-Error-Code') || '',
   });
   return value;
 }

@@ -2745,7 +2745,8 @@ function PhotoWallApp() {
       appliedPreference?.snapshot?.rules || preferenceRules, UNIFIED_SELECTION);
     const generateOptions = {template:'auto', title:'今日精选', filters:prefer, excludeFilters:exclude,
       deviceId:request.deviceId, preferenceRevisionId:appliedPreference?.revisionId || preferenceProfile?.activeRevisionId || '', selectionSources:selectionSources(photoSync)};
-    const stage = state => { if (active()) setFirstWall({ binding: wallBindingKey, state }); };
+    let preparationStage = 'preparing';
+    const stage = state => { preparationStage = state; if (active()) setFirstWall({ binding: wallBindingKey, state }); };
     setDismissedFirstWall(null);
     setFirstWall({ binding: wallBindingKey, state: 'preparing' });
     const store = async patch => {
@@ -2757,10 +2758,19 @@ function PhotoWallApp() {
       setSession(next);
       setDeviceSessions(stored.sessions.map(normalizeDeviceSession).filter(Boolean));
     };
+    const readiness = createFirstWallReadiness({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
+      options:generateOptions, active, signal:controller.signal});
     // A deadline aborts HTTP and stops the upload queue after its current native call.
     let deadline;
     const timeout = new Promise((_, reject) => {
-      deadline = setTimeout(() => { controller.abort(); reject(new Error('这次准备用时较长，请检查网络后继续。已完成的照片会保留。')); }, 10 * 60 * 1000);
+      deadline = setTimeout(() => {
+        const sent = ['publishing','waiting'].includes(preparationStage);
+        reject(Object.assign(new Error(sent
+          ? '还未确认照片墙完成刷新，请继续检查上屏。已发送的步骤会保留，不会自动重复发送。'
+          : '照片仍在处理中，请稍后继续检查。已完成的步骤会保留，无需重新连接照片墙。'),
+        {code:sent ? 'display_confirmation_timed_out' : 'selection_timed_out'}));
+        controller.abort();
+      }, 10 * 60 * 1000);
     });
     try {
       await Promise.race([timeout, runFirstWall({
@@ -2773,15 +2783,11 @@ function PhotoWallApp() {
           await store({ device });
           return device;
         },
+        readiness: () => readiness.read(),
+        resume: () => readiness.resume(),
         prepare: async () => {
-          const readiness = createFirstWallReadiness({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
-            options:generateOptions, active, signal:controller.signal});
-          try {
-            if (await readiness.refresh()) return;
-            await syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
-              album:photoSync, firstWall:true, prewarmOwner, active, signal:controller.signal, shouldStop:readiness.poll});
-            await readiness.refresh();
-          } finally { readiness.close(); }
+          await syncSelectionInBackground({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
+            album:photoSync, firstWall:true, prewarmOwner, active, signal:controller.signal, shouldStop:readiness.pauseUploads});
         },
         generate: () => generateWall({apiBase:DEFAULT_API_BASE, accountToken:session.accountToken,
           ...generateOptions, signal:controller.signal}),
@@ -2803,7 +2809,7 @@ function PhotoWallApp() {
     } catch (caught) {
       if (!attempt.resume && isCurrentWallRequest(request, wallRequestScopeRef.current)) setFirstWall(firstWallFailure(caught, wallBindingKey));
     } finally {
-      clearTimeout(deadline); controller.abort();
+      clearTimeout(deadline); readiness.close(); controller.abort();
       if (firstWallAbortRef.current === attempt) firstWallAbortRef.current = null;
       if (wallOperationRef.current === request) wallOperationRef.current = null;
       if (attempt.resume && photoWorkMountedRef.current && AppState.currentState === 'active') setPhotoWorkRevision(value => value + 1);

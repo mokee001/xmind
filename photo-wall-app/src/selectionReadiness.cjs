@@ -10,15 +10,17 @@ function generationPayload({ template = 'auto', title = '我的一天', filters 
 // At most one short request runs beside uploads; polling itself never blocks one.
 function createReadinessProbe({ check, active = () => true, intervalMs = 2000, now = Date.now }) {
   let pending = null, lastCheck = -Infinity, ready = false, failure = null, disabled = false, closed = false;
+  let latest = null, transientFailure = false;
   const current = () => !closed && active();
-  const start = force => {
-    if (!current() || disabled || ready || failure || pending || (!force && now()-lastCheck < intervalMs)) return;
+  const start = (force, revalidate = false) => {
+    if (!current() || disabled || (ready && !revalidate) || failure || pending || (!force && now()-lastCheck < intervalMs)) return;
     lastCheck = now();
     pending = Promise.resolve().then(check).then(result => {
       if (!current()) return;
       if (result?.contract !== SELECTION_CONTRACT || typeof result.ready !== 'boolean') {
         throw Object.assign(new Error('选片服务版本不匹配'), { terminal:true });
       }
+      latest = result; transientFailure = false; ready = result.ready;
       if (result.ready) ready = true;
       else if (result.retryable === false) {
         throw Object.assign(new Error(result.reason || '当前照片范围暂时不能生成，请检查偏好。'),
@@ -30,14 +32,27 @@ function createReadinessProbe({ check, active = () => true, intervalMs = 2000, n
       if (!current()) return;
       if (error.status === 404) disabled = true;
       else if (error.terminal || [400,401,403,409,422].includes(error.status)) failure = error;
-      // Transient/network errors only disable this optimization for the moment.
-      // The bounded upload/generate path still performs its normal validation.
+      else transientFailure = true;
+      // A failed readiness check cannot authorize uploads or generation.
     }).finally(() => { pending = null; });
   };
   const result = () => { if (failure) throw failure; return current() && ready; };
   return {
     poll() { start(false); return result(); },
     async refresh() { start(true); if (pending) await pending; return result(); },
+    async read() {
+      start(true, true); if (pending) await pending; result();
+      if (!current() || disabled) return null;
+      if (transientFailure || !latest) return {contract:SELECTION_CONTRACT, ready:false,
+        retryable:true, action:'wait', code:'readiness_unavailable'};
+      return latest;
+    },
+    pauseUploads() {
+      start(false); result();
+      // Finish the already-bounded initial batch while the worker starts.
+      // Readiness 'wait' prevents the next batch, not the remaining initial photos.
+      return current() && (ready || transientFailure);
+    },
     close() { closed = true; },
   };
 }

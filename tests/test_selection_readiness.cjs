@@ -43,3 +43,25 @@ test('inactive or cancelled requests cannot start or change readiness',async()=>
   assert.equal(await probe.refresh(),false);assert.equal(calls,0);
   active=true;assert.equal(await probe.refresh(),true);active=false;assert.equal(probe.poll(),false);
 });
+
+test('read exposes structured action and revalidates a previously ready response',async()=>{
+ let response={...waiting,action:'wait',code:'people_pending',workerActive:true};
+ const probe=createReadinessProbe({check:async()=>response});
+ assert.deepEqual(await probe.read(),response);assert.equal(probe.pauseUploads(),false);
+ response={...waiting,ready:true,action:'generate'};assert.deepEqual(await probe.read(),response);
+ response={...waiting,action:'upload'};assert.deepEqual(await probe.read(),response);
+ assert.equal(probe.pauseUploads(),false);
+});
+test('readiness transport failure waits without authorizing upload or stale generation',async()=>{
+ let fail=false;const probe=createReadinessProbe({check:async()=>{
+  if(fail)throw Error('offline');return {...waiting,ready:true,action:'generate'};
+ }});
+ assert.equal((await probe.read()).action,'generate');fail=true;
+ assert.equal((await probe.read()).action,'wait');assert.equal(probe.pauseUploads(),true);
+});
+test('only a verified legacy 404 permits fallback; a fresh transport failure waits',async()=>{
+ const old=createReadinessProbe({check:async()=>{throw Object.assign(Error('old'),{status:404})}});
+ assert.equal(await old.read(),null);
+ const network=createReadinessProbe({check:async()=>{throw Error('network')}});
+ assert.equal((await network.read()).action,'wait');
+});

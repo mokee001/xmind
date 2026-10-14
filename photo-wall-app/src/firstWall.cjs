@@ -13,6 +13,55 @@ function canRetryGeneration(error) {
   return LEGACY_PENDING_REASONS.has(error.message);
 }
 
+function needsMoreCandidates(error) {
+  return error.data?.code === 'insufficient_candidates' || (!error.data?.code && [
+    '尚无当前账户的合格照片',
+    '当前展示范围内合格照片不足；不会补入未入选或被排除的照片',
+  ].includes(error.message));
+}
+
+function readinessError(result) {
+  return Object.assign(new Error(result.reason || '当前照片范围暂时不能生成，请检查偏好。'), {
+    status:409, code:result.code, retryable:false, data:{...result, retryable:false},
+  });
+}
+
+async function generateWhenReady({ readiness, resume, prepare, generate, check, sleep, stage,
+  preparationPolls, maxPreparationBatches }) {
+  let batches = 0, resumed = false;
+  for (let attempt = 0; attempt < preparationPolls; attempt++) {
+    check();
+    const result = await readiness(); check();
+    // An older backend can omit the action contract or the readiness route.
+    if (!result?.action) return null;
+    if (result.action === 'review' || (result.retryable === false && !result.ready)) throw readinessError(result);
+    if (result.action === 'upload') {
+      if (batches >= maxPreparationBatches) throw readinessError({code:'insufficient_candidates',
+        reason:'当前可用照片还不足以完成这幅回忆，请检查照片权限或展示偏好后继续。已完成的步骤会保留。'});
+      stage('preparing');
+      await prepare({additional:batches > 0}); batches++; check();
+      continue;
+    }
+    if (result.action === 'wait') {
+      stage('generating');
+      if (result.resumeRequired && !resumed && resume) {
+        await resume(); resumed = true; check();
+      }
+    } else if (result.action === 'generate' && result.ready === true) {
+      stage('generating');
+      try { const wall = await generate(); check(); return {wall}; }
+      catch (error) {
+        if (!canRetryGeneration(error)) throw error;
+        // A concurrent worker update can invalidate readiness. Re-read it;
+        // generation failures themselves never schedule more photo uploads.
+      }
+    } else throw new Error('选片服务返回了无效状态，请稍后继续。');
+    await sleep(5000); check();
+  }
+  throw Object.assign(new Error('照片仍在处理中，请稍后继续检查。已完成的步骤会保留，无需重新连接照片墙。'),
+    {code:'selection_timed_out'});
+}
+
 function needsFirstWallRun({ visibleState, savedState, device }) {
   // A suspended visible attempt must reconcile its persisted revision even if
   // regular device polling received a display receipt while it was paused.
@@ -23,7 +72,8 @@ function needsFirstWallRun({ visibleState, savedState, device }) {
 // A failed/uncertain publish is reconciled before any further write. Persist its
 // intent before dispatch so terminating the app cannot silently duplicate it.
 async function runFirstWall({ load, save, readDevice, prepare, generate, publish, stage,
-  active = () => true, sleep = ms => new Promise(r => setTimeout(r, ms)), polls = 60, retryUncertain = false }) {
+  active = () => true, sleep = ms => new Promise(r => setTimeout(r, ms)), polls = 60, retryUncertain = false,
+  readiness, resume, preparationPolls = 120, maxPreparationBatches = 4 }) {
   const check = () => { if (!active()) throw new Error('准备已暂停，请回到 App 后继续。'); };
   let saved = await load() || {};
   check(); stage('preparing');
@@ -46,17 +96,20 @@ async function runFirstWall({ load, save, readDevice, prepare, generate, publish
     await save(saved);
   }
   if (!saved.revision) {
-    await prepare(); check(); stage('generating');
-    let wall;
-    // The fixed-rule worker may still be producing its provisional snapshot.
-    for (let i = 0; i < 24; i++) {
-      check();
-      try { wall = await generate(); break; }
-      catch (error) {
-        if (!canRetryGeneration(error) || i === 23) throw error;
-        // One extra bounded batch if the first set is still insufficient.
-        if (i === 6) await prepare({ additional: true });
-        await sleep(5000);
+    const prepared = readiness ? await generateWhenReady({readiness,resume,prepare,generate,check,sleep,stage,
+      preparationPolls,maxPreparationBatches}) : null;
+    let wall = prepared?.wall;
+    if (!prepared) {
+      // Bounded compatibility for servers that predate the action contract.
+      await prepare(); check(); stage('generating');
+      for (let i = 0; i < 24; i++) {
+        check();
+        try { wall = await generate(); break; }
+        catch (error) {
+          if (!canRetryGeneration(error) || i === 23) throw error;
+          if (i === 6 && needsMoreCandidates(error)) await prepare({ additional: true });
+          await sleep(5000);
+        }
       }
     }
     check();

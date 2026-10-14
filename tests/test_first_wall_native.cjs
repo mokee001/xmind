@@ -30,14 +30,14 @@ test('uncertain dispatch survives relaunch, never blindly publishes a duplicate'
  const f=fixture({state:'publishing',wallId:'w',beforeRevision:''});await assert.rejects(runFirstWall(f.deps),/发送结果未确认/);assert.ok(!f.calls.includes('publish'));
  f.setDevice({revision:'r',displayed_revision:'r'});await runFirstWall(f.deps);assert.equal(f.state().state,'done');
 });
-test('server retryable 409 recovers with one extra preparation and exactly one publication',async()=>{
+test('legacy server people_pending retries without extra uploads and publishes exactly once',async()=>{
  const f=fixture();let attempts=0,batches=0;const sleeps=[];
  await runFirstWall({...f.deps,prepare:async()=>{batches++},sleep:async ms=>sleeps.push(ms),
   generate:async()=>{
    if(++attempts<8)throw Object.assign(Error('人物分组正在完成'),{status:409,data:{code:'people_pending',retryable:true}});
    return {wall_id:'w',image_url:'/w'};
   }});
- assert.equal(attempts,8);assert.equal(batches,2);assert.deepEqual(sleeps,Array(7).fill(5000));
+ assert.equal(attempts,8);assert.equal(batches,1);assert.deepEqual(sleeps,Array(7).fill(5000));
  assert.equal(f.calls.filter(x=>x==='publish').length,1);assert.equal(f.state().state,'done');
 });
 test('terminal or legacy person error containing 尚未完成 stops immediately with the original reason',async()=>{
@@ -119,4 +119,73 @@ test('persisted completion converges paused UI without republishing; unrelated r
  assert.equal(needsFirstWallRun({visibleState:'waiting',savedState:'waiting',device:unrelated}),true);
  const waiting=fixture({state:'waiting',revision:'r'},unrelated);await assert.rejects(runFirstWall(waiting.deps),/画面已变化/);
  assert.ok(!waiting.calls.includes('done'));
+});
+
+const status = action => ({contract:'unified-recollections-v1', action, ready:action === 'generate', retryable:action !== 'review'});
+test('active worker can wait longer than 24 polls with one preparation and one generation', async()=>{
+ const f=fixture();let checks=0,batches=0;
+ await runFirstWall({...f.deps, readiness:async()=>{
+  checks++;return status(checks === 1 ? 'upload' : checks < 34 ? 'wait' : 'generate');
+ },prepare:async()=>{batches++}});
+ assert.equal(checks,34);assert.equal(batches,1);
+ assert.equal(f.calls.filter(x=>x==='generate').length,1);assert.equal(f.calls.filter(x=>x==='publish').length,1);
+});
+test('resumed pending people uses read-only checks and no preparation',async()=>{
+ const f=fixture();let checks=0;
+ await runFirstWall({...f.deps,readiness:async()=>({...status(++checks < 4 ? 'wait':'generate'),code:'people_pending'})});
+ assert.ok(!f.calls.includes('prepare'));assert.equal(f.calls.filter(x=>x==='generate').length,1);
+});
+test('restart resumes interrupted processing once without reuploading',async()=>{
+ const f=fixture();let checks=0,resumes=0;
+ await runFirstWall({...f.deps,readiness:async()=>({...status(++checks < 4 ? 'wait':'generate'),resumeRequired:true}),resume:async()=>{resumes++}});
+ assert.equal(resumes,1);assert.ok(!f.calls.includes('prepare'));assert.equal(f.calls.filter(x=>x==='generate').length,1);
+});
+test('only explicit upload readiness requests a bounded additional batch',async()=>{
+ const f=fixture();const actions=['upload','wait','upload','wait','generate'],batches=[];
+ await runFirstWall({...f.deps,readiness:async()=>status(actions.shift()),prepare:async options=>batches.push(options)});
+ assert.deepEqual(batches,[{additional:false},{additional:true}]);assert.equal(f.calls.filter(x=>x==='generate').length,1);
+});
+test('current completed people mismatch immediately asks review, without upload or generation',async()=>{
+ const f=fixture();await assert.rejects(runFirstWall({...f.deps,readiness:async()=>({...status('review'),
+  code:'people_selection_changed',reason:'重新确认人物偏好',currentRevisionComplete:true})}),
+  error=>error.code==='people_selection_changed'&&error.data.retryable===false);
+ assert.ok(!f.calls.includes('prepare'));assert.ok(!f.calls.includes('generate'));assert.ok(!f.calls.includes('publish'));
+});
+test('a generation race returns to readiness polling without another upload',async()=>{
+ const f=fixture();let checks=0,generates=0;
+ await runFirstWall({...f.deps,readiness:async()=>status(++checks===2?'wait':'generate'),generate:async()=>{
+  if(++generates===1)throw Object.assign(Error('pending'),{status:409,data:{code:'people_pending',retryable:true}});
+  return {wall_id:'w',image_url:'/w'};
+ }});
+ assert.equal(checks,3);assert.equal(generates,2);assert.ok(!f.calls.includes('prepare'));assert.equal(f.calls.filter(x=>x==='publish').length,1);
+});
+test('readiness wait has a bounded processing timeout without false network blame',async()=>{
+ const f=fixture();let checks=0;
+ await assert.rejects(runFirstWall({...f.deps,preparationPolls:3,readiness:async()=>{checks++;return status('wait')}}),
+  error=>error.code==='selection_timed_out'&&!error.message.includes('检查网络'));
+ assert.equal(checks,3);assert.ok(!f.calls.includes('prepare'));assert.ok(!f.calls.includes('generate'));
+});
+test('insufficient library cannot schedule unbounded additional upload batches',async()=>{
+ const f=fixture();let batches=0;
+ await assert.rejects(runFirstWall({...f.deps,maxPreparationBatches:2,readiness:async()=>status('upload'),prepare:async()=>{batches++}}),
+  error=>error.code==='insufficient_candidates');
+ assert.equal(batches,2);assert.ok(!f.calls.includes('generate'));
+});
+test('scope cancellation during readiness or sleep prevents later work',async()=>{
+ for(const cancelAt of ['readiness','sleep']) {
+  const f=fixture();let active=true;
+  await assert.rejects(runFirstWall({...f.deps,active:()=>active,readiness:async()=>{
+   if(cancelAt==='readiness')active=false;return status('wait');
+  },sleep:async()=>{active=false}}),/暂停/);
+  assert.ok(!f.calls.includes('prepare'));assert.ok(!f.calls.includes('generate'));assert.ok(!f.calls.includes('publish'));
+ }
+});
+test('invalid generation output never falls back to another upload attempt',async()=>{
+ const f=fixture();await assert.rejects(runFirstWall({...f.deps,readiness:async()=>status('generate'),generate:async()=>null}),/有效画面/);
+ assert.ok(!f.calls.includes('prepare'));assert.ok(!f.calls.includes('publish'));
+});
+test('persisted publication reconciliation bypasses readiness entirely',async()=>{
+ const f=fixture({state:'waiting',revision:'r'},{revision:'r',displayed_revision:'r'});
+ await runFirstWall({...f.deps,readiness:async()=>{throw Error('must not re-read readiness')}});
+ assert.equal(f.state().state,'done');assert.ok(!f.calls.includes('generate'));
 });

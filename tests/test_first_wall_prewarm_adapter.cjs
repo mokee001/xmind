@@ -114,3 +114,45 @@ test('abort propagates to a current upload and never marks it confirmed',async()
   const rejected=assert.rejects(syncing,{name:'AbortError'});controller.abort();await rejected;
   assert.equal(JSON.parse(f.files.get('memory/selection-test-0.json')).pending.index,0);
 });
+
+test('first-wall action protocol finishes one bounded upload then waits without repeated generation',async()=>{
+ const {runFirstWall}=require('../photo-wall-app/src/firstWall.cjs');
+ let checks=0,uploads=0,generates=0,batches=0,saved={};
+ const f=fixture({fetch:async (url)=>{
+  if(url.endsWith('/upload'))uploads++;
+  if(!url.endsWith('/readiness'))return null;
+  checks++;
+  const action=uploads<2?'upload':checks<34?'wait':'generate';
+  return {ok:true,json:async()=>({contract:'unified-recollections-v1',ready:action==='generate',retryable:true,action,code:'people_pending'})};
+ }});
+ const readiness=f.createFirstWallReadiness({...f.options,options:{deviceId:'screen'},active:()=>true});
+ await runFirstWall({load:async()=>saved,save:async next=>{saved=next},
+  readDevice:async()=>({device_id:'screen',revision:''}),stage:()=>{},sleep:async()=>{},
+  readiness:()=>readiness.read(),prepare:async()=>{batches++;await f.syncSelectionInBackground({...f.options,shouldStop:readiness.pauseUploads})},
+  generate:async()=>{generates++;return {wall_id:'wall',image_url:'/wall.png'}},
+  publish:async()=>({revision:'revision',device:{revision:'revision',displayed_revision:'revision'}}),
+ });
+ assert.equal(saved.state,'done');assert.equal(batches,1);assert.equal(generates,1);
+ assert.equal(uploads,2);assert.equal(f.calls.uploaded.length,2);assert.ok(checks>=34);
+});
+test('processing resume uses session only and preserves source scope',async()=>{
+ const f=fixture();const readiness=f.createFirstWallReadiness({...f.options,
+  options:{deviceId:'screen',selectionSources:['chosen-album']},active:()=>true});
+ await readiness.resume();
+ assert.equal(f.calls.network.length,1);assert.ok(f.calls.network[0].url.endsWith('/session'));
+ assert.deepEqual(JSON.parse(f.calls.network[0].options.body),{sources:['chosen-album']});
+ assert.equal(f.calls.pages.length,0);assert.equal(f.calls.curate.length,0);assert.equal(f.calls.uploaded.length,0);
+});
+test('transient readiness error never calls photo upload fallback',async()=>{
+ const {runFirstWall}=require('../photo-wall-app/src/firstWall.cjs');let checks=0;
+ const f=fixture({fetch:async url=>{
+  if(!url.endsWith('/readiness'))return null;
+  if(++checks<3)throw Error('transient DNS');
+  return {ok:true,json:async()=>({contract:'unified-recollections-v1',ready:true,action:'generate'})};
+ }});
+ const readiness=f.createFirstWallReadiness({...f.options,options:{deviceId:'screen'},active:()=>true});
+ await runFirstWall({load:async()=>({}),save:async()=>{},readDevice:async()=>({revision:''}),stage:()=>{},sleep:async()=>{},
+  readiness:()=>readiness.read(),prepare:async()=>{throw Error('unexpected upload')},
+  generate:async()=>({wall_id:'wall',image_url:'/wall'}),publish:async()=>({revision:'r',device:{revision:'r',displayed_revision:'r'}})});
+ assert.equal(checks,3);assert.equal(f.calls.uploaded.length,0);
+});
