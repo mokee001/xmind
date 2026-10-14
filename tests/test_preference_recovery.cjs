@@ -199,7 +199,7 @@ test('real App startFirstWall uses the explicitly saved snapshot and fresh conte
     setFirstWall:value=>states.push(value),setDismissedFirstWall:()=>{},latestWallSessionRef:latest,
     updateDeviceSession:async value=>({sessions:[value]}),setSession:()=>{},setDeviceSessions:()=>{},normalizeDeviceSession:x=>x,
     runFirstWall,readDisplayStatus:async()=>session.device,DEFAULT_API_BASE:'https://fixture.invalid',
-    createFirstWallReadiness:()=>({refresh:async()=>true,close:()=>{}}),syncSelectionInBackground:()=>assert.fail(),prewarmOwner:'synthetic',
+    createFirstWallReadiness:()=>({read:async()=>({ready:true,action:'generate'}),close:()=>{}}),syncSelectionInBackground:()=>assert.fail(),prewarmOwner:'synthetic',
     generateWall:async options=>{requests.push(options);return{wall_id:'wall',image_url:'/output/wall.png'}},
     publishGeneratedWall:async()=>({device:{device_id:binding.deviceId,revision:'revision',displayed_revision:'revision'}}),
     publicationFromResponse:()=>({revision:'revision',wallId:'wall'}),setHistoryRefresh:()=>{},firstWallFailure:recovery.firstWallFailure,
