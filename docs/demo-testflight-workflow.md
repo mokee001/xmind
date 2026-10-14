@@ -135,3 +135,10 @@ Apple 状态为 `VALID / IN_BETA_TESTING`，构建 `b0082485-05b9-4d11-822a-9925
 - 归档 `outputs/ble-discovery-20261014/release40/`，IPA SHA256 `98d6c184c9cbfb7e730f6b11d8b2836cd9d37b0c0e6fc35ad28422bd8f521000`。148 项 App 回归、219 项最终签名包检查及 43 项负向检查通过；两套隔离原生 Simulator 故障注入验证了超时反馈、重试及退出。没有把合成 BLE 或网络当作实体设备验收。
 - 14:37:39 Apple 上传成功；14:40:57（上海）核对构建 `bc1c06c3-824d-458d-83ec-050313da75ae` 为 `VALID / IN_BETA_TESTING`、未过期，精确属于原 Team (Expo) 组 `1469f7eb-4dfa-4907-92e1-5aa09e307277`。**TestFlight → Echooo → 更新至 1.3.16（40）**。
 - 14:41:17 临时发布凭据及本次独立钥匙串已清理，其他钥匙串保留。未部署后端、修改固件、照片策略或测试组成员。域名过期与续费恢复单独取证，BLE 发现成功不等于屏幕已恢复云端心跳；详见 `docs/domain-outage-20261014.md`。
+
+
+## 2026-10-14 · 首次准备恢复 1.3.17（41）
+
+用户明确授权修复后直接合入并发布。发布源 `04064fc`，标签 `app-first-wall-recovery-v1.3.17-build41`，App 188 项、后端 97 项、IPA 240 项与负向检查 58 项全部通过。实际模板、屏幕文件与日历接口链路使用合成输入和模拟回执验证，不冒充手机实测。
+
+21:41 已核对 Apple 构建 `0d86f246-7983-4fd5-9c31-5337a93e2487` 为 `VALID / IN_BETA_TESTING`，并属于原 Team (Expo) 测试组。后端三个目标文件已部署，设备绑定、原画面、历史、主服务和 Caddy 保留。包体、源码快照、Apple 原始状态与清理记录在 `outputs/first-wall-recovery-20261014/release41/`；详细原因、边界及回退记录见 `docs/first-wall-recovery-20261014.md`。
