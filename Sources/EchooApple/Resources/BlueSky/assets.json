@@ -1,0 +1,42 @@
+{
+  "figmaFile": "SuMl5adQfYu05ER4j6G2Ip",
+  "frame": "5:4",
+  "assets": [
+    {
+      "filename": "background.png",
+      "width": 3072,
+      "height": 4096,
+      "sha256": "70f2ce97c71227299266f9857b6dd88ec41ecf47dc282467e8f99a78134fef83"
+    },
+    {
+      "filename": "bubble.png",
+      "width": 984,
+      "height": 1188,
+      "sha256": "191522efec4f6c01eef6ebc978a52c46e62bb88c17767e833048886cf22f4761"
+    },
+    {
+      "filename": "grid.png",
+      "width": 2092,
+      "height": 566,
+      "sha256": "f53991511295d871130e995b5969b347b3a7252189ebc6dc3610b9f7c46665bd"
+    },
+    {
+      "filename": "lines.png",
+      "width": 1702,
+      "height": 682,
+      "sha256": "4ccfc0fde0603bbf3c673cab1d8122c12fd3929b2355542072c39ba249be821b"
+    },
+    {
+      "filename": "poetry.png",
+      "width": 1286,
+      "height": 1382,
+      "sha256": "32c8d84397fca3ee416bcdbfbd189513fb9d6db8d60d50f1930a364f97f5f82d"
+    },
+    {
+      "filename": "star.png",
+      "width": 1476,
+      "height": 1079,
+      "sha256": "750084378eb7a8d2fa17507b06317ba507460a6a15d6b6bebf5be93abca01be6"
+    }
+  ]
+}

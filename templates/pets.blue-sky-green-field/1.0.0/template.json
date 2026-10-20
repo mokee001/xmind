@@ -1,0 +1,446 @@
+{
+  "automationValidation": "real-multispecies-model-and-native-segmentation-validation-pending",
+  "fallback": {
+    "hideOrder": [
+      "photo4",
+      "photo3",
+      "photo2",
+      "photo1",
+      "photo5"
+    ],
+    "minimumUserPhotoCount": 0,
+    "reflowRemainingSlots": false,
+    "zeroPhotoOutput": "template-background-and-fixed-decorations"
+  },
+  "generationRulesVersion": "blue-sky-generation-rules-v3",
+  "layout": {
+    "clipAtCanvas": true,
+    "clipAtSlot": false,
+    "contentFit": "tight-completed-cutout-including-outline-uniform-long-edge-fit-centered",
+    "coordinates": "top-left-design-pixels",
+    "height": 2400,
+    "layersBackToFront": [
+      {
+        "asset": "background.png",
+        "fit": "aspectFill",
+        "height": 2400,
+        "kind": "asset",
+        "width": 1800,
+        "x": 0,
+        "y": 0
+      },
+      {
+        "asset": "star.png",
+        "fit": "aspectFill",
+        "height": 582,
+        "kind": "asset",
+        "width": 796.1371459960938,
+        "x": 1088,
+        "y": -8
+      },
+      {
+        "asset": "star.png",
+        "fit": "aspectFill",
+        "height": 590,
+        "kind": "asset",
+        "width": 807.0806274414062,
+        "x": 228,
+        "y": 1535
+      },
+      {
+        "asset": "poetry.png",
+        "fit": "aspectFill",
+        "height": 691,
+        "kind": "asset",
+        "width": 643,
+        "x": 396,
+        "y": 470
+      },
+      {
+        "kind": "photo",
+        "slot": "photo3"
+      },
+      {
+        "asset": "lines.png",
+        "fit": "aspectFill",
+        "height": 341,
+        "kind": "asset",
+        "width": 851,
+        "x": 72,
+        "y": 2033
+      },
+      {
+        "kind": "photo",
+        "slot": "photo1"
+      },
+      {
+        "kind": "photo",
+        "slot": "photo5"
+      },
+      {
+        "asset": "bubble.png",
+        "fit": "aspectFill",
+        "height": 594,
+        "kind": "asset",
+        "width": 474,
+        "x": 1326,
+        "y": 1415
+      },
+      {
+        "asset": "grid.png",
+        "fit": "aspectFill",
+        "height": 285,
+        "kind": "asset",
+        "width": 1053.3922119140625,
+        "x": 806,
+        "y": 1052
+      },
+      {
+        "kind": "photo",
+        "slot": "photo4"
+      },
+      {
+        "kind": "photo",
+        "slot": "photo2"
+      }
+    ],
+    "slots": [
+      {
+        "centerX": 340.4795,
+        "centerY": 332.4795,
+        "clockwiseDegrees": 45,
+        "compositionPreferences": [
+          "singlePetSubject",
+          "headLargeProminent",
+          "topComplete",
+          "bottomComplete",
+          "rightComplete"
+        ],
+        "id": "photo1",
+        "posePreferences": [],
+        "preferredFacts": [
+          "singlePetSubject",
+          "headLargeProminent",
+          "topComplete",
+          "bottomComplete",
+          "rightComplete"
+        ],
+        "requirements": [
+          "isPet"
+        ],
+        "side": 968,
+        "unknownPreference": "no-bonus-remains-eligible"
+      },
+      {
+        "centerX": 1546.1151104514443,
+        "centerY": 677.115038024664,
+        "clockwiseDegrees": -116,
+        "compositionPreferences": [
+          "singlePetSubject",
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete"
+        ],
+        "id": "photo2",
+        "posePreferences": [
+          "topDown",
+          "curled"
+        ],
+        "preferredFacts": [
+          "singlePetSubject",
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete",
+          "topDown",
+          "curled"
+        ],
+        "requirements": [
+          "isPet"
+        ],
+        "side": 1104,
+        "unknownPreference": "no-bonus-remains-eligible"
+      },
+      {
+        "centerX": 354.34044583854836,
+        "centerY": 1631.3404372877576,
+        "clockwiseDegrees": 14,
+        "compositionPreferences": [
+          "singlePetSubject",
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete"
+        ],
+        "id": "photo3",
+        "posePreferences": [
+          "frontStandingOrSitting"
+        ],
+        "preferredFacts": [
+          "singlePetSubject",
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete",
+          "frontStandingOrSitting"
+        ],
+        "requirements": [
+          "isPet"
+        ],
+        "side": 776,
+        "unknownPreference": "no-bonus-remains-eligible"
+      },
+      {
+        "centerX": 991,
+        "centerY": 1338,
+        "clockwiseDegrees": 0,
+        "compositionPreferences": [
+          "singlePetSubject",
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete"
+        ],
+        "id": "photo4",
+        "posePreferences": [
+          "frontStandingOrSitting"
+        ],
+        "preferredFacts": [
+          "singlePetSubject",
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete",
+          "frontStandingOrSitting"
+        ],
+        "requirements": [
+          "isPet"
+        ],
+        "side": 602,
+        "unknownPreference": "no-bonus-remains-eligible"
+      },
+      {
+        "centerX": 1464,
+        "centerY": 2116,
+        "clockwiseDegrees": 0,
+        "compositionPreferences": [
+          "singlePetSubject",
+          "halfBodyCloseUp",
+          "headClearProminent",
+          "leftComplete",
+          "topComplete"
+        ],
+        "id": "photo5",
+        "posePreferences": [],
+        "preferredFacts": [
+          "singlePetSubject",
+          "halfBodyCloseUp",
+          "headClearProminent",
+          "leftComplete",
+          "topComplete"
+        ],
+        "requirements": [
+          "isPet"
+        ],
+        "side": 1040,
+        "unknownPreference": "no-bonus-remains-eligible"
+      }
+    ],
+    "version": "park-5-4-layout-v5",
+    "width": 1800
+  },
+  "minimumPhotoCount": 0,
+  "name": "蓝天绿地拼贴",
+  "outlines": {
+    "dashPhase": 0,
+    "lineCap": "round",
+    "lineJoin": "round",
+    "offsetMeaning": "subject-silhouette-to-stroke-centerline",
+    "strokesBackToFront": {
+      "photo1": [
+        {
+          "centerOffset": 20,
+          "colorHex": "FFFFFF",
+          "dash": [
+            28,
+            40
+          ],
+          "lineWidth": 12,
+          "opacity": 1
+        }
+      ],
+      "photo2": [
+        {
+          "centerOffset": 0,
+          "colorHex": "000000",
+          "dash": [],
+          "lineWidth": 48,
+          "opacity": 1
+        },
+        {
+          "centerOffset": 0,
+          "colorHex": "FFFFFF",
+          "dash": [],
+          "lineWidth": 32,
+          "opacity": 1
+        }
+      ],
+      "photo3": [
+        {
+          "centerOffset": 0,
+          "colorHex": "000000",
+          "dash": [],
+          "lineWidth": 32,
+          "opacity": 1
+        },
+        {
+          "centerOffset": 0,
+          "colorHex": "FFFFFF",
+          "dash": [],
+          "lineWidth": 24,
+          "opacity": 1
+        }
+      ],
+      "photo4": [
+        {
+          "centerOffset": 0,
+          "colorHex": "000000",
+          "dash": [],
+          "lineWidth": 32,
+          "opacity": 1
+        },
+        {
+          "centerOffset": 0,
+          "colorHex": "FFFFFF",
+          "dash": [],
+          "lineWidth": 24,
+          "opacity": 1
+        }
+      ],
+      "photo5": [
+        {
+          "centerOffset": 20,
+          "colorHex": "FFFFFF",
+          "dash": [],
+          "lineWidth": 12,
+          "opacity": 1
+        }
+      ]
+    },
+    "version": "blue-sky-outline-v3"
+  },
+  "processing": {
+    "compareInSourceCoordinates": true,
+    "extractOnlySelected": true,
+    "nativeRevision": "source-aligned-pet-cutout-v3",
+    "qualityCheckVersion": "blue-sky-cutout-check-v2",
+    "qualityFacts": [
+      "correctSubject",
+      "anatomyPreserved",
+      "backgroundRemoved",
+      "topComplete",
+      "bottomComplete",
+      "leftComplete",
+      "rightComplete"
+    ],
+    "requiredQualityFacts": [
+      "correctSubject",
+      "anatomyPreserved",
+      "backgroundRemoved"
+    ],
+    "runtimeDependencies": [
+      "Apple ImageIO",
+      "Apple Vision",
+      "Apple CoreGraphics",
+      "model API via backend"
+    ],
+    "sourceEdgeFactsArePreferences": true,
+    "unknownCannotPass": true
+  },
+  "productionReady": false,
+  "releaseVersion": "1.0.0",
+  "schemaVersion": "echoo-template-archive-v1",
+  "selection": {
+    "evidenceVersion": "blue-sky-pet-v2",
+    "facts": [
+      "isPet",
+      "singlePetSubject",
+      "technicalBasics",
+      "headLargeProminent",
+      "headClearProminent",
+      "fullBody",
+      "halfBodyCloseUp",
+      "topDown",
+      "frontStandingOrSitting",
+      "curled",
+      "topComplete",
+      "bottomComplete",
+      "leftComplete",
+      "rightComplete"
+    ],
+    "failureFallback": "exclude-photo-slot-reselect-ordered-hide-zero-photo-background",
+    "generalScoreCutoff": null,
+    "identity": "every-selected-photo-pair-explicit-same-individual-pet",
+    "mirroring": false,
+    "objectiveOrder": [
+      "requiredFacts",
+      "maximumPosePreferenceCount",
+      "maximumCompositionPreferenceCount",
+      "maximumTotalKnownScore",
+      "stablePhotoID"
+    ],
+    "preferenceWeight": "one-per-confirmed-applicable-fact-within-priority-tier",
+    "ratingRange": [
+      1,
+      5
+    ],
+    "targetPet": "optional-direct-same-as-reference",
+    "unknownPreference": "no-bonus-remains-eligible",
+    "unknownRating": "null",
+    "version": "blue-sky-selection-v3",
+    "weights": {
+      "colorNaturalness": 10,
+      "cutoutFeasibility": 10,
+      "exposure": 10,
+      "expression": 20,
+      "interest": 10,
+      "lifelikeness": 20,
+      "sharpness": 20
+    }
+  },
+  "speciesExamplesAreExhaustive": false,
+  "supportedSpeciesExamples": [
+    "cat",
+    "dog",
+    "hamster",
+    "parrot",
+    "turtle",
+    "goldfish"
+  ],
+  "supportedSubject": "common-pet",
+  "templateID": "pets.blue-sky-green-field",
+  "theme": "pets",
+  "uniquePhotoCount": 5,
+  "visualApproval": {
+    "approved": true,
+    "date": "2026-10-16",
+    "source": "human-user-confirmation",
+    "statement": "好的，就以最终这版作为蓝天绿地模板的规范进行存档吧，覆盖v1.0.0"
+  },
+  "generationRules": {
+    "file": "generation-rules.json",
+    "version": "blue-sky-generation-rules-v3",
+    "confirmedOn": "2026-10-19",
+    "sha256": "8ddf9120c153d1fefe3a3e2a40d707ca49cda08b09d277171db142438ab39271",
+    "authoritativeFor": "implemented-current-subject-scope-standard-and-fallback-generation-policy",
+    "runtimeSynchronization": "implemented-offline-validated"
+  },
+  "implementationStatus": "runtime-synchronized-offline-validated"
+}

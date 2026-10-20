@@ -1,0 +1,273 @@
+{
+  "schemaVersion": "echoo-template-generation-rules-v1",
+  "version": "blue-sky-generation-rules-v3",
+  "templateID": "pets.blue-sky-green-field",
+  "releaseVersion": "1.0.0",
+  "confirmedOn": "2026-10-19",
+  "status": "implemented-offline-validated-real-multispecies-validation-pending",
+  "authority": "supersedes-conflicting-selection-and-processing-rules-in-frozen-runtime-v2",
+  "input": {
+    "theme": "pets",
+    "admissionRequired": true,
+    "sourcePhotosModified": false,
+    "supportedSubject": "common-pet",
+    "supportedSpeciesExamples": [
+      "cat",
+      "dog",
+      "hamster",
+      "parrot",
+      "turtle",
+      "goldfish"
+    ],
+    "speciesExamplesAreExhaustive": false,
+    "subjectScope": "common-companion-pets-from-admitted-pets-album"
+  },
+  "standard": {
+    "photoCount": 5,
+    "distinctPhotos": true,
+    "hardFacts": [
+      "isPet"
+    ],
+    "groupHardRequirements": [
+      "samePetAcrossSelectedPhotos"
+    ],
+    "targetPet": "when-specified-each-selected-subject-must-directly-match-reference",
+    "identityEvidence": "explicit-same-individual-for-each-selected-pet-photo-pair",
+    "identityPairCount": "n*(n-1)/2",
+    "unmetPreferencesTriggerFallback": false,
+    "commonPreferredFacts": [
+      "singlePetSubject",
+      "technicalBasics"
+    ],
+    "slots": {
+      "photo1": {
+        "preferredFacts": [
+          "headLargeProminent",
+          "topComplete",
+          "bottomComplete",
+          "rightComplete"
+        ]
+      },
+      "photo2": {
+        "preferredFacts": [
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete",
+          "topDown",
+          "curled"
+        ]
+      },
+      "photo3": {
+        "preferredFacts": [
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete",
+          "frontStandingOrSitting"
+        ]
+      },
+      "photo4": {
+        "preferredFacts": [
+          "fullBody",
+          "topComplete",
+          "bottomComplete",
+          "leftComplete",
+          "rightComplete",
+          "frontStandingOrSitting"
+        ]
+      },
+      "photo5": {
+        "preferredFacts": [
+          "halfBodyCloseUp",
+          "headClearProminent",
+          "leftComplete",
+          "topComplete"
+        ]
+      }
+    },
+    "ranking": {
+      "scope": "joint-assignment-of-distinct-photos-to-all-visible-slots",
+      "order": [
+        "requiredFacts",
+        "maximumPosePreferenceCount",
+        "maximumCompositionPreferenceCount",
+        "maximumTotalKnownScore",
+        "stablePhotoID"
+      ],
+      "confirmedPosePreferenceWeight": "one-per-confirmed-applicable-fact-within-pose-tier",
+      "unknownPreference": "no-bonus-remains-eligible",
+      "unknownHardRequirement": "not-confirmed-eligible-do-not-infer-pass",
+      "unknownRating": null,
+      "generalScoreCutoff": null,
+      "ratingRange": [
+        1,
+        5
+      ],
+      "weights": {
+        "sharpness": 20,
+        "exposure": 10,
+        "colorNaturalness": 10,
+        "cutoutFeasibility": 10,
+        "expression": 20,
+        "lifelikeness": 20,
+        "interest": 10
+      },
+      "compositionAndEdgePreferenceWeight": "one-per-confirmed-applicable-fact-within-composition-tier",
+      "technicalBasicsHandling": "quality-evidence-reflected-in-general-ratings-no-extra-binary-bonus-or-hard-gate",
+      "missingGeneralScore": "null-remains-eligible-known-score-sums-do-not-impute-missing-ratings"
+    },
+    "preferenceApplicability": {
+      "evaluateForSubjectSpecies": true,
+      "notApplicableState": "notApplicable",
+      "notApplicableCanBlockEligibility": false,
+      "notApplicableCanPenalizeScore": false,
+      "poseExamplesRequiringApplicabilityCheck": [
+        "curled",
+        "frontStandingOrSitting"
+      ],
+      "crossSpeciesScoreNormalization": "not-separately-confirmed",
+      "replacementPoseRules": "not-specified-do-not-invent"
+    }
+  },
+  "fallback": {
+    "trigger": "no-complete-distinct-photo-assignment-satisfying-hard-requirements-for-standard-slots",
+    "hideOrder": [
+      "photo4",
+      "photo3",
+      "photo2",
+      "photo1",
+      "photo5"
+    ],
+    "stopCondition": "remaining-visible-slots-can-all-be-filled-with-distinct-hard-eligible-photos-or-no-slots-remain",
+    "minimumUserPhotoCount": 0,
+    "maximumUserPhotoCount": 4,
+    "levels": [
+      {
+        "availablePhotoCount": 4,
+        "hiddenSlots": [
+          "photo4"
+        ],
+        "visibleSlots": [
+          "photo1",
+          "photo2",
+          "photo3",
+          "photo5"
+        ]
+      },
+      {
+        "availablePhotoCount": 3,
+        "hiddenSlots": [
+          "photo4",
+          "photo3"
+        ],
+        "visibleSlots": [
+          "photo1",
+          "photo2",
+          "photo5"
+        ]
+      },
+      {
+        "availablePhotoCount": 2,
+        "hiddenSlots": [
+          "photo4",
+          "photo3",
+          "photo2"
+        ],
+        "visibleSlots": [
+          "photo1",
+          "photo5"
+        ]
+      },
+      {
+        "availablePhotoCount": 1,
+        "hiddenSlots": [
+          "photo4",
+          "photo3",
+          "photo2",
+          "photo1"
+        ],
+        "visibleSlots": [
+          "photo5"
+        ]
+      },
+      {
+        "availablePhotoCount": 0,
+        "hiddenSlots": [
+          "photo4",
+          "photo3",
+          "photo2",
+          "photo1",
+          "photo5"
+        ],
+        "visibleSlots": []
+      }
+    ],
+    "hidePhotoOutlinesWithSlot": true,
+    "reflowRemainingSlots": false,
+    "repeatPhotosToFillSlots": false,
+    "placeholderPhotos": false,
+    "zeroPhotoOutput": {
+      "mode": "static-template-background-artwork",
+      "mustProduceArtwork": true,
+      "userPhotoCount": 0,
+      "includeBackground": true,
+      "includeFixedDecorations": true,
+      "preserveStaticLayerGeometryAndOrder": true,
+      "includePhotoOutlines": false,
+      "requiresPhotoScoring": false,
+      "requiresIdentityAnalysis": false,
+      "requiresCutout": false,
+      "requiresPhotoVerification": false,
+      "emptyCandidatePoolIsGenerationError": false
+    },
+    "substituteDifferentPet": false
+  },
+  "routing": {
+    "automatic": "prefer-templates-with-complete-standard-assignment",
+    "manual": "try-standard-then-same-template-fallback"
+  },
+  "rendering": {
+    "width": 1800,
+    "height": 2400,
+    "layoutVersion": "park-5-4-layout-v5",
+    "outlineVersion": "blue-sky-outline-v3",
+    "fit": "preserve-aspect-ratio-long-edge-fit-centered",
+    "clipAtSlot": false,
+    "clipAtCanvas": true,
+    "mirroring": false
+  },
+  "runtimeStatus": {
+    "selectionVersion": "blue-sky-selection-v3",
+    "evidenceVersion": "blue-sky-pet-v2",
+    "originalPromptVersion": "blue-sky-original-photo-prompt-v4",
+    "cutoutVerificationVersion": "blue-sky-cutout-check-v2",
+    "cutoutPromptVersion": "blue-sky-source-aligned-cutout-prompt-v2",
+    "nativeCutoutRevision": "source-aligned-pet-cutout-v3",
+    "newRulesImplemented": true,
+    "commonPetScopeImplemented": true,
+    "fallbackRuntimeValidated": true,
+    "zeroPhotoRuntimeValidated": true,
+    "multiSpeciesContractValidated": true,
+    "realMultiSpeciesRecognitionAccuracyValidated": false,
+    "realMultiSpeciesSegmentationValidated": false,
+    "realDeviceValidated": false,
+    "previousRuntimeSelectionVersion": "blue-sky-selection-v2",
+    "validationScope": "73-Swift-tests-100-Python-tests-iOS17-compilation-42-synthetic-count-cases-six-native-PNGs-and-two-approved-artwork-regressions"
+  },
+  "confirmation": {
+    "source": "human-user-in-current-conversation",
+    "standardAndFallbackStatement": "每个槽位有一些硬性要求比如必须是同一只猫（也可以没有硬性要求），除此之外都是偏好要求，当偏好要求无法被满足时，从满足硬性要求的照片里按一定优先级取照片填入即可，以上都属于标准版范畴；只有当满足硬性要求的照片数量都达不到槽位数量时，再触发兜底版",
+    "hideOrderStatement": "蓝天绿地拼贴模板的兜底版方案是按照photo4、photo3、photo2、photo1、photo5的顺序依次隐去",
+    "zeroPhotoStatement": "蓝天绿地模板下，当可用照片数为0时，生成无任何用户照片的背景图即可，也就是无论如何要输出一张成品",
+    "petScopeStatement": "我看了规范文档发现限制了宠物仅为猫，改为猫、狗、仓鼠、鹦鹉、乌龟、金鱼等常见宠物均可以",
+    "quotePrecedence": "Later common-pet scope confirmation supersedes cat-only wording in earlier quoted statements; keep original quotes unmodified.",
+    "preferencePriorityStatement": "姿态偏好优先，其次构图与边缘，最后通用评分"
+  },
+  "supersedes": [
+    "blue-sky-generation-rules-v1",
+    "blue-sky-generation-rules-v2"
+  ]
+}

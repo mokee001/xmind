@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-16",
+  "source": "human-user-confirmation",
+  "statement": "好的，就以最终这版作为蓝天绿地模板的规范进行存档吧，覆盖v1.0.0",
+  "visualApproved": true,
+  "specificationApproved": true,
+  "templateID": "pets.blue-sky-green-field",
+  "releaseVersion": "1.0.0",
+  "layoutVersion": "park-5-4-layout-v5",
+  "outlineVersion": "blue-sky-outline-v3",
+  "selectionStrategyVersion": "blue-sky-selection-v3",
+  "originalPromptVersion": "blue-sky-original-photo-prompt-v4",
+  "approvedArtworkSHA256": {
+    "cat1": "318a73c920116f18ed4237b566ee458c45ea61af68d406b2f87d216063c34b27",
+    "cat2": "94b4b310499da8503c71552f7889cd992e07c691efbfab458e74811eaa26c25d"
+  },
+  "baselinePrivatePhotosIncluded": false,
+  "realPostCutoutAPIVerified": false,
+  "originalPromptV3AccuracyValidated": false,
+  "secondPetTest": "human-reviewed-generation-passed",
+  "replaces": {
+    "sameReleaseVersion": true,
+    "layoutVersion": "park-5-4-layout-v3",
+    "previousZipSHA256": "bcfe345f6166044c11ecf4fc1febbc9c11a3719d285b2ae37f8fb13e4e10a6ee"
+  },
+  "generationRulesApproval": {
+    "date": "2026-10-19",
+    "source": "human-user-confirmation",
+    "version": "blue-sky-generation-rules-v3",
+    "standardAndFallbackApproved": true,
+    "hideOrder": [
+      "photo4",
+      "photo3",
+      "photo2",
+      "photo1",
+      "photo5"
+    ],
+    "zeroPhotoStatement": "蓝天绿地模板下，当可用照片数为0时，生成无任何用户照片的背景图即可，也就是无论如何要输出一张成品",
+    "minimumUserPhotoCount": 0,
+    "zeroPhotoOutput": "template-background-and-fixed-decorations-without-user-photos-or-photo-outlines",
+    "runtimeSynchronization": "implemented-offline-validated",
+    "fallbackRuntimeValidated": true,
+    "zeroPhotoRuntimeValidated": true,
+    "petScopeApproved": true,
+    "petScopeStatement": "我看了规范文档发现限制了宠物仅为猫，改为猫、狗、仓鼠、鹦鹉、乌龟、金鱼等常见宠物均可以",
+    "supportedSubject": "common-pet",
+    "supportedSpeciesExamples": [
+      "cat",
+      "dog",
+      "hamster",
+      "parrot",
+      "turtle",
+      "goldfish"
+    ],
+    "speciesExamplesAreExhaustive": false,
+    "sameIndividualRequirement": "same-pet-across-selected-photos",
+    "multiSpeciesRuntimeValidated": false,
+    "preferencePriorityStatement": "姿态偏好优先，其次构图与边缘，最后通用评分",
+    "multiSpeciesContractValidated": true
+  },
+  "runtimeSynchronization": {
+    "date": "2026-10-19",
+    "generationRulesVersion": "blue-sky-generation-rules-v3",
+    "implemented": true,
+    "modelCallsDuringValidation": 0,
+    "realMultispeciesModelAccuracyValidated": false,
+    "realMultispeciesSegmentationValidated": false,
+    "realDeviceValidated": false,
+    "productionReady": false,
+    "approvedArtworkRegression": {
+      "cat1": "byte-identical",
+      "cat2": "byte-identical"
+    }
+  }
+}

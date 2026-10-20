@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>蓝天绿地拼贴 · 选片复核</title>
+<style>
+:root{font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:#17332d;background:#f2f5ef}
+*{box-sizing:border-box}body{margin:0}header,main{max-width:1400px;margin:auto;padding:24px}
+header{padding-bottom:8px}h1{font-size:28px;margin:8px 0}h2{font-size:21px;margin:28px 0 12px}
+p{margin:8px 0}.muted{color:#62736b}.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:16px;background:white;border-radius:12px;margin-bottom:20px}
+button{background:#205c45;color:white;border:0;border-radius:8px;padding:11px 18px;font:inherit;cursor:pointer}button.secondary{background:#e5eee6;color:#17332d}
+button:disabled{opacity:.5;cursor:default}input[type=number],select{font:inherit;padding:5px;border:1px solid #bdcec3;border-radius:5px;max-width:80px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:18px}.card{background:white;border:2px solid transparent;border-radius:12px;overflow:hidden}
+.card.chosen{border-color:#2f8761}.photo{display:block;width:100%;height:260px;object-fit:contain;background:#e6ebe6;cursor:zoom-in}
+.body{padding:13px}label{cursor:pointer}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.tag{font-size:12px;background:#eaf1e8;padding:2px 8px;border-radius:9px}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px;border-bottom:1px solid #e7ece6;text-align:left}th{color:#4b6358}
+.notice{padding:12px 16px;background:#e5eee3;border-radius:8px;margin:12px 0}.warning{background:#fff0d6}details{margin:10px 0}summary{cursor:pointer;font-weight:600}
+#status{position:sticky;top:0;background:#205c45;color:white;padding:10px 24px;z-index:2;display:none}
+#lightbox{position:fixed;inset:0;background:#10251deb;display:none;z-index:5;align-items:center;justify-content:center;cursor:zoom-out}
+#lightbox img{max-width:95vw;max-height:95vh;object-fit:contain}.cutout{background-color:#dde4df;background-image:linear-gradient(45deg,#fff 25%,transparent 25%),linear-gradient(-45deg,#fff 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#fff 75%),linear-gradient(-45deg,transparent 75%,#fff 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}
+.scroll{overflow:auto}.small{font-size:12px}#review-note{max-width:1000px}
+</style>
+<div id="status" role="status"></div>
+<header>
+  <div class="muted">Echoo / 宠物主题 / 小样本验证</div>
+  <h1>蓝天绿地拼贴 · 选片复核</h1>
+  <p id="review-note" class="muted">本页先准备尚未按模板筛选的原始测试样本，包含用于验证淘汰规则的反例。发送评估后，才检查同一宠物、各槽位条件并评分排序；只有初步入选照片进入抠图。本轮复核不改变原图库或主题标签。</p>
+</header>
+<main><div id="app"></div></main>
+<div id="lightbox" onclick="this.style.display='none'"><img alt="照片大图"></div>
+<script>
+const INITIAL=/*ECHOO_INITIAL_DATA*/null;
+const TOKEN=new URLSearchParams(location.search).get('token')||'';
+const FILE=location.protocol==='file:';
+const app=document.getElementById('app');
+const manifest=INITIAL.manifest;
+const LEGACY_CACHE=manifest.previewVersion!=='imageio-verified-pixels-v2';
+const photos=new Map(manifest.photos.map(function(p){return [p.photoID,p]}));
+let chosen=new Set((INITIAL.report||{}).ids||manifest.proposedIDs), active=INITIAL.report||{}, busy=false, showAll=false;
+const cutoutDraft=new Map(), scoreDraft=new Map();
+const dimensions={sharpness:['主体清晰度',20],exposure:['曝光与细节',10],colorNaturalness:['色彩自然度',10],cutoutFeasibility:['抠图可行性',10],expression:['神态与亲近感',20],lifelikeness:['自然生活感',20],interest:['趣味性',10]};
+const factNames={isPet:'宠物主体',singlePetSubject:'单一明确宠物主体',technicalBasics:'基本技术要求',headLargeProminent:'宠物头部大且突出',headClearProminent:'宠物头部清晰突出',fullBody:'全身完整',halfBodyCloseUp:'半身近景',topDown:'俯拍视角',frontStandingOrSitting:'正面站立或坐立',curled:'蜷曲姿态',topComplete:'上边缘完整',bottomComplete:'下边缘完整',leftComplete:'左边缘完整',rightComplete:'右边缘完整',scores:'评分完整性',provenance:'分析来源',evaluation:'照片评估',targetPetIdentity:'与指定宠物的身份关系'};
+const selectionVersion='blue-sky-selection-v3';
+function preferenceText(candidate){return Array.isArray(candidate.matchedPreferences)?candidate.matchedPreferences.map(function(k){return factNames[k]||k}).join('、')||'—':candidate.preferred?'优先姿态':'—'}
+const reasonNames={detailed:'主体细节清楚',adequate:'细节基本可用',blurred:'主体模糊',resolutionUncertain:'分辨率证据不足',balanced:'曝光平衡',minorLoss:'少量层次损失',subjectDetailLost:'主体细节明显损失',natural:'色彩自然',lightingMood:'保留光线氛围',strongCast:'明显偏色',overprocessed:'过度处理',separated:'主体容易分离',complexBoundary:'轮廓周边复杂',occluded:'主体存在遮挡',engaging:'神态有吸引力',calmAppeal:'安静状态有吸引力',neutral:'神态普通',obscured:'神态不易辨认',spontaneous:'自然生活瞬间',interaction:'自然互动',posed:'摆拍感较强',weakContext:'生活感较弱',distinctiveAction:'动作有特点',playfulInteraction:'互动有趣',quietMoment:'安静瞬间',ordinary:'趣味表现普通',unresolved:'无法判断'};
+function esc(v){return String(v===undefined?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function imageURL(id,detail){return FILE?(detail?(active.detailPrefix||'')+id+'.jpg':(photos.get(id).previewFilename||id+'.jpg')):'/'+(detail?'detail':'preview')+'/'+id+'?token='+encodeURIComponent(TOKEN)}
+function cutoutURL(id){return FILE?(active.detailPrefix||'')+'cutouts/'+id+'.png':'/cutout/'+id+'?token='+encodeURIComponent(TOKEN)}
+function processingURL(kind,id){
+  const p=active.processing||{}, prefix=p.artifactPrefix||'';
+  if(FILE)return prefix+(kind==='artwork'?p.artifact:'cutouts/'+id+({'processed':'.png','processing-original':'.original.jpg','processing-mask':'.masked.jpg'}[kind]));
+  return '/'+kind+'/'+id+'?token='+encodeURIComponent(TOKEN);
+}
+function image(id,detail,extra){return '<img class="photo '+(extra||'')+'" src="'+imageURL(id,detail)+'" alt="'+esc(photos.get(id).sourceName)+'" loading="lazy" onclick="zoom(this.src)">'}
+function zoom(src){const box=document.getElementById('lightbox');box.querySelector('img').src=src;box.style.display='flex'}
+function status(text){const el=document.getElementById('status');el.textContent=text;el.style.display=text?'block':'none'}
+async function post(path,body,message){
+  if(LEGACY_CACHE){alert('旧版预览缓存尚未重建，请关闭旧测试窗口并重新运行启动入口。当前候选数量不能代表图库可用素材。');return null}
+  if(FILE){alert('请双击工程中的“启动蓝天绿地选片测试.command”继续操作。当前是本地只读预览。');return null}
+  if(busy)return null;busy=true;status(message);
+  document.querySelectorAll('button').forEach(function(b){b.disabled=true});
+  try{
+    const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Echoo-Token':TOKEN},body:JSON.stringify(body)});
+    const result=await r.json();
+    if(!r.ok)throw Error(result.message||'步骤未完成（HTTP '+r.status+'）。请保留本地测试记录以便检查。');
+    return result;
+  }catch(e){alert(e.message);return null}
+  finally{busy=false;status('');document.querySelectorAll('button').forEach(function(b){b.disabled=false})}
+}
+function count(){document.getElementById('count').textContent='已选 '+chosen.size+' / 20 张'}
+function toggle(id,input){if(input.checked&&chosen.size>=20){input.checked=false;alert('本轮最多评估20张。');return}if(input.checked)chosen.add(id);else chosen.delete(id);input.closest('.card').classList.toggle('chosen',input.checked);count()}
+function targetNote(){
+  const id=manifest.targetPetPhotoID;
+  return id?'<div class="notice">本轮固定测试 '+esc(photos.get(id).sourceName)+' 中的目标宠物。请保留这张参照图，补选它的其他照片。新增候选尚未被认定为同一只宠物；评分后仍需身份判断，不能自动改选另一只宠物。'+(manifest.targetProposalNativeStatus==='unavailable'?' 当前进程未能生成相似度建议，请从宠物候选中补选。':' 相似度建议只用于组织测试样本。')+'</div>':'';
+}
+function renderGallery(){
+  const nativeMissing=manifest.nativeStatus!=='available';
+  const list=showAll||nativeMissing?manifest.photos:manifest.photos.filter(function(p){return p.petConfidence!==undefined&&p.petConfidence!==null});
+  const unavailable=manifest.unavailablePhotos||[];
+  const petCount=manifest.photos.filter(function(p){return p.petConfidence!==undefined&&p.petConfidence!==null}).length;
+  app.innerHTML=targetNote()+'<h2>原始测试样本 · 尚未按模板筛选</h2>'+
+    (LEGACY_CACHE?'<div class="notice warning">旧版预览缓存需要重建，当前线索数量不可信。请关闭旧测试终端并重新双击启动入口，再进行评估。</div>':'')+
+    '<p class="muted">可用预览 '+manifest.photos.length+' 张；原生宠物线索 '+petCount+' 张；尚未按五个槽位预选。最多20张是单批评估上限，不是图库候选数量。</p>'+
+    (unavailable.length?'<div class="notice warning">'+unavailable.length+' 张照片的预览未能解码，尚未参与识别。这是资源状态，不代表照片不符合模板。<details><summary>查看预览不可用文件</summary>'+unavailable.map(function(p){return '<div>'+esc(p.sourceName)+'</div>'}).join('')+'</details></div>':'')+
+    '<div class="notice '+(nativeMissing?'warning':'')+'">'+(nativeMissing?'当前进程未能完成原生宠物候选识别。可以在全部预览中补充测试样本。':'以下仅按 Vision 的宠物线索分散预选，没有检查同一只宠物、俯拍、全身、指定边缘或通用评分。样本可包含应被淘汰的反例，用于验证这些判断是否正确。')+'</div>'+
+    '<div class="bar"><strong id="count"></strong><button onclick="prepare()">查看所选样本的大图</button><button class="secondary" onclick="showAll=!showAll;renderGallery()">'+(showAll?'仅看宠物候选':'查看全部本地照片')+'</button><button class="secondary" onclick="chosen.clear();renderGallery()">清空选择</button></div>'+
+    '<div class="grid">'+list.map(function(p){return '<article class="card '+(chosen.has(p.photoID)?'chosen':'')+'">'+image(p.photoID,false)+'<div class="body"><label><input type="checkbox" '+(chosen.has(p.photoID)?'checked':'')+' onchange="toggle(\''+p.photoID+'\',this)"> '+esc(p.sourceName)+'</label><div class="muted small">本地预览 '+p.width+' × '+p.height+'</div></div></article>'}).join('')+'</div>';
+  count();
+}
+async function generateBackground(){
+  const result=await post('/background-artwork',{},'正在生成模板背景成品，无需照片评分或抠图……');
+  if(result){active=result;chosen=new Set();renderResults()}
+}
+async function prepare(){
+  if(chosen.size===0){await generateBackground();return}
+
+  if(LEGACY_CACHE){alert('请重新运行启动入口，先重建旧版预览缓存。');return}
+  if(!chosen.size){alert('请先选取样本照片。');return}
+  if(chosen.size&&manifest.targetPetPhotoID&&!chosen.has(manifest.targetPetPhotoID)){alert('请保留目标宠物的参照照片。');return}
+  const result=await post('/prepare',{ids:Array.from(chosen)},'正在为所选样本生成详细预览并检查本地隐私线索……');
+  if(result){active=result;renderSampleReview()}
+}
+function renderSampleReview(){
+  app.innerHTML=targetNote()+'<h2>确认本轮样本</h2><p>点击照片放大检查。同一只宠物填相同数字，不同宠物填不同数字；多宠物或无法确认时留空。数字分组用于核对 API 身份判断，并可作为本轮人工确认的选片依据。</p>'+
+    '<p class="muted">本页详细预览即发送评分的图像：保留完整画面，最大边1536像素，按批次大小自适应压缩。</p>'+
+    '<div class="grid">'+active.ids.map(function(id){return '<article class="card">'+image(id,true)+'<div class="body"><div>'+esc(photos.get(id).sourceName)+'</div><label>宠物分组 <input type="number" min="1" max="99" data-group="'+id+'" value="'+esc((active.humanGroups||{})[id]||'')+'" placeholder="未知"></label></div></article>'}).join('')+'</div>'+
+    '<div class="notice"><label><input id="reviewed" type="checkbox"> 我已核对以上详细预览，确认这些照片适合本轮测试，不含约定排除的隐私或敏感内容。</label></div>'+
+    '<div class="bar"><button onclick="evaluateSample()">开始原照片评分与身份判断</button><button class="secondary" onclick="renderGallery()">返回调整样本</button></div>';
+}
+async function evaluateSample(){
+  if(!document.getElementById('reviewed').checked){alert('请先检查并确认样本。');return}
+  const groups={};document.querySelectorAll('[data-group]').forEach(function(el){groups[el.dataset.group]=el.value});
+  const result=await post('/evaluate',{ids:active.ids,reviewed:true,groups:groups},'正在调用 Qwen 评估原照片；必要时复核未知项。完成后只对初步入选照片抠图……');
+  if(result){active=result;renderResults()}
+}
+function total(photo){let score=0;for(const key of Object.keys(dimensions)){const value=photo.scores[key].value;if(value===null)return '待确认';score+=value*dimensions[key][1]/5}return score}
+function rememberCutout(el){cutoutDraft.set(el.dataset.slot+':'+el.dataset.cutout,el.value)}
+function rememberScore(el){scoreDraft.set(el.dataset.scoreId+':'+el.dataset.dimension,el.value)}
+function cutoutOptions(selection){
+  const key=selection.slot+':'+selection.photoID;
+  const value=cutoutDraft.has(key)?cutoutDraft.get(key):(active.cutoutReview||{})[selection.photoID]||'unknown';
+  return [['unknown','待确认'],['pass','通过'],['fail','失败，换片']].map(function(option){return '<option value="'+option[0]+'"'+(value===option[0]?' selected':'')+'>'+option[1]+'</option>'}).join('');
+}
+function scoreTable(photo){
+  return '<table><thead><tr><th>维度 / 权重</th><th>API</th><th>你的复核</th></tr></thead><tbody>'+
+    Object.keys(dimensions).map(function(k){const s=photo.scores[k];const human=(active.humanScores||{})[photo.photoID]||{};const key=photo.photoID+':'+k;const value=scoreDraft.has(key)?scoreDraft.get(key):human[k]||'';return '<tr><td>'+dimensions[k][0]+' / '+dimensions[k][1]+'<div class="muted small">'+esc(reasonNames[s.reason]||s.reason)+'</div></td><td>'+(s.value===null?'未知':s.value+'/5')+'</td><td><input type="number" min="1" max="5" value="'+esc(value)+'" data-score-id="'+photo.photoID+'" data-dimension="'+k+'" oninput="rememberScore(this)" aria-label="'+esc(dimensions[k][0])+'人工评分"></td></tr>'}).join('')+'</tbody></table>';
+}
+function processingPanel(){
+  if(!(INITIAL.features||{}).cutoutVerification)return '<div class="notice warning">自动抠图验收入口需要新版启动进程，请关闭旧测试终端并重新双击启动入口；已保存的评分和复核会恢复。</div>';
+  const p=active.processing;
+  let html='<h2>抠图自动验收与成片预览</h2><p class="muted">只加工当前入选照片。将原图与保留原画面坐标的抠图成对交给 Qwen，检查主体保留及背景去除；原图边缘完整仅参与偏好排序；失败后按原评分重新选片，只处理新入选照片。结果不改变上方人工复核与原始评分。</p>';
+  html+='<div class="bar"><button onclick="processArtwork()">'+(p?'重新验收并生成预览':'自动验收并生成预览')+'</button><span class="muted">有入选照片时按需调用 Qwen 验收；零照片直接输出背景和固定装饰。</span></div>';
+  if(!p)return html;
+  const states={running:'处理尚未结束，可重新启动验收',passed:p.mode==='backgroundOnly'?'已生成无用户照片的背景成品':'入选抠图验收通过，成品已生成',pending:'存在待确认项，尚未生成自动验收通过的成片',pendingEvidence:'候选证据不足，尚未生成成片',insufficientMaterial:'现有样本中没有可用的五张组合'};
+  html+='<div class="notice '+(p.state==='passed'?'':'warning')+'">'+esc(states[p.state]||'本轮处理待确认')+'。模板视觉参数已定稿，本轮照片与自动流程仍需验证。</div>';
+  if(p.state==='passed'&&p.artifact)html+='<img src="'+processingURL('artwork','current')+'" alt="自动验收后的蓝天绿地拼贴预览" style="width:min(100%,600px);height:auto;cursor:zoom-in" onclick="zoom(this.src)">';
+  const labels={correctSubject:'宠物主体保留',anatomyPreserved:'抠图未误删主体',backgroundRemoved:'背景去除',topComplete:'上边缘完整',bottomComplete:'下边缘完整',leftComplete:'左边缘完整',rightComplete:'右边缘完整',nativeExtraction:'本机抠图证据',verificationEvidence:'验收证据'};
+  html+='<div class="grid">'+(p.verdicts||[]).map(function(v){
+    const record=(p.cutouts||[]).find(function(c){return c.photoID===v.photoID&&c.filename});
+    return '<article class="card"><div class="body"><strong>'+esc(v.slot)+' · '+esc(photos.get(v.photoID).sourceName)+'</strong><p>'+esc({passed:'通过',failed:'失败',pending:'待确认'}[v.state]||'待确认')+'</p>'+((v.failed||[]).length?'<div>未满足：'+esc(v.failed.map(function(k){return labels[k]||k}).join('、'))+'</div>':'')+((v.unresolved||[]).length?'<div>待确认：'+esc(v.unresolved.map(function(k){return labels[k]||k}).join('、'))+'</div>':'')+'</div>'+(record?'<img class="photo" src="'+processingURL('processing-original',v.photoID)+'" alt="验收用原画面" onclick="zoom(this.src)"><img class="photo" src="'+processingURL('processing-mask',v.photoID)+'" alt="同一原画面坐标下的抠图" onclick="zoom(this.src)">':'')+'</article>';
+  }).join('')+'</div>';
+  html+='<details><summary>抠图验收调用记录</summary>'+(p.attempts||[]).map(function(a,i){return '<p>第 '+(i+1)+' 次检查</p>'+a.calls.map(function(c){return '<p>'+esc(c.model)+' · '+(c.elapsedMS/1000).toFixed(1)+' 秒 · '+(c.status==='completed'?'完成':'失败')+' · 输入 token '+esc(c.usage.prompt_tokens===undefined?'未知':c.usage.prompt_tokens)+' · 输出 token '+esc(c.usage.completion_tokens===undefined?'未知':c.usage.completion_tokens)+(c.errorCode?' · '+esc(c.errorCode):'')+'</p>'}).join('')}).join('')+'</details>';
+  return html;
+}
+async function processArtwork(){
+  const result=await post('/process-artwork',{},'正在检查入选抠图，必要时替换失败候选并生成模板预览；不重新评分原照片……');
+  if(result){active=result;renderResults()}
+}
+function modelFailureMessage(calls){
+  const codes=calls.map(function(c){return c.errorCode});
+  if(codes.some(function(c){return c==='qwen_timeout'||c==='qwen_total_timeout'}))return '模型请求等待超时；本轮没有取得完整评分。';
+  if(codes.includes('qwen_dns_failed'))return '模型服务域名解析失败；请检查本机网络。';
+  if(codes.includes('qwen_tls_failed'))return '模型服务的 HTTPS 连接失败；请检查网络或代理配置。';
+  if(codes.some(function(c){return c==='qwen_http_401'||c==='qwen_http_403'||c==='qwen_not_configured'}))return '模型服务返回凭证或访问权限错误；请核对 API key、地域与权限。';
+  if(codes.includes('qwen_http_404'))return '模型服务返回资源不存在；请核对地域、接口和模型访问范围。';
+  if(codes.includes('qwen_transport_failed'))return '旧版记录仅显示网络传输失败，无法据此判断是超时还是其他连接问题；重试后会记录更具体的诊断。';
+  return '模型调用未完成，完整结果尚未取得；请查看下方安全错误代码。';
+}
+async function retryEvaluation(){
+  const result=await post('/retry-evaluate',{},'正在重试本轮模型调用，保留已确认的照片和宠物分组；采用流式接收，完成后检查完整结果……');
+  if(result){cutoutDraft.clear();scoreDraft.clear();active=result;renderResults()}
+}
+async function reselect(){
+  const result=await post('/reselect',{},'正在沿用原照片评分和宠物分组按最新规则重新选片；仅对入选照片准备抠图，不调用评分模型……');
+  if(result){cutoutDraft.clear();scoreDraft.clear();active=result;renderResults()}
+}
+function renderResults(){
+  const response=active.response;
+  const state=active.plan.state;
+  const count=active.plan.selections.length;
+  const stateText={selected:count===0?'本轮使用无照片背景方案':('本轮入选 '+count+' 张，'+(active.cutoutsVerified?'抠图已确认通过':'抠图待复核')),pendingEvidence:'历史结果：证据待确认',insufficientMaterial:'历史结果：候选不足'};
+  let html='<h2>本轮选片结果</h2><div class="notice">'+stateText[state]+'。'+(Object.keys(active.humanGroups||{}).length?'本轮选片使用了你确认的宠物分组；API 身份判断单独保留供比较。':'本轮使用 API 的身份判断。')+'</div>';
+  const hasAnalysis=response.evaluations.length===0||response.cacheHit||response.calls.some(function(c){return c.status==='completed'});
+  if(active.plan.strategyVersion!==selectionVersion){
+    html+='<div class="notice warning">这是历史规则或猫专属证据。常见宠物规则需通过新版评估取得对应证据，不能将旧结果重标为新结果。</div>';
+    if(hasAnalysis)html+=(INITIAL.features||{}).reselect?'<div class="bar"><button onclick="reselect()">按最新规则重新选片（沿用评分）</button><span class="muted">不调用评分模型，旧轮次保留；重新分配后为入选照片准备抠图。</span></div>':'<div class="notice warning">更新选片入口需要重启测试终端；已确认的照片、分组和评分会恢复。</div>';
+  }else html+='<div class="notice">按姿态偏好、构图与边缘偏好、原片通用评分依次排序。同一只宠物是硬要求；不满足、未知或不适用的偏好不阻止入选。照片不足时依次隐去 photo4、photo3、photo2、photo1、photo5。</div>';
+  if(active.reselection)html+='<p class="muted">当前沿用已保存的模型分析，未重新判断俯拍，也未新增原片评分调用。优化后的俯拍判定在下一轮模型评估时生效。</p>';
+  if(response.calls.length&&response.calls.every(function(c){return c.status==='failed'})){
+    html+='<div class="notice warning">'+modelFailureMessage(response.calls)+' 未知结果不代表照片不合格。</div>';
+    html+=(INITIAL.features||{}).retryEvaluation?'<div class="bar"><button onclick="retryEvaluation()">重试本轮模型调用</button><span class="muted">沿用已确认的照片和宠物分组；旧失败记录保留。重试会再次发送照片并产生实际 API 用量。</span></div>':'<div class="notice warning">重试入口需要新版启动进程，请关闭旧测试终端并重新双击启动入口；已核对的照片和宠物分组会恢复。</div>';
+  }
+  if(active.cutoutsVerified&&count)html+='<div class="notice">本轮 '+count+' 张抠图已确认通过。</div>';
+  if(active.plan.hiddenSlots&&active.plan.hiddenSlots.length)html+='<p>本轮隐去槽位：'+active.plan.hiddenSlots.map(esc).join('、')+'。其余槽位保留原版式。</p>';
+  html+='<div class="bar"><button class="secondary" onclick="prepareNextRound()">同批样本开始下一轮校准</button><span class="muted">保留本轮结果与宠物分组，重新核对详细预览后再发送评估。</span></div>';
+  html+='<p>姿态偏好命中 '+(active.plan.posePreferredCount||0)+' 项；构图与边缘偏好命中 '+(active.plan.compositionPreferredCount||0)+' 项；通用评分已知项合计 '+active.plan.totalScore+'。按上述顺序逐级比较，未知评分不记为默认分。</p>';
+  if(state==='selected'&&count){
+    html+='<div class="grid">'+active.plan.selections.map(function(p){
+      const mask=active.cutouts.find(function(c){return c.photoID===p.photoID})||{};
+      return '<article class="card"><div class="body row"><strong>'+p.slot+'</strong><span class="tag">'+(p.score===null?'未知':p.score)+' 分'+(p.preferred?' · '+esc(preferenceText(p)):'')+'</span></div>'+image(p.photoID,true)+
+      (mask.filename?'<img class="photo cutout" src="'+cutoutURL(p.photoID)+'" alt="入选后的原生抠图" onclick="zoom(this.src)">':'<div class="notice warning">本次未取得可靠的单主体抠图，需要复核或换片。</div>')+
+      '<div class="body"><div>'+esc(photos.get(p.photoID).sourceName)+'</div><label>抠图复核 <select data-cutout="'+p.photoID+'" data-slot="'+p.slot+'" onchange="rememberCutout(this)">'+cutoutOptions(p)+'</select></label></div></article>'
+    }).join('')+'</div><div class="bar"><button onclick="saveCutoutFeedback()">保存抠图复核并替换失败候选</button><span class="muted">检查主体正确、抠图误删与背景去除；原图边缘仅作偏好。</span></div>';
+  }
+  if(state==='selected')html+=processingPanel();
+  const comparison=active.identityComparison;
+  html+='<details><summary>身份判断核对：已人工确认 '+comparison.confirmedPairs+' 对，一致 '+comparison.agree+'，不一致 '+comparison.disagree+'，API 未知 '+comparison.unknown+'</summary><div class="scroll"><table><tr><th>照片 A</th><th>照片 B</th><th>API 判断</th></tr>'+response.identity.map(function(p){return '<tr><td>'+esc(photos.get(p.leftID).sourceName)+'</td><td>'+esc(photos.get(p.rightID).sourceName)+'</td><td>'+({same:'同一只',different:'不同',unknown:'未知'}[p.relation])+'</td></tr>'}).join('')+'</table></div></details>';
+  html+='<h2>原照片评分与复核</h2><p class="muted">七项均基于未抠图照片。你可以填入不同意见；空白表示暂不复核，不会改变 API 原始评分。</p><div class="grid">'+response.evaluations.map(function(p){return '<article class="card">'+image(p.photoID,true)+'<div class="body"><div class="row"><strong>'+esc(photos.get(p.photoID).sourceName)+'</strong><span class="tag">'+total(p)+' 分</span></div>'+scoreTable(p)+'<details><summary>槽位事实</summary>'+Object.keys(p.facts).map(function(k){return '<div class="row small"><span>'+esc(factNames[k]||k)+'</span><span>'+((p.notApplicablePreferences||[]).includes(k)?'不适用':({present:'是',absent:'否',unknown:'未知'}[p.facts[k]]))+'</span></div>'}).join('')+'</details></div></article>'}).join('')+'</div><div class="bar"><button onclick="saveScoreFeedback()">保存我的评分复核</button></div>';
+  html+='<h2>各槽位候选排序</h2>';
+  ['photo1','photo2','photo3','photo4','photo5'].forEach(function(slot){
+    html+='<details><summary>'+slot+' 候选列表</summary><div class="scroll"><table><tr><th>照片</th><th>状态</th><th>命中的优先条件</th><th>通用分</th><th>未满足 / 待确认的必要条件</th></tr>'+active.plan.rankings.filter(function(p){return p.slot===slot}).map(function(p){return '<tr><td>'+esc(photos.get(p.photoID).sourceName)+'</td><td>'+({eligible:'合格',pending:'待确认',ineligible:'不合格'}[p.eligibility])+'</td><td>'+esc(preferenceText(p))+'</td><td>'+(p.score==null?'未知':p.score)+'</td><td>'+esc(p.failedRequirements.concat(p.unresolvedRequirements).map(function(k){return factNames[k]||k}).join('、'))+'</td></tr>'}).join('')+'</table></div></details>'
+  });
+  html+='<details><summary>本轮调用记录'+(response.cacheHit?' · 使用缓存':'')+'</summary>'+response.calls.map(function(c){return '<p>'+esc(c.model)+' · '+(c.elapsedMS/1000).toFixed(1)+' 秒 · '+(c.status==='completed'?'完成':'失败')+' · 输入 token '+(c.usage.prompt_tokens===undefined?'未知':c.usage.prompt_tokens)+' · 输出 token '+(c.usage.completion_tokens===undefined?'未知':c.usage.completion_tokens)+(c.errorCode?' · '+esc(c.errorCode):'')+(c.transport?' · '+esc(c.transport.mode)+' / '+esc(c.transport.phase)+' · 已接收 '+c.transport.receivedBytes+' 字节 · 内容 '+c.transport.contentBytes+' 字节':'')+'</p>'}).join('')+'<p class="muted">费用尚未折算；真实识别效果以本轮人工复核为准。</p></details>';
+  app.innerHTML=html;
+}
+async function saveScoreFeedback(){
+  const values={};let invalid=false;
+  document.querySelectorAll('[data-score-id]').forEach(function(el){if(el.value){const v=Number(el.value);if(!Number.isInteger(v)||v<1||v>5)invalid=true;values[el.dataset.scoreId]=values[el.dataset.scoreId]||{};values[el.dataset.scoreId][el.dataset.dimension]=v}});
+  if(invalid){alert('请填入1到5的整数。');return}
+  const result=await post('/score-feedback',{values:values},'保存你的评分复核……');if(result){active=result;renderResults();alert('已保存在本轮本地测试目录。')}
+}
+async function saveCutoutFeedback(){
+  const values={};document.querySelectorAll('[data-cutout]').forEach(function(el){values[el.dataset.cutout]=el.value});
+  if(Object.values(values).length&&Object.values(values).every(function(value){return value==='unknown'})){alert('当前五张仍为待确认，请先逐项选择通过或失败；部分无法确认的照片可以保留待确认。');return}
+  const result=await post('/cutout-feedback',{values:values},'保存抠图检查；如有失败，只替换候选并处理新入选照片……');if(result){cutoutDraft.clear();active=result;renderResults();if(active.cutoutsVerified)alert('当前五张抠图已确认通过。');else alert('复核已保存；请检查当前组合中仍为待确认的槽位。')}
+}
+async function prepareNextRound(){
+  const result=await post('/new-round',{},'准备同批样本的下一轮校准；保留本轮结果，不调用模型……');
+  if(result){cutoutDraft.clear();scoreDraft.clear();active=result;renderSampleReview()}
+}
+if(active.response)renderResults();else if(active.ids)renderSampleReview();else renderGallery();
+</script>
+</html>
