@@ -10,7 +10,7 @@ constexpr uint32_t kButtonDebounceMs = 30;
 constexpr uint32_t kPowerOnHoldMs = 2000;
 constexpr uint32_t kPowerOffHoldMs = 3000;
 
-enum class DeviceButtonEvent : uint8_t { None, PowerOn, PowerOff, Pair };
+enum class DeviceButtonEvent : uint8_t { None, PowerOn, PowerOff, Confirm };
 
 struct ButtonClick {
 	uint32_t pressedAt;
@@ -25,6 +25,6 @@ bool bootButtonPressed();
 void setDeviceButtonsPoweredOn(bool poweredOn);
 DeviceButtonEvent takeDeviceButtonEvent(ButtonClick* click = nullptr);
 bool devicePowerOffPending();
-bool devicePairingPending();
+bool deviceConfirmationPending();
 
 }  // namespace photowall

@@ -93,10 +93,8 @@ void BleProvisioningService::begin(
   advertisingRestartAt_ = 0;
   activeService = this;
   pinMode(kProofButton, INPUT_PULLUP);
-  WiFi.persistent(false);
-  WiFi.setAutoReconnect(false);
-  WiFi.disconnect(false, false);
-  WiFi.scanDelete();
+  // Advertising/GATT reconnection must not interrupt the current Wi-Fi link.
+  // Network changes happen only after a physically authorized provision command.
 
   String advertisedName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
   advertisedName.toUpperCase();
@@ -123,6 +121,8 @@ void BleProvisioningService::begin(
   info["deviceName"] = advertisedName;
   info["firmwareVersion"] = firmwareVersion_;
   info["requiresPhysicalConfirmation"] = true;
+  info["physicalConfirmationMode"] = "shortPress";
+  info["supportsLinkReconnect"] = true;
   infoCharacteristic_->setValue(jsonString(info));
 
   BLECharacteristic* commandCharacteristic = service->createCharacteristic(
@@ -146,7 +146,7 @@ void BleProvisioningService::begin(
   advertising->setMaxPreferred(0x12);
   advertising->start();
   active_ = true;
-  Serial.printf("BLE provisioning ready: %s\n", advertisedName.c_str());
+  Serial.printf("BLE advertising ready: %s\n", advertisedName.c_str());
 }
 
 void BleProvisioningService::loop() {
@@ -232,7 +232,9 @@ void BleProvisioningService::handleClientConnected() {
   clientAuthorized_ = false;
   portEXIT_CRITICAL(&commandMux_);
   advertisingRestartAt_ = 0;
-  setStatus("awaiting_confirmation", "请短按外接按钮，或按住设备 BOOT 键确认配网");
+  // A known phone may reconnect for a link only. Do not ask it to reconfigure
+  // Wi-Fi; authorization is still required before any privileged command.
+  setStatus("linked", "蓝牙已连接");
 }
 
 void BleProvisioningService::handleClientDisconnected() {
@@ -321,11 +323,11 @@ void BleProvisioningService::processCommand(const char* command, uint32_t sessio
     const bool bootHeld = digitalRead(kProofButton) == LOW;
     portENTER_CRITICAL(&commandMux_);
     const bool confirmed = clientConnected_ && session == session_ &&
-        (externalProof_.consume(millis()) || bootHeld);
+        (clientAuthorized_ || externalProof_.consume(millis()) || bootHeld);
     if (confirmed) clientAuthorized_ = true;
     portEXIT_CRITICAL(&commandMux_);
     if (!confirmed) {
-      setStatus("awaiting_confirmation", "请短按外接按钮，或按住设备 BOOT 键确认配网");
+      setStatus("awaiting_confirmation", "请短按设备侧键确认连接");
       return;
     }
     JsonDocument event;
@@ -382,7 +384,7 @@ void BleProvisioningService::processCommand(const char* command, uint32_t sessio
   if (operation == "cancel") {
     scanRequested_ = false;
     WiFi.scanDelete();
-    WiFi.disconnect(false, false);
+    if (wifiConnecting_) WiFi.disconnect(false, false);
     wifiConnecting_ = false;
     cloudBootstrapPending_ = false;
     pendingSsid_ = "";
@@ -445,8 +447,11 @@ void BleProvisioningService::startWifiConnection(
   scanRequested_ = false;
   cloudBootstrapPending_ = false;
   WiFi.scanDelete();
+  WiFi.persistent(false);
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect(false, false);
   delay(100);
+  if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
   WiFi.begin(pendingSsid_.c_str(), pendingPassword_.c_str());
   wifiConnectStartedAt_ = millis();
   wifiConnecting_ = true;

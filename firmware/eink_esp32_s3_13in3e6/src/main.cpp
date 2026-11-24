@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.1";
+constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.2";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -253,11 +253,17 @@ bool hasWifiConfiguration() {
   return !forceProvisioning && !wifiSsid.isEmpty() && !apiBase.isEmpty();
 }
 
+void handleButtonAtIdle();
+
 bool waitForNetworkRetry(uint32_t duration) {
   const uint32_t started = millis();
   while (millis() - started < duration) {
     photowall::pollButtonsIfNeeded();
-    if (photowall::devicePowerOffPending() || photowall::devicePairingPending()) return false;
+    if (photowall::devicePowerOffPending()) return false;
+    // BLE and physical confirmation remain responsive during Wi-Fi retry.
+    handleButtonAtIdle();
+    photowall::bleProvisioning.loop();
+    if (photowall::bleProvisioning.busyForControls()) return false;
     delay(5);
   }
   return true;
@@ -293,9 +299,8 @@ void startDeviceServer(bool provisioning) {
   String apName;
   String apPassword;
   if (provisioning) {
-    Serial.println("Creating setup token");
-    setupToken = createSetupToken();
-    Serial.println("Setup token ready");
+    // The already-advertising GATT service and AP must share one setup token.
+    if (setupToken.isEmpty()) setupToken = createSetupToken();
     apName = "PhotoWall-" + deviceId.substring(deviceId.length() - 4);
     apPassword = "PhotoWall" + pairingCode.substring(2);
     Serial.printf("Starting provisioning AP: %s\n", apName.c_str());
@@ -555,11 +560,9 @@ void handleButtonAtIdle() {
   photowall::ButtonClick click{};
   const auto event = photowall::takeDeviceButtonEvent(&click);
   if (event == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
-  if (event != photowall::DeviceButtonEvent::Pair) return;
-  if (!provisioningMode || !photowall::bleProvisioning.active()) {
-    Serial.println("GPIO40: entering setup for one boot; stored credentials and binding preserved");
-    restartWithIntent(photowall::StartIntent::OpenSetup);
-  }
+  if (event != photowall::DeviceButtonEvent::Confirm) return;
+  // A short press only confirms this live connection. It never opens setup,
+  // restarts the device, or changes saved Wi-Fi/cloud credentials.
   photowall::bleProvisioning.confirmExternalClick(click.pressedAt, click.releasedAt);
 }
 
@@ -861,11 +864,18 @@ void setup() {
                 deviceId.c_str(), pairingCode.c_str());
   const auto event = photowall::takeDeviceButtonEvent();
   if (event == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
-    const bool online = intent != photowall::StartIntent::OpenSetup && event != photowall::DeviceButtonEvent::Pair &&
+  // Advertise on every boot, including an already configured, online device.
+  // Start before the potentially slow Wi-Fi retry; no button is needed.
+  if (setupToken.isEmpty()) setupToken = createSetupToken();
+  photowall::bleProvisioning.begin(deviceId, kFirmwareVersion, setupToken, !deviceToken.isEmpty());
+  const bool online = intent != photowall::StartIntent::OpenSetup &&
       hasWifiConfiguration() && connectWifi();
-    const auto networkEvent = photowall::takeDeviceButtonEvent();
-    if (networkEvent == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
-    if (!online || networkEvent == photowall::DeviceButtonEvent::Pair) {
+  photowall::ButtonClick click{};
+  const auto networkEvent = photowall::takeDeviceButtonEvent(&click);
+  if (networkEvent == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
+  if (networkEvent == photowall::DeviceButtonEvent::Confirm)
+    photowall::bleProvisioning.confirmExternalClick(click.pressedAt, click.releasedAt);
+  if (!online) {
     startDeviceServer(true);
     return;
   }
@@ -882,7 +892,7 @@ void loop() {
     delay(100);
     restartAfterTransaction();
   }
-  if (provisioningMode && photowall::bleProvisioning.cloudBootstrapPending()) {
+  if (photowall::bleProvisioning.cloudBootstrapPending()) {
     loadConfiguration();
     if (bootstrapDevice()) {
       finalizeProvisioningConfiguration();
@@ -904,7 +914,8 @@ void loop() {
     return;
   }
 
-  if (photowall::devicePowerOffPending() || photowall::devicePairingPending()) {
+  if (photowall::bleProvisioning.busyForControls() ||
+      photowall::devicePowerOffPending() || photowall::deviceConfirmationPending()) {
     delay(2);
     return;
   }
@@ -925,7 +936,7 @@ void loop() {
     lastPollAt = millis();
     pollForFrame();
   }
-  if (claimCue != photowall::ClaimCue::Idle && !photowall::devicePowerOffPending() && !photowall::devicePairingPending() &&
+  if (claimCue != photowall::ClaimCue::Idle && !photowall::devicePowerOffPending() && !photowall::deviceConfirmationPending() &&
       millis() - lastCueCheckAt >= kDefaultPollIntervalMs) bootstrapDevice();
   delay(20);
 }

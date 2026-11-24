@@ -1,10 +1,10 @@
 # PhotoWall · Waveshare ESP32-S3 13.3E6
 
-当前固件为 `0.3.9-transfer.gpio40.1`。原版提交、实板验收结果、待测项目和回滚说明见 [GPIO40 候选交接](GPIO40-CANDIDATE.md)。
+当前开发版本为 `0.3.9-transfer.gpio40.2`，开机自动广播、短按仅确认；规则和验收见 [开机广播与自动回连](GPIO40-AUTO-BLE.md)。上一版实板记录见 [GPIO40 候选交接](GPIO40-CANDIDATE.md)。
 
 自定义固件将官方被动 Wi-Fi Loader 改成支持局域网直传、云端轮询兜底的独立设备：
 
-1. 没有配置时广播 `PhotoWall-XXXX` BLE 配网服务，同时创建同名临时热点作为恢复入口。
+1. 每次开机自动广播 `PhotoWall-XXXX` BLE 服务；没有网络配置或联网失败时，另创建同名临时热点作为恢复入口。
 2. App 通过 BLE 让设备扫描 Wi-Fi，并发送家庭 Wi-Fi 和固定云端 API 地址。
 3. 凭据保存至 ESP32 Preferences/NVS，后续开机自动联网。
 4. 联网后持续提供 `http://photowall-xxxx.local` 本地服务，并通过 `_photowall._tcp` 广播。

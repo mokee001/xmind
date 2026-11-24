@@ -35,7 +35,7 @@ unsigned sleeps, powerCycles, framePolls, claimsChecked, confirms, bootstrapComm
 std::array<int, 49> levels;
 std::vector<std::pair<uint32_t, int>> edges;
 std::vector<DeviceSound> sounds;
-String localFrameState, deviceId, pairingCode, deviceToken, wifiSsid, wifiPassword, apiBase, displayedRevision;
+String setupToken, localFrameState, deviceId, pairingCode, deviceToken, wifiSsid, wifiPassword, apiBase, displayedRevision;
 ClaimCue claimCue;
 constexpr int WIFI_OFF = 0, WIFI_STA = 1, WL_CONNECTED = 3, ESP_RST_SW = 3, ESP_OK = 0;
 int esp_reset_reason() { return softwareReset ? ESP_RST_SW : 1; }
@@ -82,6 +82,7 @@ struct {
   bool readyToRestart() const { return due; }
   bool cloudBootstrapPending() const { return pending; }
   bool active() const { return started; }
+  void begin(const String&, const char*, const String&, bool) { started = true; }
   void loop() {}
   void stop() { started = false; }
   void completeCloudBootstrap(bool, const char*) { pending = false; }
@@ -128,11 +129,13 @@ struct {
 } WiFi;
 void releaseLocalFrame() {}
 void reportStatus(const String&, const String&, float) {}
+String createSetupToken() { return "fixture-setup"; }
+void handleButtonAtIdle();
 void deriveIdentity() {}
 void loadConfiguration() {}
 void applyDemoWifiConfiguration() {}
 void startDeviceServer(bool provisioning) {
-  serverStarted = true; provisioningMode = provisioning; photowall::bleProvisioning.started = provisioning;
+  serverStarted = true; provisioningMode = provisioning; assert(photowall::bleProvisioning.started);
 }
 bool bootstrapDevice() { ++claimsChecked; lastCueCheckAt = millis(); return true; }
 void finalizeProvisioningConfiguration() { ++bootstrapCommits; }
@@ -165,7 +168,7 @@ int main() {
   reset(); retainedIntent = static_cast<uint32_t>(StartIntent::OpenSetup); setup();
   assert(serverStarted && !provisioningMode && claimsChecked == 1 && sounds == std::vector<DeviceSound>{DeviceSound::PowerOn});
   const auto saved = prefs.keys;
-  pulse(180); expectRestart(StartIntent::OpenSetup, loop); assert(prefs.keys == saved);
+  pulse(180); loop(); assert(!provisioningMode && photowall::bleProvisioning.started && confirms == 1 && prefs.keys == saved);
   reset(); softwareReset = true; retainedIntent = static_cast<uint32_t>(StartIntent::OpenSetup); setup();
   assert(provisioningMode && sounds.empty() && confirms == 0 && claimsChecked == 0);
   pulse(180); loop(); assert(confirms == 1 && prefs.keys == saved);
@@ -176,7 +179,7 @@ int main() {
   reset(); wifiSsid = ""; setup(); assert(provisioningMode && !claimsChecked);
   reset(); taskAvailable = false; setup(); assert(serverStarted && !provisioningMode);
   reset(); wifiAvailable = false; edges = {{7000, LOW}, {7200, HIGH}}; setup();
-  assert(provisioningMode && clockMs < 7300 && confirms == 0 && prefs.keys == saved);
+  assert(provisioningMode && clockMs >= 36000 && confirms == 1 && prefs.keys == saved && photowall::bleProvisioning.started);
   reset(); wifiAvailable = false; edges = {{7000, LOW}, {10100, HIGH}}; expectStandby(setup);
   assert(clockMs < 10200 && !serverStarted && prefs.keys == saved);
   reset(); levels[0] = LOW; setup(); assert(prefs.keys.size() == 1 && prefs.keys.count("force_setup"));
@@ -208,5 +211,5 @@ int main() {
     assert(clockMs >= 3830 && clockMs < 3890 && !serverStarted && sounds.empty());
     assert(sleeps == (fallback ? 1u : 2u) && wakeDisables >= 1);
   }
-  std::puts("PASS: cold/soft boot, original BOOT reset, non-destructive setup, transfer/display deferral, committed reprovision, claim cadence, release/tap/hold wake and sleep fallback");
+  std::puts("PASS: cold/soft boot, original BOOT reset, automatic boot advertising, confirmation-only short press, transfer/display deferral, committed reprovision, claim cadence, release/tap/hold wake and sleep fallback");
 }

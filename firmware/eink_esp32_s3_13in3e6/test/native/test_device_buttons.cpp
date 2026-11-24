@@ -157,7 +157,7 @@ int main() {
   sample(10230, external, LOW);
   sample(10280, external, HIGH);
   sample(10310, external, HIGH);
-  assert(photowall::takeDeviceButtonEvent() == Event::Pair);
+  assert(photowall::takeDeviceButtonEvent() == Event::Confirm);
   assert(photowall::takeDeviceButtonEvent() == Event::None);
   sample(11000, external, LOW);
   sample(11030, external, LOW);
@@ -177,7 +177,7 @@ int main() {
   sample(130, external, LOW);
   sample(3129, external, HIGH);
   sample(3159, external, HIGH);
-  assert(photowall::takeDeviceButtonEvent() == Event::Pair);
+  assert(photowall::takeDeviceButtonEvent() == Event::Confirm);
   reset(0, false, true);
   sample(100, external, LOW);
   sample(130, external, LOW);
@@ -192,13 +192,13 @@ int main() {
   sample(130, external, LOW);
   sample(200, external, HIGH);
   sample(230, external, HIGH);
-  assert(photowall::devicePairingPending());
-  assert(photowall::devicePairingPending());  // Observing a pending click does not consume it.
+  assert(photowall::deviceConfirmationPending());
+  assert(photowall::deviceConfirmationPending());  // Observing a pending click does not consume it.
   sample(300, external, LOW);
   sample(330, external, LOW);
   sample(3330, external, LOW);
   assert(photowall::takeDeviceButtonEvent() == Event::PowerOff);
-  assert(!photowall::devicePairingPending());
+  assert(!photowall::deviceConfirmationPending());
   assert(photowall::takeDeviceButtonEvent() == Event::None);
 
   // Startup accepts the power-on gesture before audio / BOOT recovery checks.
@@ -209,16 +209,16 @@ int main() {
   photowall::setDeviceButtonsPoweredOn(true);
   sample(2500, external, HIGH);
   sample(2530, external, HIGH);
-  assert(!photowall::devicePairingPending());
+  assert(!photowall::deviceConfirmationPending());
   sample(3000, external, LOW);
   sample(3030, external, LOW);
   sample(3135, external, HIGH);
   sample(3165, external, HIGH);
-  assert(photowall::devicePairingPending());
+  assert(photowall::deviceConfirmationPending());
   sample(10000, external, HIGH);
-  assert(photowall::devicePairingPending());
-  assert(photowall::takeDeviceButtonEvent() == Event::Pair);
-  assert(!photowall::devicePairingPending());
+  assert(photowall::deviceConfirmationPending());
+  assert(photowall::takeDeviceButtonEvent() == Event::Confirm);
+  assert(!photowall::deviceConfirmationPending());
 
   reset(0, false, true);
   sample(100, boot, LOW);

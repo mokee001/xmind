@@ -24,7 +24,8 @@ bool bootHeld = false;
 uint32_t millis() { return clockMs; }
 int digitalRead(uint8_t pin) { assert(pin == 0); return bootHeld ? LOW : HIGH; }
 struct BLEDevice { static void startAdvertising() {} };
-struct { void scanDelete() {} void disconnect(bool, bool) {} } WiFi;
+unsigned disconnects = 0;
+struct { void scanDelete() {} void disconnect(bool, bool) { ++disconnects; } } WiFi;
 class BLECharacteristic {
  public:
   std::vector<uint8_t> bytes;
@@ -61,7 +62,7 @@ int main() {
   constexpr auto authorize = "{\"op\":\"authorize\"}";
   constexpr auto scan = "{\"op\":\"scan\",\"setupToken\":\"fixture-proof\"}";
   service.confirmExternalClick(50, 80);
-  service.handleClientConnected(); send(authorize);
+  service.handleClientConnected(); assert(latestStatus == "linked"); send(authorize);
   assert(latestStatus == "awaiting_confirmation" && authorization.empty());
   clockMs = 180; service.confirmExternalClick(90, 140); send(authorize);
   assert(latestStatus == "awaiting_confirmation" && authorization.empty());
@@ -70,6 +71,9 @@ int main() {
   assert(!deserializeJson(event, authorization.c_str()));
   assert(event["type"] == "authorization" && event["deviceId"] == "fixture-device" && event["setupToken"] == "fixture-proof");
   send("{\"op\":\"scan\"}"); assert(!scans && latestStatus == "error");
+  send(authorize); assert(latestStatus == "idle" && !authorization.empty()); // Retry is idempotent.
+  send("{\"op\":\"cancel\",\"setupToken\":\"fixture-proof\"}");
+  assert(disconnects == 0); // Cancelling a link/scan must retain existing Wi-Fi.
   send(scan); assert(scans == 1);
   service.handleClientDisconnected(); ++clockMs; service.handleClientConnected(); send(scan);
   assert(scans == 1 && latestStatus == "error");

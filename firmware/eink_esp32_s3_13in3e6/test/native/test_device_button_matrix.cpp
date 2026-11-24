@@ -69,7 +69,7 @@ void release() {
 void expectPulse(bool poweredOn, uint32_t held) {
   const uint32_t threshold = poweredOn ? photowall::kPowerOffHoldMs : photowall::kPowerOnHoldMs;
   if (held >= threshold) expect({poweredOn ? Event::PowerOff : Event::PowerOn}, "pulse threshold");
-  else if (poweredOn) expect({Event::Pair}, "running short press");
+  else if (poweredOn) expect({Event::Confirm}, "running short press");
   else expect({}, "standby short press");
 }
 
@@ -114,7 +114,7 @@ int main() {
       advance(9);
       drive(kExternal, HIGH);
       advance(30);
-      if (poweredOn) expect({Event::Pair}, "pre-threshold release rebound");
+      if (poweredOn) expect({Event::Confirm}, "pre-threshold release rebound");
       else expect({}, "standby pre-threshold release rebound");
 
       // A sub-debounce HIGH glitch followed by stable LOW is still one hold.
@@ -150,7 +150,7 @@ int main() {
     press();
     advance(135);
     release();
-    expect({Event::Pair}, "new click after stable power-on release");
+    expect({Event::Confirm}, "new click after stable power-on release");
 
     // Repeated clicks before the consumer runs coalesce, but a pending shutdown wins.
     reset(true, origin);
@@ -164,7 +164,7 @@ int main() {
       clockMs += 30;
       photowall::pollDeviceButtons();
     }
-    assert(!photowall::devicePairingPending());
+    assert(!photowall::deviceConfirmationPending());
     sample();
     expect({}, "BOOT remains dedicated to original confirmation and factory recovery");
 
@@ -179,7 +179,7 @@ int main() {
       photowall::pollDeviceButtons();
     }
     photowall::ButtonClick click{};
-    assert(photowall::takeDeviceButtonEvent(&click) == Event::Pair);
+    assert(photowall::takeDeviceButtonEvent(&click) == Event::Confirm);
     assert(click.pressedAt == clockMs - 60 && click.releasedAt == clockMs - 30);
     sample();
     expect({}, "latest external click consumed once, with physical edge times");
@@ -198,7 +198,7 @@ int main() {
     clockMs += 30;
     sample();
     expect({Event::PowerOff}, "same-poll BOOT/external shutdown priority");
-    assert(!photowall::devicePairingPending());
+    assert(!photowall::deviceConfirmationPending());
   }
 
   // Reproducible clean-input property sweep; oracle is only the public thresholds.

@@ -141,7 +141,7 @@ void pollDeviceButtons() {
               queueLongPress(button);
             } else if (button.pin == kExternalButtonPin && devicePoweredOn && heldMs < kPowerOffHoldMs) {
               pendingClick = {button.downEdge, button.releasedAt};
-              pendingEvents |= eventBit(DeviceButtonEvent::Pair);
+              pendingEvents |= eventBit(DeviceButtonEvent::Confirm);
             }
           }
           button.ignoreUntilReleased = false;
@@ -202,10 +202,10 @@ void setDeviceButtonsPoweredOn(bool poweredOn) {
 DeviceButtonEvent takeDeviceButtonEvent(ButtonClick* click) {
   const ButtonLock lock;
   constexpr DeviceButtonEvent priority[] = {
-      DeviceButtonEvent::PowerOff, DeviceButtonEvent::PowerOn, DeviceButtonEvent::Pair};
+      DeviceButtonEvent::PowerOff, DeviceButtonEvent::PowerOn, DeviceButtonEvent::Confirm};
   for (const auto event : priority) {
     if ((pendingEvents & eventBit(event)) == 0) continue;
-    if (click && event == DeviceButtonEvent::Pair) *click = pendingClick;
+    if (click && event == DeviceButtonEvent::Confirm) *click = pendingClick;
     if (event == DeviceButtonEvent::PowerOff) pendingEvents = 0;
     else pendingEvents &= static_cast<uint8_t>(~eventBit(event));
     return event;
@@ -218,9 +218,9 @@ bool devicePowerOffPending() {
   return (pendingEvents & eventBit(DeviceButtonEvent::PowerOff)) != 0;
 }
 
-bool devicePairingPending() {
+bool deviceConfirmationPending() {
   const ButtonLock lock;
-  return (pendingEvents & eventBit(DeviceButtonEvent::Pair)) != 0;
+  return (pendingEvents & eventBit(DeviceButtonEvent::Confirm)) != 0;
 }
 
 }  // namespace photowall
