@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "physical_confirmation.h"
 
 class BLECharacteristic;
 
@@ -13,6 +14,9 @@ class BleProvisioningService {
   void loop();
   void stop();
   bool active() const;
+  void confirmExternalClick(uint32_t pressedAt, uint32_t releasedAt);
+  bool busyForControls() const;
+  bool readyToRestart() const;
   bool cloudBootstrapPending() const;
   void completeCloudBootstrap(bool success, const String& message = "");
 
@@ -23,7 +27,7 @@ class BleProvisioningService {
  private:
   static constexpr size_t kCommandBufferBytes = 768;
 
-  void processCommand(const char* command);
+  void processCommand(const char* command, uint32_t session);
   void scanNetworks();
   void startWifiConnection(
       const String& ssid, const String& password, const String& apiBase);
@@ -52,6 +56,9 @@ class BleProvisioningService {
   bool active_ = false;
   bool clientConnected_ = false;
   bool clientAuthorized_ = false;
+  uint32_t session_ = 0;
+  uint32_t connectedAt_ = 0;
+  PhysicalConfirmationWindow externalProof_;
   bool scanRequested_ = false;
   bool wifiConnecting_ = false;
   bool cloudBootstrapPending_ = false;

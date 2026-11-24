@@ -3,23 +3,37 @@
 // ESP32-S3-ePaper-13.3E6 Arduino example, licensed under Apache-2.0.
 
 #include "panel_13in3e6.h"
+#include <driver/gpio.h>
 
 namespace photowall {
 
 void Panel13in3E6::begin() {
-  pinMode(kBusy, INPUT);
+  digitalWrite(kPower, LOW);
+  digitalWrite(kReset, LOW);
+  pinMode(kPower, OUTPUT);
   pinMode(kReset, OUTPUT);
+  gpio_hold_dis(static_cast<gpio_num_t>(kPower));
+  gpio_hold_dis(static_cast<gpio_num_t>(kReset));
+  pinMode(kBusy, INPUT);
   pinMode(kDc, OUTPUT);
   pinMode(kSck, OUTPUT);
   pinMode(kMosi, OUTPUT);
   pinMode(kCsMaster, OUTPUT);
   pinMode(kCsSlave, OUTPUT);
-  pinMode(kPower, OUTPUT);
   digitalWrite(kCsMaster, HIGH);
   digitalWrite(kCsSlave, HIGH);
   digitalWrite(kReset, LOW);
   digitalWrite(kPower, HIGH);
   digitalWrite(kSck, LOW);
+}
+
+void Panel13in3E6::powerOff() {
+  digitalWrite(kPower, LOW);
+  digitalWrite(kReset, LOW);
+  pinMode(kPower, OUTPUT);
+  pinMode(kReset, OUTPUT);
+  gpio_hold_en(static_cast<gpio_num_t>(kPower));
+  gpio_hold_en(static_cast<gpio_num_t>(kReset));
 }
 
 void Panel13in3E6::selectAll(bool selected) {

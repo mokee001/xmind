@@ -13,6 +13,7 @@ constexpr size_t kPackedFrameBytes = kPanelWidth * kPanelHeight / 2;
 class Panel13in3E6 {
  public:
   void begin();
+  void powerOff();
   bool drawPackedFrame(const uint8_t* payload, size_t length);
 
  private:

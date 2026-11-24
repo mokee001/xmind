@@ -15,6 +15,10 @@
 
 #include "panel_13in3e6.h"
 #include "ble_provisioning.h"
+#include "device_audio.h"
+#include "device_buttons.h"
+#include "device_lifecycle.h"
+#include "device_power.h"
 
 #if __has_include("demo_wifi_config.h")
 #include "demo_wifi_config.h"
@@ -23,7 +27,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.9-transfer";
+constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.1";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -51,6 +55,10 @@ bool panelInitialized = false;
 bool restartRequested = false;
 bool provisioningMode = false;
 bool forceProvisioning = false;
+bool serverStarted = false;
+RTC_NOINIT_ATTR uint32_t retainedIntent;
+photowall::ClaimCue claimCue = photowall::ClaimCue::Idle;
+uint32_t lastCueCheckAt = 0;
 uint8_t* localFrame = nullptr;
 size_t localFrameBytes = 0;
 String localFrameState = "idle";
@@ -202,6 +210,7 @@ void loadConfiguration() {
   displayedRevision = prefs.getString("revision", "");
   setupToken = prefs.getString("setup", "");
   forceProvisioning = prefs.getBool("force_setup", false);
+  claimCue = static_cast<photowall::ClaimCue>(prefs.getUChar(photowall::kClaimCueKey, 0));
   prefs.end();
 }
 
@@ -244,6 +253,16 @@ bool hasWifiConfiguration() {
   return !forceProvisioning && !wifiSsid.isEmpty() && !apiBase.isEmpty();
 }
 
+bool waitForNetworkRetry(uint32_t duration) {
+  const uint32_t started = millis();
+  while (millis() - started < duration) {
+    photowall::pollButtonsIfNeeded();
+    if (photowall::devicePowerOffPending() || photowall::devicePairingPending()) return false;
+    delay(5);
+  }
+  return true;
+}
+
 bool connectWifi() {
   if (wifiSsid.isEmpty()) return false;
 
@@ -254,7 +273,7 @@ bool connectWifi() {
   Serial.printf("Connecting to Wi-Fi %s", wifiSsid.c_str());
   const uint32_t started = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - started < kWifiConnectTimeoutMs) {
-    delay(400);
+    if (!waitForNetworkRetry(400)) return false;
     Serial.print('.');
   }
   Serial.println();
@@ -436,6 +455,7 @@ void startDeviceServer(bool provisioning) {
     prefs.putString("api", requestedApi);
     prefs.putString("setup", setupToken);
     prefs.remove("force_setup");
+    prefs.putUChar(photowall::kClaimCueKey, static_cast<uint8_t>(photowall::ClaimCue::Submitted));
     if (deviceToken.isEmpty()) prefs.remove("token");
     prefs.remove("revision");
     prefs.end();
@@ -473,6 +493,7 @@ void startDeviceServer(bool provisioning) {
       "<p>After connecting, return to the PhotoWall app to finish setup.</p></html>");
   });
   provisionServer.begin();
+  serverStarted = true;
   if (provisioning) {
     Serial.printf("Provisioning AP: %s\nPassword: %s\nPairing code: %s\n", apName.c_str(),
                   apPassword.c_str(), pairingCode.c_str());
@@ -485,6 +506,62 @@ HTTPClient cloudHttp;
 WiFiClient cloudPlain;
 WiFiClientSecure cloudSecure;
 String cloudOrigin;
+
+[[noreturn]] void restartWithIntent(photowall::StartIntent intent) {
+  retainedIntent = static_cast<uint32_t>(intent);
+  ESP.restart();
+  for (;;) delay(1000);
+}
+
+[[noreturn]] void enterButtonStandby() {
+  Serial.println("Power off requested: GPIO40 held for 3 seconds");
+  photowall::setDeviceButtonsPoweredOn(false);
+  photowall::playDeviceSound(photowall::DeviceSound::PowerOff);
+  photowall::stopDeviceAudio();
+  cloudHttp.setReuse(false);
+  cloudHttp.end();
+  cloudPlain.stop();
+  cloudSecure.stop();
+  if (serverStarted) {
+    provisionServer.stop();
+    if (provisioningMode) dnsServer.stop();
+    else MDNS.end();
+  }
+  photowall::bleProvisioning.stop();
+  if (WiFi.getMode() != WIFI_OFF) {
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+  }
+  releaseLocalFrame();
+  panel.powerOff();
+  photowall::waitForStandbyWake();
+  restartWithIntent(photowall::StartIntent::ButtonWake);
+}
+
+bool localFrameBusy() {
+  return localFrameState == "receiving" || localFrameState == "received" ||
+         localFrameState == "queued" || localFrameState == "refreshing";
+}
+
+[[noreturn]] void restartAfterTransaction() {
+  if (!localFrameBusy() && photowall::devicePowerOffPending()) enterButtonStandby();
+  restartWithIntent(photowall::StartIntent::Normal);
+}
+
+void handleButtonAtIdle() {
+  photowall::pollButtonsIfNeeded();
+  if (localFrameBusy() || restartRequested || photowall::bleProvisioning.busyForControls()) return;
+  photowall::ButtonClick click{};
+  const auto event = photowall::takeDeviceButtonEvent(&click);
+  if (event == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
+  if (event != photowall::DeviceButtonEvent::Pair) return;
+  if (!provisioningMode || !photowall::bleProvisioning.active()) {
+    Serial.println("GPIO40: entering setup for one boot; stored credentials and binding preserved");
+    restartWithIntent(photowall::StartIntent::OpenSetup);
+  }
+  photowall::bleProvisioning.confirmExternalClick(click.pressedAt, click.releasedAt);
+}
 
 bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure, const String& url) {
   const int schemeEnd = url.indexOf("://");
@@ -525,6 +602,7 @@ bool postJson(const String& path, const String& body, String* response = nullptr
 }
 
 bool bootstrapDevice() {
+  lastCueCheckAt = millis();
   JsonDocument request;
   request["device_id"] = deviceId;
   request["pairing_code"] = pairingCode;
@@ -557,6 +635,17 @@ bool bootstrapDevice() {
     prefs.remove("setup");
     prefs.end();
     setupToken = "";
+  }
+  if (document["claimed"].is<bool>() && claimCue != photowall::ClaimCue::Idle) {
+    const auto previous = claimCue;
+    const bool play = photowall::observeCloudClaim(claimCue, document["claimed"].as<bool>());
+    if (claimCue != previous) {
+      prefs.begin("photowall", false);
+      if (claimCue == photowall::ClaimCue::Idle) prefs.remove(photowall::kClaimCueKey);
+      else prefs.putUChar(photowall::kClaimCueKey, static_cast<uint8_t>(claimCue));
+      prefs.end();
+    }
+    if (play && !photowall::devicePowerOffPending()) photowall::playDeviceSound(photowall::DeviceSound::PairingSuccess);
   }
   Serial.println("Device registered with cloud");
   return true;
@@ -666,12 +755,13 @@ void restartInProvisioningMode(bool preserveBinding) {
   prefs.remove("setup");
   prefs.remove("revision");
   prefs.putBool("force_setup", true);
+  prefs.remove(photowall::kClaimCueKey);
   if (!preserveBinding) prefs.remove("token");
   prefs.end();
   Serial.printf("Cloud requested BLE reprovisioning: preserve_binding=%s\n",
                 preserveBinding ? "yes" : "no");
   delay(500);
-  ESP.restart();
+  restartAfterTransaction();
 }
 
 void pollForFrame() {
@@ -746,7 +836,19 @@ void pollForFrame() {
 
 void setup() {
   Serial.begin(115200);
-  delay(6000);
+  Serial.setTxTimeoutMs(5);
+  const uint32_t startupAt = millis();
+  const bool softwareReset = esp_reset_reason() == ESP_RST_SW;
+  const auto intent = photowall::consumeStartIntent(softwareReset, retainedIntent);
+  photowall::stopDeviceAudio();
+  photowall::startButtonSampling();
+  if (photowall::beginDeviceAudio() && (!softwareReset || intent == photowall::StartIntent::ButtonWake)) {
+    photowall::playDeviceSound(photowall::DeviceSound::PowerOn);
+  }
+  while (millis() - startupAt < 6000) {
+    photowall::pollButtonsIfNeeded();
+    delay(5);
+  }
   Serial.println("PhotoWall startup diagnostics ready");
   deriveIdentity();
   clearConfigurationIfRequested();
@@ -757,7 +859,13 @@ void setup() {
 
   Serial.printf("PhotoWall E6 %s, device %s, pairing %s\n", kFirmwareVersion,
                 deviceId.c_str(), pairingCode.c_str());
-  if (!hasWifiConfiguration() || !connectWifi()) {
+  const auto event = photowall::takeDeviceButtonEvent();
+  if (event == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
+    const bool online = intent != photowall::StartIntent::OpenSetup && event != photowall::DeviceButtonEvent::Pair &&
+      hasWifiConfiguration() && connectWifi();
+    const auto networkEvent = photowall::takeDeviceButtonEvent();
+    if (networkEvent == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
+    if (!online || networkEvent == photowall::DeviceButtonEvent::Pair) {
     startDeviceServer(true);
     return;
   }
@@ -766,8 +874,14 @@ void setup() {
 }
 
 void loop() {
+  handleButtonAtIdle();
   provisionServer.handleClient();
   photowall::bleProvisioning.loop();
+  if (photowall::bleProvisioning.readyToRestart() && !localFrameBusy()) {
+    photowall::bleProvisioning.stop();
+    delay(100);
+    restartAfterTransaction();
+  }
   if (provisioningMode && photowall::bleProvisioning.cloudBootstrapPending()) {
     loadConfiguration();
     if (bootstrapDevice()) {
@@ -782,24 +896,28 @@ void loop() {
   processLocalDisplayJob();
   if (provisioningMode) {
     dnsServer.processNextRequest();
-    if (restartRequested) {
+    if (restartRequested && !localFrameBusy()) {
       delay(500);
-      ESP.restart();
+      restartAfterTransaction();
     }
     delay(2);
     return;
   }
 
+  if (photowall::devicePowerOffPending() || photowall::devicePairingPending()) {
+    delay(2);
+    return;
+  }
   if (WiFi.status() != WL_CONNECTED) {
     if (!connectWifi()) {
-      delay(5000);
+      waitForNetworkRetry(5000);
       return;
     }
     bootstrapDevice();
   }
   if (deviceToken.isEmpty()) {
     if (!bootstrapDevice()) {
-      delay(5000);
+      waitForNetworkRetry(5000);
       return;
     }
   }
@@ -807,5 +925,7 @@ void loop() {
     lastPollAt = millis();
     pollForFrame();
   }
+  if (claimCue != photowall::ClaimCue::Idle && !photowall::devicePowerOffPending() && !photowall::devicePairingPending() &&
+      millis() - lastCueCheckAt >= kDefaultPollIntervalMs) bootstrapDevice();
   delay(20);
 }

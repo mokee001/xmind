@@ -1,5 +1,7 @@
 # PhotoWall · Waveshare ESP32-S3 13.3E6
 
+当前固件为 `0.3.9-transfer.gpio40.1`。原版提交、实板验收结果、待测项目和回滚说明见 [GPIO40 候选交接](GPIO40-CANDIDATE.md)。
+
 自定义固件将官方被动 Wi-Fi Loader 改成支持局域网直传、云端轮询兜底的独立设备：
 
 1. 没有配置时广播 `PhotoWall-XXXX` BLE 配网服务，同时创建同名临时热点作为恢复入口。
@@ -12,7 +14,7 @@
 
 ## 配网
 
-App 主流程无需进入系统 Wi-Fi：靠近设备、按住 BOOT 键完成物理确认、选择家庭 Wi-Fi
+App 主流程无需进入系统 Wi-Fi：靠近设备、在 App 提示时短按 GPIO40 外键或按住 BOOT 键完成物理确认、选择家庭 Wi-Fi
 并输入密码即可。串口仍会打印兼容恢复热点、临时热点密码和六位配对码：
 
 - 热点：`PhotoWall-XXXX`
@@ -37,17 +39,16 @@ App 主流程无需进入系统 Wi-Fi：靠近设备、按住 BOOT 键完成物�
 
 `POST /v1/frame` 分块写入 PSRAM，收完后验证 PWE6 版本、`1200×1600` 尺寸、payload 长度和 SHA-256。只有全部通过才进入刷新队列；接口返回 `202`，App 通过 `GET /status` 等待 `frame_state=displayed`。
 
-## 构建和烧录
+## 构建和本机回归
 
 需要 PlatformIO：
 
 ```sh
 pio run
-pio run -t upload
-pio device monitor
+sh test/run_transfer_tests.sh
 ```
 
-环境按真机检测结果配置为 ESP32-S3、32MB OPI Flash、16MB OPI PSRAM。当前应用保守使用 16MB 分区表。首次烧录自定义固件会替换官方 Loader；需要保留完整 32MB 官方固件备份或确保可以重新从微雪示例烧回。
+环境按真机检测结果配置为 ESP32-S3、32MB OPI Flash、16MB OPI PSRAM。当前应用保守使用 16MB 分区布局。不要使用 PlatformIO 通用 upload、整片擦除或多段首烧流程更新已配对的板；需要逐板核实身份、备份、正在启动的应用分区和供电隔离。
 
 ## 安全边界
 

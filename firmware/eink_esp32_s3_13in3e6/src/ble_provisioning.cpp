@@ -1,4 +1,5 @@
 #include "ble_provisioning.h"
+#include "device_lifecycle.h"
 
 #include <ArduinoJson.h>
 #include <BLE2902.h>
@@ -153,14 +154,16 @@ void BleProvisioningService::loop() {
 
   char command[kCommandBufferBytes] = {};
   bool hasCommand = false;
+  uint32_t session = 0;
   portENTER_CRITICAL(&commandMux_);
   if (commandReady_) {
+    session = session_;
     memcpy(command, pendingCommand_, sizeof(command));
     commandReady_ = false;
     hasCommand = true;
   }
   portEXIT_CRITICAL(&commandMux_);
-  if (hasCommand) processCommand(command);
+  if (hasCommand) processCommand(command, session);
 
   if (scanRequested_) {
     scanRequested_ = false;
@@ -175,11 +178,14 @@ void BleProvisioningService::loop() {
       Serial.println("BLE provisioning advertising restarted");
     }
   }
-  if (restartAt_ != 0 && static_cast<int32_t>(millis() - restartAt_) >= 0) {
-    stop();
-    delay(100);
-    ESP.restart();
-  }
+}
+
+bool BleProvisioningService::readyToRestart() const {
+  return active_ && restartAt_ != 0 && static_cast<int32_t>(millis() - restartAt_) >= 0;
+}
+
+bool BleProvisioningService::busyForControls() const {
+  return scanRequested_ || wifiConnecting_ || cloudBootstrapPending_ || restartAt_ != 0;
 }
 
 void BleProvisioningService::stop() {
@@ -187,7 +193,12 @@ void BleProvisioningService::stop() {
   BLEDevice::stopAdvertising();
   BLEDevice::deinit(true);
   active_ = false;
+  portENTER_CRITICAL(&commandMux_);
   clientConnected_ = false;
+  clientAuthorized_ = false;
+  commandReady_ = false;
+  externalProof_.clear();
+  portEXIT_CRITICAL(&commandMux_);
   advertisingRestartAt_ = 0;
   activeService = nullptr;
 }
@@ -211,18 +222,39 @@ void BleProvisioningService::completeCloudBootstrap(bool success, const String& 
 }
 
 void BleProvisioningService::handleClientConnected() {
+  resetCommandFrame();
+  portENTER_CRITICAL(&commandMux_);
+  ++session_;
+  connectedAt_ = millis();
+  externalProof_.clear();
+  commandReady_ = false;
   clientConnected_ = true;
   clientAuthorized_ = false;
+  portEXIT_CRITICAL(&commandMux_);
   advertisingRestartAt_ = 0;
-  setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
+  setStatus("awaiting_confirmation", "请短按外接按钮，或按住设备 BOOT 键确认配网");
 }
 
 void BleProvisioningService::handleClientDisconnected() {
+  resetCommandFrame();
+  portENTER_CRITICAL(&commandMux_);
+  ++session_;
+  externalProof_.clear();
+  commandReady_ = false;
   clientConnected_ = false;
   clientAuthorized_ = false;
+  portEXIT_CRITICAL(&commandMux_);
   if (active_ && restartAt_ == 0) {
     advertisingRestartAt_ = millis() + kAdvertisingRestartDelayMs;
   }
+}
+
+void BleProvisioningService::confirmExternalClick(uint32_t pressedAt, uint32_t releasedAt) {
+  portENTER_CRITICAL(&commandMux_);
+  const bool granted = clientConnected_ && !clientAuthorized_ &&
+      externalProof_.grantForConnection(millis(), connectedAt_, pressedAt, releasedAt);
+  portEXIT_CRITICAL(&commandMux_);
+  if (granted) Serial.println("GPIO40: physical confirmation available for current BLE connection");
 }
 
 void BleProvisioningService::resetCommandFrame() {
@@ -278,7 +310,7 @@ void BleProvisioningService::handleCommandWrite(BLECharacteristic* characteristi
   resetCommandFrame();
 }
 
-void BleProvisioningService::processCommand(const char* command) {
+void BleProvisioningService::processCommand(const char* command, uint32_t session) {
   JsonDocument document;
   if (deserializeJson(document, command)) {
     setStatus("error", "蓝牙命令格式无效", "invalid_command");
@@ -286,11 +318,16 @@ void BleProvisioningService::processCommand(const char* command) {
   }
   const String operation = document["op"] | "";
   if (operation == "authorize") {
-    if (digitalRead(kProofButton) != LOW) {
-      setStatus("awaiting_confirmation", "请按住设备 BOOT 键确认配网");
+    const bool bootHeld = digitalRead(kProofButton) == LOW;
+    portENTER_CRITICAL(&commandMux_);
+    const bool confirmed = clientConnected_ && session == session_ &&
+        (externalProof_.consume(millis()) || bootHeld);
+    if (confirmed) clientAuthorized_ = true;
+    portEXIT_CRITICAL(&commandMux_);
+    if (!confirmed) {
+      setStatus("awaiting_confirmation", "请短按外接按钮，或按住设备 BOOT 键确认配网");
       return;
     }
-    clientAuthorized_ = true;
     JsonDocument event;
     event["type"] = "authorization";
     event["status"] = "authorized";
@@ -302,7 +339,10 @@ void BleProvisioningService::processCommand(const char* command) {
   }
 
   const String suppliedToken = document["setupToken"] | "";
-  if (!clientAuthorized_ || suppliedToken.isEmpty() || suppliedToken != setupToken_) {
+  portENTER_CRITICAL(&commandMux_);
+  const bool authorized = clientConnected_ && session == session_ && clientAuthorized_;
+  portEXIT_CRITICAL(&commandMux_);
+  if (!authorized || suppliedToken.isEmpty() || suppliedToken != setupToken_) {
     setStatus("error", "设备凭证校验失败", "invalid_setup_token");
     return;
   }
@@ -424,6 +464,7 @@ void BleProvisioningService::processWifiConnection() {
     preferences.putString("api", pendingApiBase_);
     preferences.putString("setup", setupToken_);
     preferences.putBool("force_setup", true);
+    preferences.putUChar(kClaimCueKey, static_cast<uint8_t>(ClaimCue::Submitted));
     if (!preserveDeviceToken_) preferences.remove("token");
     preferences.remove("revision");
     preferences.end();
