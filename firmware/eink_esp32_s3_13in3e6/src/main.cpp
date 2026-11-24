@@ -9,6 +9,8 @@
 #include <WiFiClientSecure.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
+#include "frame_reader.h"
 #include <mbedtls/sha256.h>
 
 #include "panel_13in3e6.h"
@@ -21,7 +23,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.6";
+constexpr char kFirmwareVersion[] = "0.3.9-transfer";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -477,7 +479,25 @@ void startDeviceServer(bool provisioning) {
   }
 }
 
+// Cloud operations run serially in loop(); retain the transport between requests.
+// Fully consume each response before end(), and close on incomplete frames.
+HTTPClient cloudHttp;
+WiFiClient cloudPlain;
+WiFiClientSecure cloudSecure;
+String cloudOrigin;
+
 bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure, const String& url) {
+  const int schemeEnd = url.indexOf("://");
+  const int pathStart = url.indexOf('/', schemeEnd + 3);
+  const String origin = pathStart < 0 ? url : url.substring(0, pathStart);
+  if (origin != cloudOrigin) {
+    http.setReuse(false);
+    http.end();
+    plain.stop();
+    secure.stop();
+    cloudOrigin = origin;
+  }
+  http.setReuse(true);
   http.setConnectTimeout(12000);
   http.setTimeout(30000);
   if (url.startsWith("https://")) {
@@ -490,14 +510,16 @@ bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure, co
 
 bool postJson(const String& path, const String& body, String* response = nullptr,
               int* responseCode = nullptr) {
-  HTTPClient http;
-  WiFiClient plain;
-  WiFiClientSecure secure;
+  HTTPClient& http = cloudHttp;
+  WiFiClient& plain = cloudPlain;
+  WiFiClientSecure& secure = cloudSecure;
   if (!beginHttp(http, plain, secure, apiBase + path)) return false;
   http.addHeader("Content-Type", "application/json");
   const int code = http.POST(body);
   if (responseCode) *responseCode = code;
-  if (response) *response = http.getString();
+  const String responseBody = http.getString();
+  if (response) *response = responseBody;
+  if (code < 0) http.setReuse(false);
   http.end();
   return code >= 200 && code < 300;
 }
@@ -540,41 +562,48 @@ bool bootstrapDevice() {
   return true;
 }
 
-bool readExactly(WiFiClient* stream, uint8_t* target, size_t length, uint32_t timeoutMs) {
-  size_t offset = 0;
-  uint32_t lastData = millis();
-  while (offset < length && millis() - lastData < timeoutMs) {
-    const int available = stream->available();
-    if (available <= 0) {
-      delay(2);
-      continue;
-    }
-    const size_t chunk = min(length - offset, static_cast<size_t>(available));
-    const int received = stream->readBytes(target + offset, chunk);
-    if (received > 0) {
-      offset += static_cast<size_t>(received);
-      lastData = millis();
-    }
+// Suppress Wi-Fi power-save latency only during a cloud operation; restore on every exit.
+class ActiveWifiTransfer {
+ public:
+  ActiveWifiTransfer() : saved_(esp_wifi_get_ps(&previous_) == ESP_OK) {
+    if (saved_) esp_wifi_set_ps(WIFI_PS_NONE);
   }
-  return offset == length;
+  ~ActiveWifiTransfer() { if (saved_) esp_wifi_set_ps(previous_); }
+ private:
+  wifi_ps_type_t previous_ = WIFI_PS_MIN_MODEM;
+  bool saved_;
+};
+
+void traceTransfer(const char* stage, uint32_t started, size_t bytes = 0) {
+  Serial.printf("ECHO_TRANSFER stage=%s elapsed_ms=%lu bytes=%u\n", stage,
+                static_cast<unsigned long>(millis() - started), static_cast<unsigned>(bytes));
+}
+
+bool readExactly(WiFiClient* stream, uint8_t* target, size_t length, uint32_t timeoutMs) {
+  return photowall::readFrameBytes(*stream, target, length, timeoutMs,
+                                  []() { return millis(); }, []() { delay(1); });
 }
 
 uint8_t* downloadFrame(const String& frameUrl) {
-  HTTPClient http;
-  WiFiClient plain;
-  WiFiClientSecure secure;
+  const uint32_t started = millis();
+  HTTPClient& http = cloudHttp;
+  WiFiClient& plain = cloudPlain;
+  WiFiClientSecure& secure = cloudSecure;
   const String url = frameUrl.startsWith("http") ? frameUrl : apiBase + frameUrl;
   if (!beginHttp(http, plain, secure, url)) return nullptr;
   const int code = http.GET();
   if (code != HTTP_CODE_OK || http.getSize() != static_cast<int>(kFrameHeaderBytes + photowall::kPackedFrameBytes)) {
+    http.setReuse(false);
     Serial.printf("Frame download rejected: HTTP %d size %d\n", code, http.getSize());
     http.end();
     return nullptr;
   }
 
+  traceTransfer("download_headers", started);
   WiFiClient* stream = http.getStreamPtr();
   uint8_t header[kFrameHeaderBytes];
   if (!readExactly(stream, header, sizeof(header), 15000)) {
+    http.setReuse(false);
     Serial.println("PWE6 header read timeout");
     http.end();
     return nullptr;
@@ -583,6 +612,7 @@ uint8_t* downloadFrame(const String& frameUrl) {
       readBigEndian16(header + 5) != photowall::kPanelWidth ||
       readBigEndian16(header + 7) != photowall::kPanelHeight ||
       readBigEndian32(header + 9) != photowall::kPackedFrameBytes) {
+    http.setReuse(false);
     Serial.println("Invalid PWE6 header");
     http.end();
     return nullptr;
@@ -592,12 +622,15 @@ uint8_t* downloadFrame(const String& frameUrl) {
       photowall::kPackedFrameBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (!payload) payload = static_cast<uint8_t*>(malloc(photowall::kPackedFrameBytes));
   if (!payload || !readExactly(stream, payload, photowall::kPackedFrameBytes, 30000)) {
+    http.setReuse(false);
     Serial.println("PWE6 payload allocation/read failed");
     free(payload);
     http.end();
     return nullptr;
   }
+  traceTransfer("download_body_complete", started, photowall::kPackedFrameBytes);
   http.end();
+  traceTransfer("download_connection_closed", started);
 
   uint8_t digest[32];
   mbedtls_sha256(payload, photowall::kPackedFrameBytes, digest, 0);
@@ -606,6 +639,7 @@ uint8_t* downloadFrame(const String& frameUrl) {
     free(payload);
     return nullptr;
   }
+  traceTransfer("download_verified", started, photowall::kPackedFrameBytes);
   return payload;
 }
 
@@ -641,13 +675,16 @@ void restartInProvisioningMode(bool preserveBinding) {
 }
 
 void pollForFrame() {
-  HTTPClient http;
-  WiFiClient plain;
-  WiFiClientSecure secure;
+  ActiveWifiTransfer activeWifi;
+  const uint32_t started = millis();
+  HTTPClient& http = cloudHttp;
+  WiFiClient& plain = cloudPlain;
+  WiFiClientSecure& secure = cloudSecure;
   const String url = apiBase + "/api/devices/" + deviceId + "/next?revision=" +
                      displayedRevision + "&token=" + deviceToken;
   if (!beginHttp(http, plain, secure, url)) return;
   const int code = http.GET();
+  traceTransfer("next_headers", started);
   Serial.printf("Cloud next poll: GET /api/devices/%s/next HTTP %d, interval_seconds=%lu\n",
                 deviceId.c_str(), code, static_cast<unsigned long>(pollIntervalMs / 1000));
   if (code == HTTP_CODE_NO_CONTENT) {
@@ -655,6 +692,13 @@ void pollForFrame() {
     return;
   }
   const String response = http.getString();
+  if (code < 0) {
+    char error[160] = {};
+    const int tlsError = secure.lastError(error, sizeof(error));
+    Serial.printf("ECHO_TRANSFER network_error=%d tls_error=%d wifi_status=%d rssi=%d heap=%u\n",
+                  code, tlsError, static_cast<int>(WiFi.status()), WiFi.RSSI(), ESP.getFreeHeap());
+    http.setReuse(false);
+  }
   http.end();
   if (code != HTTP_CODE_OK) {
     Serial.printf("Frame poll failed: HTTP %d %s\n", code, response.c_str());
@@ -672,13 +716,17 @@ void pollForFrame() {
   const String frameUrl = document["frame_url"] | "";
   if (revision.isEmpty() || frameUrl.isEmpty()) return;
 
+  traceTransfer("task_received", started);
   reportStatus("downloading", revision, 5);
+  traceTransfer("download_status_sent", started);
   uint8_t* payload = downloadFrame(frameUrl);
   if (!payload) {
     reportStatus("error", revision, 0, "frame download or verification failed");
     return;
   }
+  traceTransfer("frame_ready", started);
   reportStatus("refreshing", revision, 50);
+  traceTransfer("refresh_status_sent", started);
   if (!panelInitialized) {
     panel.begin();
     panelInitialized = true;
@@ -704,6 +752,8 @@ void setup() {
   clearConfigurationIfRequested();
   loadConfiguration();
   applyDemoWifiConfiguration();
+
+  Serial.printf("ECHO_TRANSFER firmware=%s device=%s\n", kFirmwareVersion, deviceId.c_str());
 
   Serial.printf("PhotoWall E6 %s, device %s, pairing %s\n", kFirmwareVersion,
                 deviceId.c_str(), pairingCode.c_str());
