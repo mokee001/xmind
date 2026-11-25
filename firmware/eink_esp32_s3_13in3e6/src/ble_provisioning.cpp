@@ -1,5 +1,7 @@
 #include "ble_provisioning.h"
 #include "device_lifecycle.h"
+#include "device_audio.h"
+#include "device_buttons.h"
 
 #include <ArduinoJson.h>
 #include <BLE2902.h>
@@ -374,7 +376,7 @@ void BleProvisioningService::processCommand(const char* command, uint32_t sessio
       setStatus("error", "PhotoWall 服务地址无效", "invalid_api_base");
       return;
     }
-    if (wifiConnecting_ || cloudBootstrapPending_) {
+    if (wifiConnecting_ || cloudBootstrapPending_ || restartAt_ != 0) {
       setStatus("connecting", "正在连接家庭 Wi-Fi");
       return;
     }
@@ -460,6 +462,7 @@ void BleProvisioningService::startWifiConnection(
 }
 
 void BleProvisioningService::processWifiConnection() {
+  if (!wifiConnecting_) return;
   const wl_status_t wifiStatus = WiFi.status();
   if (wifiStatus == WL_CONNECTED) {
     Preferences preferences;
@@ -470,6 +473,7 @@ void BleProvisioningService::processWifiConnection() {
     preferences.putString("setup", setupToken_);
     preferences.putBool("force_setup", true);
     preferences.putUChar(kClaimCueKey, static_cast<uint8_t>(ClaimCue::Submitted));
+    preferences.remove(kWifiSetupCueKey);
     if (!preserveDeviceToken_) preferences.remove("token");
     preferences.remove("revision");
     preferences.end();
@@ -478,6 +482,9 @@ void BleProvisioningService::processWifiConnection() {
     wifiConnecting_ = false;
     cloudBootstrapPending_ = true;
     setStatus("connecting", "Wi-Fi 已连接，正在连接 PhotoWall 服务");
+    // Network success is separate from cloud availability and account binding.
+    // wifiConnecting_ was cleared before playback, so subsequent loops are silent.
+    if (!devicePowerOffPending()) playDeviceSound(DeviceSound::WifiConnected);
     return;
   }
   if (wifiStatus == WL_CONNECT_FAILED) {

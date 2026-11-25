@@ -15,12 +15,13 @@ inline StartIntent consumeStartIntent(bool softwareReset, uint32_t& retained) {
 
 enum class ClaimCue : uint8_t { Idle, Submitted, SeenUnclaimed };
 constexpr char kClaimCueKey[] = "pair_cue";
+constexpr char kWifiSetupCueKey[] = "wifi_cue";
 
 inline bool observeCloudClaim(ClaimCue& cue, bool claimed) {
   const bool play = cue == ClaimCue::SeenUnclaimed && claimed;
-  if (cue == ClaimCue::Submitted || cue == ClaimCue::SeenUnclaimed) {
-    cue = claimed ? ClaimCue::Idle : ClaimCue::SeenUnclaimed;
-  }
+  // Observe unbound devices even when Wi-Fi was already configured. A first
+  // observation of an existing binding is not a new binding success.
+  cue = claimed ? ClaimCue::Idle : ClaimCue::SeenUnclaimed;
   return play;
 }
 

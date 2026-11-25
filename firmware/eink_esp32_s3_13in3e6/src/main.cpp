@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.2";
+constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.3";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;
@@ -285,6 +285,14 @@ bool connectWifi() {
   Serial.println();
   if (WiFi.status() != WL_CONNECTED) return false;
   Serial.printf("Wi-Fi connected: %s\n", WiFi.localIP().toString().c_str());
+  // The legacy hotspot flow restarts before trying the submitted credentials.
+  // Only that explicit setup is armed; routine boot/reconnect stays silent.
+  prefs.begin("photowall", false);
+  const bool playWifiCue = prefs.getBool(photowall::kWifiSetupCueKey, false);
+  if (playWifiCue) prefs.remove(photowall::kWifiSetupCueKey);
+  prefs.end();
+  if (playWifiCue && !photowall::devicePowerOffPending())
+    photowall::playDeviceSound(photowall::DeviceSound::WifiConnected);
   return true;
 }
 
@@ -461,6 +469,7 @@ void startDeviceServer(bool provisioning) {
     prefs.putString("setup", setupToken);
     prefs.remove("force_setup");
     prefs.putUChar(photowall::kClaimCueKey, static_cast<uint8_t>(photowall::ClaimCue::Submitted));
+    prefs.putBool(photowall::kWifiSetupCueKey, true);
     if (deviceToken.isEmpty()) prefs.remove("token");
     prefs.remove("revision");
     prefs.end();
@@ -554,6 +563,13 @@ bool localFrameBusy() {
   restartWithIntent(photowall::StartIntent::Normal);
 }
 
+void handleShortPress(const photowall::ButtonClick& click) {
+  photowall::bleProvisioning.confirmExternalClick(click.pressedAt, click.releasedAt);
+  // Runs on the main task after debouncing, never in the sampler/BLE callback.
+  // One short cue acknowledges the press regardless of the BLE connection state.
+  photowall::playDeviceSound(photowall::DeviceSound::ButtonPress);
+}
+
 void handleButtonAtIdle() {
   photowall::pollButtonsIfNeeded();
   if (localFrameBusy() || restartRequested || photowall::bleProvisioning.busyForControls()) return;
@@ -563,7 +579,7 @@ void handleButtonAtIdle() {
   if (event != photowall::DeviceButtonEvent::Confirm) return;
   // A short press only confirms this live connection. It never opens setup,
   // restarts the device, or changes saved Wi-Fi/cloud credentials.
-  photowall::bleProvisioning.confirmExternalClick(click.pressedAt, click.releasedAt);
+  handleShortPress(click);
 }
 
 bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure, const String& url) {
@@ -604,6 +620,19 @@ bool postJson(const String& path, const String& body, String* response = nullptr
   return code >= 200 && code < 300;
 }
 
+void updateCloudClaimSound(bool claimed) {
+  const auto previous = claimCue;
+  const bool play = photowall::observeCloudClaim(claimCue, claimed);
+  if (claimCue != previous) {
+    prefs.begin("photowall", false);
+    if (claimCue == photowall::ClaimCue::Idle) prefs.remove(photowall::kClaimCueKey);
+    else prefs.putUChar(photowall::kClaimCueKey, static_cast<uint8_t>(claimCue));
+    prefs.end();
+  }
+  if (play && !photowall::devicePowerOffPending())
+    photowall::playDeviceSound(photowall::DeviceSound::PairingSuccess);
+}
+
 bool bootstrapDevice() {
   lastCueCheckAt = millis();
   JsonDocument request;
@@ -639,17 +668,7 @@ bool bootstrapDevice() {
     prefs.end();
     setupToken = "";
   }
-  if (document["claimed"].is<bool>() && claimCue != photowall::ClaimCue::Idle) {
-    const auto previous = claimCue;
-    const bool play = photowall::observeCloudClaim(claimCue, document["claimed"].as<bool>());
-    if (claimCue != previous) {
-      prefs.begin("photowall", false);
-      if (claimCue == photowall::ClaimCue::Idle) prefs.remove(photowall::kClaimCueKey);
-      else prefs.putUChar(photowall::kClaimCueKey, static_cast<uint8_t>(claimCue));
-      prefs.end();
-    }
-    if (play && !photowall::devicePowerOffPending()) photowall::playDeviceSound(photowall::DeviceSound::PairingSuccess);
-  }
+  if (document["claimed"].is<bool>()) updateCloudClaimSound(document["claimed"].as<bool>());
   Serial.println("Device registered with cloud");
   return true;
 }
@@ -862,8 +881,10 @@ void setup() {
 
   Serial.printf("PhotoWall E6 %s, device %s, pairing %s\n", kFirmwareVersion,
                 deviceId.c_str(), pairingCode.c_str());
-  const auto event = photowall::takeDeviceButtonEvent();
+  photowall::ButtonClick startupClick{};
+  const auto event = photowall::takeDeviceButtonEvent(&startupClick);
   if (event == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
+  if (event == photowall::DeviceButtonEvent::Confirm) handleShortPress(startupClick);
   // Advertise on every boot, including an already configured, online device.
   // Start before the potentially slow Wi-Fi retry; no button is needed.
   if (setupToken.isEmpty()) setupToken = createSetupToken();
@@ -874,7 +895,7 @@ void setup() {
   const auto networkEvent = photowall::takeDeviceButtonEvent(&click);
   if (networkEvent == photowall::DeviceButtonEvent::PowerOff) enterButtonStandby();
   if (networkEvent == photowall::DeviceButtonEvent::Confirm)
-    photowall::bleProvisioning.confirmExternalClick(click.pressedAt, click.releasedAt);
+    handleShortPress(click);
   if (!online) {
     startDeviceServer(true);
     return;

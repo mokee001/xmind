@@ -5,7 +5,7 @@
 
 namespace photowall {
 
-enum class DeviceSound : uint8_t { PowerOn, PairingSuccess, PowerOff };
+enum class DeviceSound : uint8_t { PowerOn, PairingSuccess, PowerOff, ButtonPress, WifiConnected };
 enum class AudioBackend : uint8_t {
   Disabled, PassiveBuzzer, ActiveBuzzer, I2sSpeaker, BoardEs8311
 };

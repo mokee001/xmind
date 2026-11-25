@@ -103,11 +103,13 @@ void delay(uint32_t duration) {
 }
 void pulse(uint32_t duration) { levels[40] = LOW; delay(duration); levels[40] = HIGH; delay(40); }
 struct {
-  std::map<std::string, bool> keys;
+  std::map<std::string, uint8_t> keys;
   void begin(const char*, bool) {}
   void end() {}
   void remove(const char* key) { keys.erase(key); }
   void putBool(const char* key, bool value) { keys[key] = value; }
+  bool getBool(const char* key, bool fallback) { return keys.count(key) ? keys.at(key) != 0 : fallback; }
+  void putUChar(const char* key, uint8_t value) { keys[key] = value; }
   void clear() { keys.clear(); }
 } prefs;
 struct { void setReuse(bool) {} void end() {} } cloudHttp;
@@ -169,9 +171,12 @@ int main() {
   assert(serverStarted && !provisioningMode && claimsChecked == 1 && sounds == std::vector<DeviceSound>{DeviceSound::PowerOn});
   const auto saved = prefs.keys;
   pulse(180); loop(); assert(!provisioningMode && photowall::bleProvisioning.started && confirms == 1 && prefs.keys == saved);
+  assert((sounds == std::vector<DeviceSound>{DeviceSound::PowerOn, DeviceSound::ButtonPress}));
+  loop(); pulse(10); loop(); assert(sounds.size() == 2 && confirms == 1); // No replay or bounce cue.
   reset(); softwareReset = true; retainedIntent = static_cast<uint32_t>(StartIntent::OpenSetup); setup();
   assert(provisioningMode && sounds.empty() && confirms == 0 && claimsChecked == 0);
   pulse(180); loop(); assert(confirms == 1 && prefs.keys == saved);
+  assert(sounds == std::vector<DeviceSound>{DeviceSound::ButtonPress});
   reset(); softwareReset = true; setup(); assert(!provisioningMode && sounds.empty());
   reset(); softwareReset = true; retainedIntent = static_cast<uint32_t>(StartIntent::ButtonWake);
   levels[40] = LOW; setup(); delay(4000); levels[40] = HIGH; delay(40); loop();
@@ -180,6 +185,9 @@ int main() {
   reset(); taskAvailable = false; setup(); assert(serverStarted && !provisioningMode);
   reset(); wifiAvailable = false; edges = {{7000, LOW}, {7200, HIGH}}; setup();
   assert(provisioningMode && clockMs >= 36000 && confirms == 1 && prefs.keys == saved && photowall::bleProvisioning.started);
+  assert((sounds == std::vector<DeviceSound>{DeviceSound::PowerOn, DeviceSound::ButtonPress}));
+  reset(); edges = {{1000, LOW}, {1200, HIGH}}; setup();
+  assert(confirms == 1 && sounds.back() == DeviceSound::ButtonPress);
   reset(); wifiAvailable = false; edges = {{7000, LOW}, {10100, HIGH}}; expectStandby(setup);
   assert(clockMs < 10200 && !serverStarted && prefs.keys == saved);
   reset(); levels[0] = LOW; setup(); assert(prefs.keys.size() == 1 && prefs.keys.count("force_setup"));
@@ -189,7 +197,12 @@ int main() {
     assert(!powerCycles && framePolls == 0 && photowall::devicePowerOffPending());
     localJobFinishes = true; loop(); assert(!powerCycles && localFrameState == "displayed");
     expectStandby(loop); assert(prefs.keys == saved);
+    assert((sounds == std::vector<DeviceSound>{DeviceSound::PowerOn, DeviceSound::PowerOff}));
   }
+  reset(); setup(); localFrameState = "refreshing"; pulse(180); loop();
+  assert(sounds.size() == 1 && confirms == 0); // Do not overlap audio with panel work.
+  localFrameState = "displayed"; loop(); assert(sounds.size() == 2 && confirms == 1);
+  loop(); assert(sounds.size() == 2);
   reset(); setup(); generatePressInTransfer = true; loop(); assert(framePolls == 1 && !powerCycles);
   expectStandby(loop); assert(framePolls == 1 && prefs.keys == saved);
   reset(); wifiSsid = ""; setup(); auto& ble = photowall::bleProvisioning;
@@ -204,6 +217,31 @@ int main() {
   reset(); setup(); delay(16000); loop(); assert(claimsChecked == 1);
   claimCue = ClaimCue::SeenUnclaimed; loop(); assert(claimsChecked == 2); loop(); assert(claimsChecked == 2);
 
+  reset(); setup(); sounds.clear();
+  assert(connectWifi() && sounds.empty()); // Saved network / automatic recovery is silent.
+  prefs.putBool(photowall::kWifiSetupCueKey, true);
+  wifiAvailable = false; assert(!connectWifi() && sounds.empty());
+  assert(prefs.keys.count(photowall::kWifiSetupCueKey)); // Failed setup must not announce success.
+  wifiAvailable = true; assert(connectWifi());
+  assert(sounds == std::vector<DeviceSound>{DeviceSound::WifiConnected});
+  assert(!prefs.keys.count(photowall::kWifiSetupCueKey));
+  assert(connectWifi() && sounds.size() == 1);
+
+  reset(); setup(); sounds.clear();
+  updateCloudClaimSound(true); assert(sounds.empty()); // Existing binding on boot.
+  claimCue = ClaimCue::Submitted; updateCloudClaimSound(true); assert(sounds.empty()); // Reconfigure Wi-Fi.
+  updateCloudClaimSound(false);
+  assert(prefs.keys.at(photowall::kClaimCueKey) == static_cast<uint8_t>(ClaimCue::SeenUnclaimed));
+  // Rehydrate the durable pending state, as loadConfiguration does after restart.
+  claimCue = static_cast<ClaimCue>(prefs.keys.at(photowall::kClaimCueKey));
+  updateCloudClaimSound(false); assert(sounds.empty());
+  updateCloudClaimSound(true);
+  assert(sounds == std::vector<DeviceSound>{DeviceSound::PairingSuccess});
+  assert(!prefs.keys.count(photowall::kClaimCueKey));
+  claimCue = ClaimCue::Idle; updateCloudClaimSound(true); assert(sounds.size() == 1);
+  updateCloudClaimSound(false); pulse(3100); updateCloudClaimSound(true);
+  assert(sounds.size() == 1); // Pending shutdown wins over a success cue.
+
   for (bool fallback : {false, true}) {
     reset(); stopAtStandby = false; sleepFails = fallback; levels[40] = LOW;
     edges = {{300, HIGH}, {310, LOW}, {400, HIGH}, {600, LOW}, {900, HIGH}, {1800, LOW}};
@@ -211,5 +249,5 @@ int main() {
     assert(clockMs >= 3830 && clockMs < 3890 && !serverStarted && sounds.empty());
     assert(sleeps == (fallback ? 1u : 2u) && wakeDisables >= 1);
   }
-  std::puts("PASS: cold/soft boot, original BOOT reset, automatic boot advertising, confirmation-only short press, transfer/display deferral, committed reprovision, claim cadence, release/tap/hold wake and sleep fallback");
+  std::puts("PASS: boot/reconnect, one-shot short-press audio, bounce/hold/sleep silence, transfer deferral, explicit Wi-Fi setup cue, durable cloud binding cue, shutdown priority and wake fallback");
 }

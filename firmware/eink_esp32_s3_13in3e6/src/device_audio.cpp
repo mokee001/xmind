@@ -55,14 +55,19 @@ constexpr DeviceAudioConfig kConfig = {
 constexpr SoundNote kPowerOn[] = {{1568, 120, 60}, {2093, 192, 0}};
 constexpr SoundNote kPairingSuccess[] = {{2093, 80, 40}, {2637, 80, 40}, {3136, 180, 0}};
 constexpr SoundNote kPowerOff[] = {{2093, 240, 84}, {1568, 480, 0}};
+// A click acknowledges the physical button, not a completed cloud binding.
+constexpr SoundNote kButtonPress[] = {{2093, 65, 0}};
+constexpr SoundNote kWifiConnected[] = {{1568, 90, 70}, {2093, 120, 0}};
 bool audioReady = false;
 bool audioPinsConfigured = false;
 
 const char* soundName(DeviceSound sound) {
   switch (sound) {
     case DeviceSound::PowerOn: return "power_on";
-    case DeviceSound::PairingSuccess: return "pairing_success";
+    case DeviceSound::PairingSuccess: return "binding_success";
     case DeviceSound::PowerOff: return "power_off";
+    case DeviceSound::ButtonPress: return "button_press";
+    case DeviceSound::WifiConnected: return "wifi_connected";
   }
   return "unknown";
 }
@@ -120,6 +125,8 @@ SoundPattern deviceSoundPattern(DeviceSound sound) {
     case DeviceSound::PairingSuccess:
       return {kPairingSuccess, sizeof(kPairingSuccess) / sizeof(kPairingSuccess[0])};
     case DeviceSound::PowerOff: return {kPowerOff, sizeof(kPowerOff) / sizeof(kPowerOff[0])};
+    case DeviceSound::ButtonPress: return {kButtonPress, sizeof(kButtonPress) / sizeof(kButtonPress[0])};
+    case DeviceSound::WifiConnected: return {kWifiConnected, sizeof(kWifiConnected) / sizeof(kWifiConnected[0])};
   }
   return {nullptr, 0};
 }

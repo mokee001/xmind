@@ -14,8 +14,10 @@ const functions = [
   '[[noreturn]] void enterButtonStandby(',
   'bool localFrameBusy(',
   '[[noreturn]] void restartAfterTransaction(',
+  'void handleShortPress(',
   'void handleButtonAtIdle(',
   'void restartInProvisioningMode(',
+  'void updateCloudClaimSound(',
   'void setup(',
   'void loop(',
 ];
@@ -97,7 +99,7 @@ for (const fixture of [
 
 const code = maskLiteralsAndComments(source);
 const bleSuite = sourcePath.endsWith('/ble_provisioning.cpp');
-const names = bleSuite ? ['kProofButton', 'kFrameVersion', 'kAdvertisingRestartDelayMs'] :
+const names = bleSuite ? ['kProofButton', 'kFrameVersion', 'kAdvertisingRestartDelayMs', 'kWifiConnectTimeoutMs', 'kRestartDelayMs'] :
   ['kFirmwareVersion', 'kBootButton', 'kDefaultPollIntervalMs', 'kWifiConnectTimeoutMs'];
 const constants = names.map(name => {
   const matches = [...code.matchAll(new RegExp(`^constexpr [^\n]*\\b${name}[^\n]*;`, 'gm'))];
@@ -111,7 +113,7 @@ function insert(marker, bodies) {
 }
 if (bleSuite) {
   const names = ['handleClientConnected', 'handleClientDisconnected', 'resetCommandFrame', 'handleCommandWrite',
-    'confirmExternalClick', 'processCommand', 'loop'];
+    'confirmExternalClick', 'processCommand', 'startWifiConnection', 'processWifiConnection', 'completeCloudBootstrap', 'loop'];
   insert('// PHOTOWALL_BLE_BODIES', constants.join('\n') + '\n' + names.map(name =>
     definition(source, `void BleProvisioningService::${name}(`, sourcePath)).join('\n'));
   console.log(`Native BLE: executing ${names.length} production function bodies`);
