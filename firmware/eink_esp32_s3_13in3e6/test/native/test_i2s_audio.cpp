@@ -210,24 +210,31 @@ int main() {
   const size_t initTransactions = hw.transactions;
   const size_t initReads = hw.requests;
   assert(beginDeviceAudio() && hw.transactions == initTransactions);
-  constexpr std::array<uint32_t, 5> cueDurationsMs = {372, 420, 804, 65, 280};
+  // Disabled success events must not write PCM or enable the speaker amplifier.
+  const auto framesBeforeDisabled = hw.frames;
+  const auto enablesBeforeDisabled = hw.paEnables;
+  for (const auto sound : {DeviceSound::PairingSuccess, DeviceSound::WifiConnected}) {
+    assert(!deviceSoundEnabled(sound) && deviceSoundPattern(sound).count == 0);
+    assert(!playDeviceSound(sound));
+  }
+  assert(hw.frames == framesBeforeDisabled && hw.paEnables == enablesBeforeDisabled);
+  constexpr std::array<uint32_t, 3> cueDurationsMs = {372, 804, 65};
   size_t soundIndex = 0;
-  for (const auto sound : {DeviceSound::PowerOn, DeviceSound::PairingSuccess, DeviceSound::PowerOff,
-                           DeviceSound::ButtonPress, DeviceSound::WifiConnected}) {
+  for (const auto sound : {DeviceSound::PowerOn, DeviceSound::PowerOff, DeviceSound::ButtonPress}) {
     const size_t framesBefore = hw.frames;
     assert(playDeviceSound(sound));
     const uint32_t transmittedMs = cueDurationsMs[soundIndex++] + 120 + (kBoard ? 40 : 0);
     assert(hw.frames - framesBefore == transmittedMs * 16);
     if (kBoard) assert(hw.levels[13] == LOW && hw.registers[0x31] == 0x60);
   }
-  assert(hw.frames == (kBoard ? 2861U : 2541U) * 16);
+  assert(hw.frames == (kBoard ? 1841U : 1601U) * 16);
   assert(hw.nonzeroFrames > 14000);
   assert(hw.peakSample >= kMaxPcmSample * 99 / 100);
   assert(!playDeviceSound(static_cast<DeviceSound>(99)));
   stopDeviceAudio();
   assertQuiet();
   if (kBoard) {
-    assert(hw.paEnables == 5);
+    assert(hw.paEnables == 3);
     const std::set<uint8_t> expectedPins = {13, 14, 21, 41, 42, 45, 47};
     assert(hw.touchedPins == expectedPins);
     assert(hw.registers[0x12] == 0x02 && hw.registers[0x0D] == 0xFC && hw.registers[0x01] == 0);

@@ -6,6 +6,14 @@
 namespace photowall {
 
 enum class DeviceSound : uint8_t { PowerOn, PairingSuccess, PowerOff, ButtonPress, WifiConnected };
+
+// Only physical interactions are audible for now. Keep the network/binding
+// events available to the state machines, but suppress them at the audio boundary.
+constexpr bool deviceSoundEnabled(DeviceSound sound) {
+  return sound == DeviceSound::PowerOn || sound == DeviceSound::PowerOff ||
+         sound == DeviceSound::ButtonPress;
+}
+
 enum class AudioBackend : uint8_t {
   Disabled, PassiveBuzzer, ActiveBuzzer, I2sSpeaker, BoardEs8311
 };

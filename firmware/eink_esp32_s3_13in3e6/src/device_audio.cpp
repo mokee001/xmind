@@ -120,6 +120,7 @@ BoardEs8311 boardCodec;
 }  // namespace
 
 SoundPattern deviceSoundPattern(DeviceSound sound) {
+  if (!deviceSoundEnabled(sound)) return {nullptr, 0};
   switch (sound) {
     case DeviceSound::PowerOn: return {kPowerOn, sizeof(kPowerOn) / sizeof(kPowerOn[0])};
     case DeviceSound::PairingSuccess:
@@ -207,6 +208,10 @@ bool beginDeviceAudio() {
 bool deviceAudioReady() { return audioReady; }
 
 bool playDeviceSound(DeviceSound sound) {
+  if (!deviceSoundEnabled(sound)) {
+    Serial.printf("Sound disabled: %s\n", soundName(sound));
+    return false;
+  }
   if (!audioReady) {
     Serial.printf("Sound skipped: %s (audio output unavailable)\n", soundName(sound));
     return false;

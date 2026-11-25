@@ -64,7 +64,11 @@ String latestStatus, authorization;
 unsigned scans = 0;
 namespace photowall {
 bool devicePowerOffPending() { return powerOffPending; }
-bool playDeviceSound(DeviceSound sound) { sounds.push_back(sound); return true; }
+bool playDeviceSound(DeviceSound sound) {
+  if (!deviceSoundEnabled(sound)) return false;
+  sounds.push_back(sound);
+  return true;
+}
 String jsonString(const JsonDocument& document) { std::string out; serializeJson(document, out); return out; }
 String normalizeApiBase(String input) { return input; }
 void BleProvisioningService::begin(const String& id, const String&, const String& token, bool preserve) {
@@ -114,34 +118,33 @@ int main() {
   assert(latestStatus == "idle" && !authorization.empty()); send(scan); assert(scans == 2);
   assert(sounds.empty()); // BLE link, authorize retries, scans and cancel are not binding/Wi-Fi success.
 
-  using photowall::DeviceSound;
   constexpr auto provision = "{\"op\":\"provision\",\"setupToken\":\"fixture-proof\",\"ssid\":\"fixture-network\",\"password\":\"fixture-password\",\"apiBase\":\"http://localhost\"}";
   send(provision); assert(latestStatus == "connecting" && sounds.empty());
   send(provision); assert(sounds.empty()); // Duplicate while connecting.
   wifiStatus = WL_CONNECTED; service.loop();
-  assert(sounds == std::vector<DeviceSound>{DeviceSound::WifiConnected});
+  assert(sounds.empty());
   assert(stored.at("ssid") == "fixture-network");
-  service.loop(); send(provision); assert(sounds.size() == 1); // Connected and waiting for cloud.
+  service.loop(); send(provision); assert(sounds.empty()); // Connected and waiting for cloud.
   service.completeCloudBootstrap(false, "fixture-unreachable");
-  assert(latestStatus == "cloud_unreachable" && sounds.size() == 1); // No cloud-binding melody.
+  assert(latestStatus == "cloud_unreachable" && sounds.empty()); // No cloud-binding melody.
   // Network failures and cancellation must be silent and allow an explicit retry.
   for (auto status : {WL_CONNECT_FAILED, WL_NO_SSID_AVAIL, 0}) {
     send(provision); wifiStatus = status;
     if (status == 0) clockMs += 30001;
-    service.loop(); service.loop(); assert(sounds.size() == 1);
+    service.loop(); service.loop(); assert(sounds.empty());
     assert(latestStatus == (status == WL_CONNECT_FAILED ? "wrong_password" : status == WL_NO_SSID_AVAIL ? "network_not_found" : "timeout"));
   }
   send(provision); send("{\"op\":\"cancel\",\"setupToken\":\"fixture-proof\"}");
-  wifiStatus = WL_CONNECTED; service.loop(); assert(sounds.size() == 1);
+  wifiStatus = WL_CONNECTED; service.loop(); assert(sounds.empty());
   send(provision); powerOffPending = true; wifiStatus = WL_CONNECTED; service.loop();
-  assert(sounds.size() == 1); // Shutdown wins; no misleading late success audio.
+  assert(sounds.empty()); // Shutdown wins; no misleading late success audio.
   powerOffPending = false; service.completeCloudBootstrap(false, "fixture-unreachable");
   send(provision); wifiStatus = WL_CONNECTED; service.loop();
-  assert(sounds.size() == 2 && sounds.back() == DeviceSound::WifiConnected);
+  assert(sounds.empty());
   service.completeCloudBootstrap(true, "fixture-ready");
   service.completeCloudBootstrap(true, "fixture-ready");
-  send(provision); assert(sounds.size() == 2); // No duplicate before provisioning restart.
+  send(provision); assert(sounds.empty()); // No duplicate before provisioning restart.
   service.handleClientDisconnected(); service.handleClientConnected(); service.loop();
-  assert(sounds.size() == 2); // Automatic BLE reconnection stays silent.
-  std::puts("PASS: physical BLE confirmation, one-shot explicit Wi-Fi success, failure/cancel/retry, cloud separation, shutdown priority and silent reconnect");
+  assert(sounds.empty()); // Automatic BLE reconnection stays silent.
+  std::puts("PASS: physical BLE confirmation, silent Wi-Fi success/failure/cancel/retry, cloud separation, shutdown priority and silent reconnect");
 }

@@ -27,7 +27,7 @@
 
 namespace {
 
-constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.3";
+constexpr char kFirmwareVersion[] = "0.3.9-transfer.gpio40.4";
 constexpr uint8_t kBootButton = 0;
 constexpr uint16_t kProvisionPort = 80;
 constexpr uint32_t kWifiConnectTimeoutMs = 30000;

@@ -75,7 +75,11 @@ int esp_light_sleep_start() {
 
 bool beginDeviceAudio() { return true; }
 void stopDeviceAudio() {}
-bool playDeviceSound(DeviceSound sound) { sounds.push_back(sound); return true; }
+bool playDeviceSound(DeviceSound sound) {
+  if (!deviceSoundEnabled(sound)) return false;
+  sounds.push_back(sound);
+  return true;
+}
 struct {
   bool busy = false, due = false, pending = false, started = false;
   bool busyForControls() const { return busy; }
@@ -223,9 +227,9 @@ int main() {
   wifiAvailable = false; assert(!connectWifi() && sounds.empty());
   assert(prefs.keys.count(photowall::kWifiSetupCueKey)); // Failed setup must not announce success.
   wifiAvailable = true; assert(connectWifi());
-  assert(sounds == std::vector<DeviceSound>{DeviceSound::WifiConnected});
+  assert(sounds.empty());
   assert(!prefs.keys.count(photowall::kWifiSetupCueKey));
-  assert(connectWifi() && sounds.size() == 1);
+  assert(connectWifi() && sounds.empty());
 
   reset(); setup(); sounds.clear();
   updateCloudClaimSound(true); assert(sounds.empty()); // Existing binding on boot.
@@ -236,11 +240,11 @@ int main() {
   claimCue = static_cast<ClaimCue>(prefs.keys.at(photowall::kClaimCueKey));
   updateCloudClaimSound(false); assert(sounds.empty());
   updateCloudClaimSound(true);
-  assert(sounds == std::vector<DeviceSound>{DeviceSound::PairingSuccess});
+  assert(sounds.empty());
   assert(!prefs.keys.count(photowall::kClaimCueKey));
-  claimCue = ClaimCue::Idle; updateCloudClaimSound(true); assert(sounds.size() == 1);
+  claimCue = ClaimCue::Idle; updateCloudClaimSound(true); assert(sounds.empty());
   updateCloudClaimSound(false); pulse(3100); updateCloudClaimSound(true);
-  assert(sounds.size() == 1); // Pending shutdown wins over a success cue.
+  assert(sounds.empty()); // Binding remains silent, including pending shutdown.
 
   for (bool fallback : {false, true}) {
     reset(); stopAtStandby = false; sleepFails = fallback; levels[40] = LOW;
@@ -249,5 +253,5 @@ int main() {
     assert(clockMs >= 3830 && clockMs < 3890 && !serverStarted && sounds.empty());
     assert(sleeps == (fallback ? 1u : 2u) && wakeDisables >= 1);
   }
-  std::puts("PASS: boot/reconnect, one-shot short-press audio, bounce/hold/sleep silence, transfer deferral, explicit Wi-Fi setup cue, durable cloud binding cue, shutdown priority and wake fallback");
+  std::puts("PASS: boot/reconnect, one-shot short-press audio, bounce/hold/sleep silence, transfer deferral, silent Wi-Fi setup/binding, durable claim state, shutdown priority and wake fallback");
 }

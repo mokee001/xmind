@@ -1,6 +1,6 @@
 # PhotoWall · Waveshare ESP32-S3 13.3E6
 
-当前开发版本为 `0.3.9-transfer.gpio40.3`，开机自动广播、短按确认并提示音，配网与云端绑定成功分别提示；规则和验收见 [开机广播与自动回连](GPIO40-AUTO-BLE.md)。上一版实板记录见 [GPIO40 候选交接](GPIO40-CANDIDATE.md)。
+当前开发版本为 `0.3.9-transfer.gpio40.4`，开机自动广播，保留短按反馈和开关机声音，暂不播放配网与绑定成功音；规则和验收见 [开机广播与自动回连](GPIO40-AUTO-BLE.md)。上一版实板记录见 [GPIO40 候选交接](GPIO40-CANDIDATE.md)。
 
 自定义固件将官方被动 Wi-Fi Loader 改成支持局域网直传、云端轮询兜底的独立设备：
 
