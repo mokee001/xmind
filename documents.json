@@ -1,0 +1,50 @@
+[
+  {
+    "id": "hardware",
+    "title": "外壳结构与试装说明",
+    "path": "hardware/echoo-enclosure-v0.4.2/README.md",
+    "track": "hardware"
+  },
+  {
+    "id": "migration",
+    "title": "回忆日历 App 迁移",
+    "path": "docs/calendar-native-migration-20260916.md",
+    "track": "software"
+  },
+  {
+    "id": "onboarding",
+    "title": "两步首次体验规范",
+    "path": "docs/calendar-onboarding-short-v0.3.md",
+    "track": "software"
+  },
+  {
+    "id": "templates",
+    "title": "现行四款模版清单",
+    "path": "docs/current-template-catalog.md",
+    "track": "template"
+  },
+  {
+    "id": "release",
+    "title": "Demo 与 TestFlight 发布流程",
+    "path": "docs/demo-testflight-workflow.md",
+    "track": "software"
+  },
+  {
+    "id": "testing",
+    "title": "软件与设备测试说明",
+    "path": "docs/software-device-testing.md",
+    "track": "software"
+  },
+  {
+    "id": "quality",
+    "title": "E1002 同尺寸画质候选 v2",
+    "path": "docs/e1002-quality-compat-v2.md",
+    "track": "template"
+  },
+  {
+    "id": "collaboration",
+    "title": "团队协作与接口契约（历史分工）",
+    "path": "CONTRIBUTING.md",
+    "track": "all"
+  }
+]
