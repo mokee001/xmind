@@ -1,7 +1,8 @@
 // Loaded only by the static Pages export. The local Python API stays unchanged.
 (() => {
   const base = new URL('./', document.currentScript.src);
-  const storageKey = `echoo-project-dashboard:v1:${base.pathname}`;
+  const legacyKey = `echoo-project-dashboard:v1:${base.pathname}`;
+  const storageKey = `echoo-project-dashboard:v2:${base.pathname}`;
   const lockKey = `${storageKey}:write`;
   let initialState;
 
@@ -17,7 +18,7 @@
         !['tasks', 'ideas', 'updates', 'releases'].every(k => Array.isArray(value[k]))) {
       throw new Error('浏览器中的看板数据格式不正确，请保留数据并联系维护者恢复');
     }
-    return value;
+    return window.EchooPlan.validate(value);
   }
 
   async function readState() {
@@ -28,6 +29,8 @@
       try { return checkState(JSON.parse(saved)); }
       catch { throw new Error('浏览器中的看板数据无法读取，原数据已保留，请联系维护者恢复'); }
     }
+    const legacy = localStorage.getItem(legacyKey);
+    if (legacy !== null) return window.EchooPlan.upgrade(JSON.parse(legacy), await window.EchooPlan.ready);
     initialState ||= readJSON('seed.json').then(checkState);
     return structuredClone(await initialState);
   }

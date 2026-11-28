@@ -1,0 +1,32 @@
+{
+  "plan": {
+    "goal": "完成可体验的照片墙整机闭环",
+    "milestones": [
+      {"id":"baseline","title":"基线确认","outcome":"外壳方案、App 结构与四款模版目录确认。"},
+      {"id":"validation","title":"分线验收","outcome":"硬件可装配、连接流程通过、四款模版可真实出图。"},
+      {"id":"delivery","title":"整机交付","outcome":"真实上屏与恢复通过，发布构建和测试组完成核验。"}
+    ]
+  },
+  "focus": {
+    "hardware":{"goal":"完成按钮小样试装，核准整壳关键尺寸","taskIds":["HW-03","HW-04"]},
+    "software":{"goal":"跑通真实配网、设备绑定与保存流程","taskIds":["SW-03"]},
+    "template":{"goal":"打通抠图依赖，完成四款真实素材出图","taskIds":["TP-02","TP-03"]}
+  },
+  "taskLinks": {
+    "HW-01":{"milestoneId":"baseline","outcome":"一体前壳与隐藏按钮固定方案"},
+    "HW-02":{"milestoneId":"baseline","outcome":"打印件几何与干涉检查记录"},
+    "HW-03":{"milestoneId":"validation","outcome":"按钮样块试装记录，明确行程与装配间隙"},
+    "HW-04":{"milestoneId":"validation","outcome":"按钮、主板与 Type-C 实测尺寸表"},
+    "HW-05":{"milestoneId":"validation","outcome":"整壳试打印件与装配问题清单"},
+    "HW-06":{"milestoneId":"delivery","outcome":"整机联调通过与真实上屏回执"},
+    "SW-01":{"milestoneId":"baseline","outcome":"回忆日历首页与两步引导迁移记录"},
+    "SW-02":{"milestoneId":"baseline","outcome":"偏好管理和整墙操作入口就绪"},
+    "SW-03":{"milestoneId":"validation","outcome":"BLE → Wi-Fi → 认领 → 保存完整回归记录"},
+    "SW-04":{"milestoneId":"delivery","outcome":"当前构建处理成功且已关联既定测试组"},
+    "SW-05":{"milestoneId":"delivery","outcome":"断线恢复、设备回执和展示历史验证记录"},
+    "TP-01":{"milestoneId":"baseline","outcome":"四款模版的目录与使用边界确认"},
+    "TP-02":{"milestoneId":"validation","outcome":"既定抠图模型与依赖可用性核验记录"},
+    "TP-03":{"milestoneId":"validation","outcome":"四款模版的真实素材出图与验收记录"},
+    "TP-04":{"milestoneId":"delivery","outcome":"六色面板实屏与数字出图的对照记录"}
+  }
+}

@@ -1,29 +1,273 @@
 {
   "revision": 0,
-  "owners": {"hardware": "mokee", "software": "静亚", "template": "新子"},
+  "owners": {
+    "hardware": "mokee",
+    "software": "静亚",
+    "template": "新子"
+  },
   "tasks": [
-    {"id":"HW-01","title":"一体前壳与隐藏式按钮结构","track":"hardware","status":"done","priority":"normal","due":"","description":"v0.4.2 已取消外露按钮面板；按钮承托、限位与盲螺钉柱合入前壳。完成范围是模型设计。","source":"hardware"},
-    {"id":"HW-02","title":"打印件几何与干涉检查","track":"hardware","status":"done","priority":"normal","due":"","description":"文档记录 12 个 STL 的封闭、单连通与干涉检查。几何验证不等于实物装配验收。","source":"hardware"},
-    {"id":"HW-03","title":"打印按钮区域小样并试装","track":"hardware","status":"todo","priority":"high","due":"","description":"建议下一步：先打印按钮区域试装样块与 07 后压框，核对按钮行程、压框接触位置及插头空间。","source":"hardware"},
-    {"id":"HW-04","title":"核准按钮、主板与 Type-C 实物尺寸","track":"hardware","status":"todo","priority":"high","due":"","description":"核对按钮帽径、PCB 厚度、主板孔距、透明支撑板和 Type-C 母头尺寸；现有部分尺寸为待试配参数。","source":"hardware"},
-    {"id":"HW-05","title":"完成整壳切片与试打印","track":"hardware","status":"todo","priority":"normal","due":"","description":"建议在小样验收后执行。核查 H2D 单喷嘴有效区域、brim 余量、支撑与打印翘曲。","source":"hardware"},
-    {"id":"HW-06","title":"软硬件联调与上屏验收","track":"hardware","status":"todo","priority":"normal","due":"","description":"建议联合软件负责人验证实体按钮、真实设备回执、供电与连续运行；按实际结果更新状态。","source":"testing"},
-    {"id":"SW-01","title":"回忆日历首页与两步首次引导","track":"software","status":"done","priority":"normal","due":"","description":"2026-09-16 迁移记录确认：无底部 Tab 的日历首页，照片授权与设备连接两步引导。","source":"migration"},
-    {"id":"SW-02","title":"偏好管理与整墙操作入口","track":"software","status":"done","priority":"normal","due":"","description":"迁移文档确认偏好与设置同级，整墙管理保留在设置内。此状态对应已记录的页面迁移范围。","source":"migration"},
-    {"id":"SW-03","title":"回归 BLE → Wi-Fi → 绑定完整流程","track":"software","status":"todo","priority":"high","due":"","description":"建议本轮回归：用真实硬件验证配网、认领、保存重试和重配网。自动结束需等待真实成功与保存完成。","source":"migration"},
-    {"id":"SW-04","title":"核验当前构建与 TestFlight 测试组","track":"software","status":"todo","priority":"normal","due":"","description":"源码配置为 1.3.17（41），不代表 Apple 当前处理状态。发布前核对构建处理与正在使用的测试组分配。","source":"release"},
-    {"id":"SW-05","title":"核验断线恢复与真实展示记录","track":"software","status":"todo","priority":"normal","due":"","description":"建议联调设备恢复、展示回执和日历历史；未收到设备成功上屏回执时，不记录正式当前展示。","source":"testing"},
-    {"id":"TP-01","title":"确认四款正式模版目录","track":"template","status":"done","priority":"normal","due":"","description":"已确认日常拼贴、圣诞手帐、分层抠图拼贴、宠物牛仔拼贴。旧 16 款退出默认目录。","source":"templates"},
-    {"id":"TP-02","title":"核验分层抠图运行依赖","track":"template","status":"todo","priority":"high","due":"","description":"核对 rembg、onnxruntime 与既定模型是否可用。依赖不足时明确不可用，不用占位主体代替真实生成。","source":"templates"},
-    {"id":"TP-03","title":"四款模版的真实素材出图验收","track":"template","status":"todo","priority":"normal","due":"","description":"建议逐款核对照片槽位、裁切、抠图边缘和文字。只使用现行四款，不修改选片规则。","source":"templates"},
-    {"id":"TP-04","title":"六色墨水屏实屏效果核对","track":"template","status":"todo","priority":"normal","due":"","description":"建议与硬件负责人共同完成实屏比对。已有数字点阵对照不构成实物面板色彩校准。","source":"quality"}
+    {
+      "id": "HW-01",
+      "title": "一体前壳与隐藏式按钮结构",
+      "track": "hardware",
+      "status": "done",
+      "priority": "normal",
+      "due": "",
+      "description": "v0.4.2 已取消外露按钮面板；按钮承托、限位与盲螺钉柱合入前壳。完成范围是模型设计。",
+      "source": "hardware",
+      "milestoneId": "baseline",
+      "outcome": "一体前壳与隐藏按钮固定方案"
+    },
+    {
+      "id": "HW-02",
+      "title": "打印件几何与干涉检查",
+      "track": "hardware",
+      "status": "done",
+      "priority": "normal",
+      "due": "",
+      "description": "文档记录 12 个 STL 的封闭、单连通与干涉检查。几何验证不等于实物装配验收。",
+      "source": "hardware",
+      "milestoneId": "baseline",
+      "outcome": "打印件几何与干涉检查记录"
+    },
+    {
+      "id": "HW-03",
+      "title": "打印按钮区域小样并试装",
+      "track": "hardware",
+      "status": "todo",
+      "priority": "high",
+      "due": "",
+      "description": "建议下一步：先打印按钮区域试装样块与 07 后压框，核对按钮行程、压框接触位置及插头空间。",
+      "source": "hardware",
+      "milestoneId": "validation",
+      "outcome": "按钮样块试装记录，明确行程与装配间隙"
+    },
+    {
+      "id": "HW-04",
+      "title": "核准按钮、主板与 Type-C 实物尺寸",
+      "track": "hardware",
+      "status": "todo",
+      "priority": "high",
+      "due": "",
+      "description": "核对按钮帽径、PCB 厚度、主板孔距、透明支撑板和 Type-C 母头尺寸；现有部分尺寸为待试配参数。",
+      "source": "hardware",
+      "milestoneId": "validation",
+      "outcome": "按钮、主板与 Type-C 实测尺寸表"
+    },
+    {
+      "id": "HW-05",
+      "title": "完成整壳切片与试打印",
+      "track": "hardware",
+      "status": "todo",
+      "priority": "normal",
+      "due": "",
+      "description": "建议在小样验收后执行。核查 H2D 单喷嘴有效区域、brim 余量、支撑与打印翘曲。",
+      "source": "hardware",
+      "milestoneId": "validation",
+      "outcome": "整壳试打印件与装配问题清单"
+    },
+    {
+      "id": "HW-06",
+      "title": "软硬件联调与上屏验收",
+      "track": "hardware",
+      "status": "todo",
+      "priority": "normal",
+      "due": "",
+      "description": "建议联合软件负责人验证实体按钮、真实设备回执、供电与连续运行；按实际结果更新状态。",
+      "source": "testing",
+      "milestoneId": "delivery",
+      "outcome": "整机联调通过与真实上屏回执"
+    },
+    {
+      "id": "SW-01",
+      "title": "回忆日历首页与两步首次引导",
+      "track": "software",
+      "status": "done",
+      "priority": "normal",
+      "due": "",
+      "description": "2026-09-16 迁移记录确认：无底部 Tab 的日历首页，照片授权与设备连接两步引导。",
+      "source": "migration",
+      "milestoneId": "baseline",
+      "outcome": "回忆日历首页与两步引导迁移记录"
+    },
+    {
+      "id": "SW-02",
+      "title": "偏好管理与整墙操作入口",
+      "track": "software",
+      "status": "done",
+      "priority": "normal",
+      "due": "",
+      "description": "迁移文档确认偏好与设置同级，整墙管理保留在设置内。此状态对应已记录的页面迁移范围。",
+      "source": "migration",
+      "milestoneId": "baseline",
+      "outcome": "偏好管理和整墙操作入口就绪"
+    },
+    {
+      "id": "SW-03",
+      "title": "回归 BLE → Wi-Fi → 绑定完整流程",
+      "track": "software",
+      "status": "todo",
+      "priority": "high",
+      "due": "",
+      "description": "建议本轮回归：用真实硬件验证配网、认领、保存重试和重配网。自动结束需等待真实成功与保存完成。",
+      "source": "migration",
+      "milestoneId": "validation",
+      "outcome": "BLE → Wi-Fi → 认领 → 保存完整回归记录"
+    },
+    {
+      "id": "SW-04",
+      "title": "核验当前构建与 TestFlight 测试组",
+      "track": "software",
+      "status": "todo",
+      "priority": "normal",
+      "due": "",
+      "description": "源码配置为 1.3.17（41），不代表 Apple 当前处理状态。发布前核对构建处理与正在使用的测试组分配。",
+      "source": "release",
+      "milestoneId": "delivery",
+      "outcome": "当前构建处理成功且已关联既定测试组"
+    },
+    {
+      "id": "SW-05",
+      "title": "核验断线恢复与真实展示记录",
+      "track": "software",
+      "status": "todo",
+      "priority": "normal",
+      "due": "",
+      "description": "建议联调设备恢复、展示回执和日历历史；未收到设备成功上屏回执时，不记录正式当前展示。",
+      "source": "testing",
+      "milestoneId": "delivery",
+      "outcome": "断线恢复、设备回执和展示历史验证记录"
+    },
+    {
+      "id": "TP-01",
+      "title": "确认四款正式模版目录",
+      "track": "template",
+      "status": "done",
+      "priority": "normal",
+      "due": "",
+      "description": "已确认日常拼贴、圣诞手帐、分层抠图拼贴、宠物牛仔拼贴。旧 16 款退出默认目录。",
+      "source": "templates",
+      "milestoneId": "baseline",
+      "outcome": "四款模版的目录与使用边界确认"
+    },
+    {
+      "id": "TP-02",
+      "title": "核验分层抠图运行依赖",
+      "track": "template",
+      "status": "todo",
+      "priority": "high",
+      "due": "",
+      "description": "核对 rembg、onnxruntime 与既定模型是否可用。依赖不足时明确不可用，不用占位主体代替真实生成。",
+      "source": "templates",
+      "milestoneId": "validation",
+      "outcome": "既定抠图模型与依赖可用性核验记录"
+    },
+    {
+      "id": "TP-03",
+      "title": "四款模版的真实素材出图验收",
+      "track": "template",
+      "status": "todo",
+      "priority": "normal",
+      "due": "",
+      "description": "建议逐款核对照片槽位、裁切、抠图边缘和文字。只使用现行四款，不修改选片规则。",
+      "source": "templates",
+      "milestoneId": "validation",
+      "outcome": "四款模版的真实素材出图与验收记录"
+    },
+    {
+      "id": "TP-04",
+      "title": "六色墨水屏实屏效果核对",
+      "track": "template",
+      "status": "todo",
+      "priority": "normal",
+      "due": "",
+      "description": "建议与硬件负责人共同完成实屏比对。已有数字点阵对照不构成实物面板色彩校准。",
+      "source": "quality",
+      "milestoneId": "delivery",
+      "outcome": "六色面板实屏与数字出图的对照记录"
+    }
   ],
   "ideas": [],
   "updates": [],
   "releases": [
-    {"id":"R-01","title":"外壳结构 v0.4.2","version":"v0.4.2","track":"hardware","date":"2026-11-17","description":"取消外露按钮面板；固定结构全部收进壳内，新增按钮区域试装样块。模型已验证，实物待试装。","source":"hardware"},
-    {"id":"R-02","title":"六色画质候选 v2","version":"实验 v2","track":"template","date":"2026-10-12","description":"同尺寸数字点阵模拟与边缘策略对照。该文档记录为本地实验，未部署、未向设备投送。","source":"quality"},
-    {"id":"R-03","title":"回忆日历迁入 App","version":"1.3.6 · 29","track":"software","date":"2026-09-16","description":"日历首页、两步引导与真实连接迁移。文档记录当时构建已进入既定测试组；不代表当前最新发布状态。","source":"migration"},
-    {"id":"R-04","title":"四款模版目录确定","version":"目录 v1","track":"template","date":"2026-09-11","description":"保留四款，分层抠图拼贴替换白底画廊；旧目录不作为默认回退。","source":"templates"}
-  ]
+    {
+      "id": "R-01",
+      "title": "外壳结构 v0.4.2",
+      "version": "v0.4.2",
+      "track": "hardware",
+      "date": "2026-11-17",
+      "description": "取消外露按钮面板；固定结构全部收进壳内，新增按钮区域试装样块。模型已验证，实物待试装。",
+      "source": "hardware"
+    },
+    {
+      "id": "R-02",
+      "title": "六色画质候选 v2",
+      "version": "实验 v2",
+      "track": "template",
+      "date": "2026-10-12",
+      "description": "同尺寸数字点阵模拟与边缘策略对照。该文档记录为本地实验，未部署、未向设备投送。",
+      "source": "quality"
+    },
+    {
+      "id": "R-03",
+      "title": "回忆日历迁入 App",
+      "version": "1.3.6 · 29",
+      "track": "software",
+      "date": "2026-09-16",
+      "description": "日历首页、两步引导与真实连接迁移。文档记录当时构建已进入既定测试组；不代表当前最新发布状态。",
+      "source": "migration"
+    },
+    {
+      "id": "R-04",
+      "title": "四款模版目录确定",
+      "version": "目录 v1",
+      "track": "template",
+      "date": "2026-09-11",
+      "description": "保留四款，分层抠图拼贴替换白底画廊；旧目录不作为默认回退。",
+      "source": "templates"
+    }
+  ],
+  "schemaVersion": 2,
+  "plan": {
+    "goal": "完成可体验的照片墙整机闭环",
+    "milestones": [
+      {
+        "id": "baseline",
+        "title": "基线确认",
+        "outcome": "外壳方案、App 结构与四款模版目录确认。"
+      },
+      {
+        "id": "validation",
+        "title": "分线验收",
+        "outcome": "硬件可装配、连接流程通过、四款模版可真实出图。"
+      },
+      {
+        "id": "delivery",
+        "title": "整机交付",
+        "outcome": "真实上屏与恢复通过，发布构建和测试组完成核验。"
+      }
+    ]
+  },
+  "focus": {
+    "hardware": {
+      "goal": "完成按钮小样试装，核准整壳关键尺寸",
+      "taskIds": [
+        "HW-03",
+        "HW-04"
+      ]
+    },
+    "software": {
+      "goal": "跑通真实配网、设备绑定与保存流程",
+      "taskIds": [
+        "SW-03"
+      ]
+    },
+    "template": {
+      "goal": "打通抠图依赖，完成四款真实素材出图",
+      "taskIds": [
+        "TP-02",
+        "TP-03"
+      ]
+    }
+  }
 }

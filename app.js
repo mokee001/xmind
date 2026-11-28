@@ -32,7 +32,8 @@ const paths = {
  settings:'<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor"/><circle cx="15" cy="17" r="3" fill="currentColor"/>'
 };
 const icon = (name, extra='') => `<svg class="icon ${extra}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.file}</svg>`;
-let state, documents = [], busy = false, taskView = 'list', taskStatus = 'all', filter = 'all', searchQuery = '';
+const Plan = window.EchooPlan;
+let state, documents = [], busy = false, taskView = 'list', taskStatus = 'all', filter = 'all', searchQuery = '', stageFilter = 'all', focusOnly = false;
 const dialog = $('#dialog');
 const today = () => new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Shanghai'}).format(new Date());
 const uid = prefix => `${prefix}-${crypto.randomUUID().slice(0,8)}`;
@@ -41,7 +42,19 @@ const tag = track => `<span class="track-tag ${tracks[track].tone}"><i></i>${tra
 const matches = item => filter === 'all' || item.track === filter;
 const dateLabel = date => date ? new Intl.DateTimeFormat('zh-CN',{month:'short',day:'numeric'}).format(new Date(date+'T12:00:00')) : '未排期';
 const route = () => tabs.some(t => t[0] === location.hash.slice(1).split('?')[0]) ? location.hash.slice(1).split('?')[0] : 'overview';
-function go(page, track = filter) { location.hash = page + (track === 'all' ? '' : '?track='+track); }
+function go(page, track = filter, milestone = stageFilter, focused = focusOnly) {
+  const params = new URLSearchParams();
+  if(track !== 'all') params.set('track',track);
+  if(page === 'tasks' && milestone !== 'all') params.set('milestone',milestone);
+  if(page === 'tasks' && focused) params.set('focus','1');
+  location.hash = page + (params.size ? '?' + params : '');
+}
+function milestoneOf(task) { return state.plan.milestones.find(m=>m.id===task.milestoneId); }
+function milestoneCode(milestone) { return milestone ? 'M0'+(state.plan.milestones.findIndex(m=>m.id===milestone.id)+1) : '待关联'; }
+function isFocus(task) { return state.focus[task.track].taskIds.includes(task.id); }
+function stageProgress(id) { return Plan.progress(state.tasks.filter(t=>t.milestoneId===id)); }
+function planNotice() { return '按当前任务计划汇总；新增任务会改变分母，不等同于实体或线上验收状态。'; }
+
 function showToast(text) { $('#toast').textContent = text; $('#toast').classList.add('visible'); clearTimeout(showToast.timer); showToast.timer = setTimeout(()=>$('#toast').classList.remove('visible'),4000); }
 async function api(url, options) {
   if (window.echooStaticStorage) return window.echooStaticStorage.request(url, options);
@@ -77,6 +90,10 @@ function render() {
   const page = route();
   filter = new URLSearchParams(location.hash.split('?')[1] || '').get('track') || 'all';
   if (filter !== 'all' && !tracks[filter]) filter = 'all';
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  stageFilter = params.get('milestone') || 'all';
+  if(stageFilter !== 'all' && stageFilter !== 'unassigned' && !state.plan.milestones.some(m=>m.id===stageFilter)) stageFilter='all';
+  focusOnly = params.get('focus') === '1';
   const current = tabs.find(t=>t[0]===page);
   $('#sidebar').innerHTML = `<a class="brand" href="#overview" aria-label="Echoo 总进度">echoo<span>↗</span></a><div class="brand-motto">TOGETHER, WE BUILD.</div><div class="palette"><i></i><i></i><i></i><i></i><i></i></div><div class="nav-caption">项目工作台</div><nav>${tabs.map(([id,name,ico,tone])=>`<a class="nav-item ${page===id?'active':''}" href="#${id}" ${page===id?'aria-current="page"':''}><i class="nav-dot ${tone}"></i>${icon(ico)}<span>${name}</span>${id==='tasks'?`<b>${state.tasks.filter(t=>t.status!=='done').length}</b>`:''}</a>`).join('')}</nav><div class="sidebar-bottom"><div class="workspace-mark">E</div><div><strong>Echoo 照片墙</strong><small>三个人，一起把它做好。</small></div><button class="icon-button" data-action="team" aria-label="负责人设置">${icon('settings')}</button></div>`;
   $('#breadcrumb').textContent=current[1];
@@ -94,26 +111,61 @@ function pageHead(title, description, action, label) {
 function filters(extra='') {
   return `<div class="filter-row"><div class="filter-tabs" role="group" aria-label="工作线筛选">${[['all','全部工作线'],...Object.entries(tracks).map(([k,v])=>[k,v.name])].map(([k,v])=>`<button data-action="filter" data-id="${k}" class="${filter===k?'selected':''}">${k!=='all'?`<i class="dot ${tracks[k].tone}"></i>`:''}${v}</button>`).join('')}</div>${extra}</div>`;
 }
-function taskRow(task, compact=false) {
-  return `<div class="task-row ${task.status==='done'?'completed':''}"><button class="task-check ${task.status==='done'?'checked':''}" data-action="toggle-task" data-id="${esc(task.id)}" aria-label="${task.status==='done'?'重新打开':'完成'}：${esc(task.title)}">${task.status==='done'?icon('check'):''}</button><button class="task-title" data-action="edit-task" data-id="${esc(task.id)}"><strong>${esc(task.title)}</strong>${compact?'':`<small>${esc(task.id)} · ${esc(task.description)}</small>`}</button>${tag(task.track)}${compact?'':`<span class="task-owner">${avatar(task.track)}${esc(state.owners[task.track])}</span><span class="due ${task.due&&task.due<today()&&task.status!=='done'?'overdue':''}">${dateLabel(task.due)}</span>`}<span class="status ${task.status}"><i></i>${statuses[task.status]}</span><button class="icon-button" data-action="edit-task" data-id="${esc(task.id)}" aria-label="编辑 ${esc(task.title)}">${icon('chevron')}</button></div>`;
+function taskRow(task) {
+  const milestone=milestoneOf(task);
+  return `<div class="task-row ${task.status==='done'?'completed':''}">
+    <button class="task-check ${task.status==='done'?'checked':''}" data-action="toggle-task" data-id="${esc(task.id)}" aria-label="${task.status==='done'?'重新打开':'完成'}：${esc(task.title)}">${task.status==='done'?icon('check'):''}</button>
+    <div class="task-main"><button class="task-title" data-action="edit-task" data-id="${esc(task.id)}"><strong>${esc(task.title)}</strong><small>验收产出 · ${esc(task.outcome || '待补充验收产出')}</small></button>
+      <div class="task-trace"><button class="milestone-chip" data-action="milestone-tasks" data-id="${esc(task.milestoneId||'unassigned')}">${icon('flag')}${milestoneCode(milestone)}${milestone?' · '+esc(milestone.title):''}</button>${isFocus(task)?'<span class="focus-badge">当前重点</span>':''}<span class="task-id">${esc(task.id)}</span></div>
+    </div>
+    <span class="task-owner">${avatar(task.track)}<span>${esc(state.owners[task.track])}<small>${tracks[task.track].name}负责人</small></span></span>
+    <span class="due ${task.due&&task.due<today()&&task.status!=='done'?'overdue':''}">${dateLabel(task.due)}</span>
+    <span class="status ${task.status}"><i></i>${statuses[task.status]}</span>
+    <button class="icon-button" data-action="edit-task" data-id="${esc(task.id)}" aria-label="编辑 ${esc(task.title)}">${icon('chevron')}</button>
+  </div>`;
+}
+function milestoneStrip() {
+  const current=Plan.currentMilestone(state);
+  return `<section class="milestone-strip" aria-label="整体里程碑">${state.plan.milestones.map(m=>{
+    const p=stageProgress(m.id),complete=p.total>0&&p.done===p.total;
+    return `<button class="milestone-card ${complete?'complete':current?.id===m.id?'current':''}" data-action="milestone-tasks" data-id="${m.id}"><div class="milestone-top"><span class="milestone-index">${complete?icon('check'):milestoneCode(m)}</span><span class="milestone-state">${complete?'任务已完成':current?.id===m.id?'当前推进':'后续里程碑'}</span></div><h3>${esc(m.title)}</h3><p>${esc(m.outcome)}</p><div class="milestone-bottom"><span>${p.done} / ${p.total} 项已完成</span><strong>${p.percent}%</strong></div><div class="progress-bar"><i style="width:${p.percent}%"></i></div></button>`;
+  }).join('')}</section>`;
+}
+function focusCard(track) {
+  const t=tracks[track],focus=state.focus[track],items=focus.taskIds.map(id=>state.tasks.find(t=>t.id===id)).filter(Boolean),p=Plan.progress(state.tasks.filter(t=>t.track===track));
+  const open=items.filter(t=>t.status!=='done');
+  const label=!items.length?'待安排重点':!open.length?'重点已完成':open.some(t=>t.status==='blocked')?'需要协助':open.some(t=>t.status==='doing')?'正在推进':'待开始';
+  return `<article class="focus-card ${t.tone}"><div class="focus-owner">${avatar(track)}<div><h3>${esc(state.owners[track])}</h3><span>${t.name}负责人</span></div><button class="icon-button" data-action="edit-focus" data-id="${track}" aria-label="调整${t.name}当前重点">${icon('settings')}</button></div>
+    <div class="focus-caption"><span>当前重点</span><span>${label}</span></div><h2>${esc(focus.goal)}</h2>
+    <div class="focus-deliverables">${items.map(task=>`<button class="focus-deliverable ${task.status==='done'?'done':''}" data-action="edit-task" data-id="${esc(task.id)}"><span class="focus-task-state">${icon(task.status==='done'?'check':'arrow')}</span><span><strong>${esc(task.title)}</strong><small>${milestoneCode(milestoneOf(task))} · ${esc(milestoneOf(task)?.title||'待关联里程碑')} · ${statuses[task.status]}</small></span></button>`).join('') || '<p class="muted small">点击右上角，为这条线安排重点任务。</p>'}</div>
+    <div class="focus-progress"><div><span>工作线进度</span><strong>${p.done}/${p.total} <small>项完成</small></strong></div><div class="progress-bar"><i style="width:${p.percent}%"></i></div></div>
+    <button class="focus-view" data-action="focus-tasks" data-id="${track}">查看重点待办 ${icon('arrow')}</button></article>`;
 }
 function overview() {
-  const done = state.tasks.filter(t=>t.status==='done').length;
-  const percent = state.tasks.length?Math.round(done/state.tasks.length*100):0;
-  const pending = state.tasks.filter(t=>t.status!=='done');
-  return `${pageHead('把好想法，一起做出来。','硬件、软件与模版，在这里同步。','new-task','新建待办')}
-  <section class="project-summary"><div class="project-label"><span class="project-symbol">e.</span><div><div class="project-name">Echoo 智能照片墙 <span class="project-stage">项目协作</span></div><p>从一张照片，到生活里的一面回忆。</p></div></div><div class="summary-metrics"><div><strong>${String(done).padStart(2,'0')}<small> / ${state.tasks.length}</small></strong><span>任务已完成</span></div><div><strong>03</strong><span>工作线负责人</span></div><div class="overall-progress"><div class="ring" style="--percent:${percent*3.6}deg"><strong>${percent}<small>%</small></strong></div><span>看板完成率</span></div></div></section>
-  <div class="section-heading"><h2>三条工作线<span class="section-number">03</span></h2><button class="text-button" data-action="team">${icon('people')}管理负责人</button></div>
-  <section class="track-grid">${Object.entries(tracks).map(([key,t],index)=>{
-    const items=state.tasks.filter(x=>x.track===key), count=items.filter(x=>x.status==='done').length, pct=items.length?Math.round(count/items.length*100):0;
-    return `<article class="track-card ${t.tone}"><div class="track-card-top"><div class="track-icon">${icon(t.icon)}</div><span class="eyebrow">0${index+1} / ${t.english}</span><button class="icon-button" data-action="track-tasks" data-id="${key}" aria-label="查看${t.name}任务">${icon('arrow')}</button></div><h2>${t.name}</h2><p>${t.subtitle}</p><div class="track-owner">${avatar(key)}<span>${esc(state.owners[key])}</span><span class="owner-role">负责人</span></div><div class="progress-caption"><span>已完成 ${count} / ${items.length} 项</span><strong>${pct}<small>%</small></strong></div><div class="progress-bar"><i style="width:${pct}%"></i></div><div class="track-next"><span>下一步</span>${esc(items.find(x=>x.status!=='done')?.title || '全部任务已完成')}${icon('chevron')}</div></article>`;
-  }).join('')}</section>
-  <div class="overview-bottom"><section class="panel priority-panel"><div class="panel-heading"><h2>优先推进<span class="count">${pending.filter(t=>t.priority==='high').length}</span></h2><a class="text-button" href="#tasks">全部待办 ${icon('arrow')}</a></div><div class="compact-tasks">${pending.filter(t=>t.priority==='high').slice(0,5).map(t=>taskRow(t,true)).join('') || '<div class="empty-inline">优先事项已完成。继续向下一步前进。</div>'}</div><div class="panel-foot">${icon('flag')}下一次联调，先让三条工作线的关键事项就绪。</div></section><section class="panel latest-panel"><div class="panel-heading"><h2>最近更新</h2><a class="text-button" href="#history">${icon('arrow')}<span class="sr-only">全部迭代</span></a></div><div class="activity-list">${recentItems().slice(0,3).map(item=>`<button class="activity-item" data-action="${item.source?'document':'update-detail'}" data-id="${esc(item.source||item.id)}"><span class="activity-line ${tracks[item.track].tone}"></span><div><small>${esc(item.date)} · ${tracks[item.track].name}</small><strong>${esc(item.title)}</strong><p>${esc(item.description)}</p></div></button>`).join('')}</div></section></div>
-  <div class="source-note">${icon('file')}初始任务根据项目文档整理，待办为建议计划；完成率按当前看板任务计算，由负责人更新实际进展。</div>`;
+  const p=Plan.progress(state.tasks),current=Plan.currentMilestone(state);
+  const completedStages=state.plan.milestones.filter(m=>{const v=stageProgress(m.id);return v.total&&v.done===v.total;}).length;
+  const unassigned=state.tasks.filter(t=>!t.milestoneId).length;
+  const blocked=state.tasks.filter(t=>t.status==='blocked');
+  return `${pageHead('项目总进度','看清共同目标，也看清每个人现在要交付什么。','new-task','新建待办')}
+    <section class="goal-panel panel"><div class="goal-copy"><span class="eyebrow">本轮整体目标</span><h2>${esc(state.plan.goal)}</h2><p>${current?`当前推进 <strong>${milestoneCode(current)} · ${esc(current.title)}</strong>`:'三个里程碑的任务均已完成'}<span>建议阶段划分，可按实际计划调整</span></p><button class="text-button" data-action="edit-plan">${icon('settings')}调整目标与验收标准</button></div><div class="goal-metrics"><div class="goal-percent">${p.percent}<span>%</span></div><p><strong>${p.done} / ${p.total}</strong> 项任务已完成</p><span>${completedStages} / 3 个里程碑任务已完成</span></div></section>
+    <div class="section-heading"><h2>三位负责人 · 当前重点</h2><button class="text-button" data-action="team">${icon('people')}管理负责人</button></div>
+    <section class="focus-grid">${Object.keys(tracks).map(focusCard).join('')}</section>
+    <div class="section-heading"><h2>整体推进路径</h2><span class="muted small">点击里程碑，查看对应待办</span></div>${milestoneStrip()}
+    ${unassigned?`<button class="unassigned-alert" data-action="milestone-tasks" data-id="unassigned">${icon('flag')}${unassigned} 项旧任务待关联里程碑，已保留在整体任务统计中 ${icon('arrow')}</button>`:''}
+    <section class="progress-connection panel"><span class="connection-icon">${icon('link')}</span><div><strong>每个待办，都有一条通向整体目标的路径</strong><p>负责人完成待办 → 关联里程碑进度更新 → 整体已完成任务 +1。进度按全部任务汇总，不随当前筛选变化。</p></div><a class="text-button" href="#tasks">查看全部待办 ${icon('arrow')}</a></section>
+    ${blocked.length?`<section class="panel blocked-panel"><div class="panel-heading"><h2>需要协助<span class="count">${blocked.length}</span></h2></div><div class="task-table-v2">${blocked.map(taskRow).join('')}</div></section>`:''}
+    <div class="source-note">${icon('file')}${planNotice()} 当前重点为基于已有任务的建议安排，可由负责人调整。</div>`;
 }
 function tasks() {
-  const items = state.tasks.filter(matches).filter(t=>taskStatus==='all'||t.status===taskStatus);
-  return `${pageHead('协作待办','每件事都有归属，每一步都能跟进。','new-task','新建待办')}${filters(`<div class="view-switch"><button data-action="view" data-id="list" class="${taskView==='list'?'selected':''}">${icon('file')}列表</button><button data-action="view" data-id="board" class="${taskView==='board'?'selected':''}">${icon('grid')}看板</button></div>`)}<div class="task-toolbar"><span>${items.length} 项任务</span><label>状态 <select id="status-filter"><option value="all">全部状态</option>${Object.entries(statuses).map(([k,v])=>`<option value="${k}" ${taskStatus===k?'selected':''}>${v}</option>`).join('')}</select></label></div>${taskView==='list'?`<section class="panel task-table"><div class="task-table-heading"><span>任务名称</span><span>工作线</span><span>负责人</span><span>截止日期</span><span>状态</span><span></span></div>${items.map(t=>taskRow(t)).join('') || empty('没有符合条件的任务','切换筛选条件，或创建一个新的待办。')}</section>`:`<div class="kanban">${Object.entries(statuses).map(([key,label])=>`<section class="kanban-column"><h2><i class="status-dot ${key}"></i>${label}<span>${items.filter(t=>t.status===key).length}</span></h2>${items.filter(t=>t.status===key).map(t=>`<button class="kanban-card" data-action="edit-task" data-id="${esc(t.id)}"><div>${tag(t.track)}${t.priority==='high'?'<span class="priority">优先</span>':''}</div><h3>${esc(t.title)}</h3><p>${esc(t.description)}</p><footer><span>${avatar(t.track)}${esc(state.owners[t.track])}</span><small>${dateLabel(t.due)}</small></footer></button>`).join('')}<button class="add-card" data-action="new-task" data-status="${key}">${icon('plus')}添加任务</button></section>`).join('')}</div>`}`;
+  const items=state.tasks.filter(matches).filter(t=>taskStatus==='all'||t.status===taskStatus)
+    .filter(t=>stageFilter==='all'||(stageFilter==='unassigned'?!t.milestoneId:t.milestoneId===stageFilter)).filter(t=>!focusOnly||isFocus(t));
+  const p=Plan.progress(state.tasks),m=state.plan.milestones.find(m=>m.id===stageFilter);
+  return `${pageHead('协作待办','明确负责人、验收产出，以及这项任务推进的整体里程碑。','new-task','新建待办')}
+    <div class="task-context panel"><div><span class="eyebrow">${filter==='all'?'本轮整体目标':esc(state.owners[filter])+' · '+tracks[filter].name+'当前重点'}</span><strong>${esc(filter==='all'?state.plan.goal:state.focus[filter].goal)}</strong></div><div class="task-context-progress"><strong>${p.done}/${p.total}</strong><span>整体任务已完成</span></div>${filter!=='all'?`<button class="text-button" data-action="edit-focus" data-id="${filter}">调整重点 ${icon('settings')}</button>`:'<a class="text-button" href="#overview">整体进度 ↗</a>'}</div>
+    ${filters(`<div class="view-switch"><button data-action="view" data-id="list" class="${taskView==='list'?'selected':''}">${icon('file')}列表</button><button data-action="view" data-id="board" class="${taskView==='board'?'selected':''}">${icon('grid')}看板</button></div>`)}
+    <div class="planning-toolbar"><div class="planning-selects"><label>里程碑<select id="milestone-filter"><option value="all">全部里程碑</option>${state.plan.milestones.map(m=>`<option value="${m.id}" ${stageFilter===m.id?'selected':''}>${milestoneCode(m)} · ${esc(m.title)}</option>`).join('')}<option value="unassigned" ${stageFilter==='unassigned'?'selected':''}>待关联</option></select></label><label>状态<select id="status-filter"><option value="all">全部状态</option>${Object.entries(statuses).map(([k,v])=>`<option value="${k}" ${taskStatus===k?'selected':''}>${v}</option>`).join('')}</select></label><label class="focus-toggle"><input id="focus-filter" type="checkbox" ${focusOnly?'checked':''}>只看当前重点</label></div><span>${items.length} 项待办${m?' · 阶段完成 '+stageProgress(m.id).done+'/'+stageProgress(m.id).total:''}</span></div>
+    ${taskView==='list'?`<section class="panel task-table-v2"><div class="task-table-heading"><span>待办 / 推进里程碑</span><span>负责人</span><span>截止日期</span><span>状态</span><span></span></div>${items.map(taskRow).join('')||empty('没有符合条件的任务','切换筛选条件，或创建一个关联里程碑的待办。')}</section>`:`<div class="kanban">${Object.entries(statuses).map(([key,label])=>`<section class="kanban-column"><h2><i class="status-dot ${key}"></i>${label}<span>${items.filter(t=>t.status===key).length}</span></h2>${items.filter(t=>t.status===key).map(t=>`<button class="kanban-card" data-action="edit-task" data-id="${esc(t.id)}"><div>${tag(t.track)}${isFocus(t)?'<span class="focus-badge">当前重点</span>':''}</div><h3>${esc(t.title)}</h3><p>验收 · ${esc(t.outcome||'待补充')}</p><span class="board-milestone">${icon('flag')}${milestoneCode(milestoneOf(t))} · ${esc(milestoneOf(t)?.title||'待关联')}</span><footer><span>${avatar(t.track)}${esc(state.owners[t.track])}</span><small>${dateLabel(t.due)}</small></footer></button>`).join('')}<button class="add-card" data-action="new-task" data-status="${key}">${icon('plus')}添加任务</button></section>`).join('')}</div>`}
+    <div class="source-note">${icon('link')}每项待办详情都展示完成后对关联里程碑和整体进度的影响。${planNotice()}</div>`;
 }
 function recentItems() { return [...state.updates,...state.releases].sort((a,b)=>b.date.localeCompare(a.date)); }
 function files() {
@@ -138,9 +190,24 @@ function specs() {
 function field(label,content,cls='') { return `<label class="field ${cls}"><span>${label}</span>${content}</label>`; }
 function selectTrack(value) { return `<select name="track">${Object.entries(tracks).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v.name} · ${esc(state.owners[k])}</option>`).join('')}</select>`; }
 function formEnd(label='保存') { return `<p class="form-error" role="alert"></p><div class="dialog-actions"><button class="button secondary" type="button" data-action="close">取消</button><button class="button primary" type="submit">${label}</button></div></form>`; }
+function impactPreview(task, milestoneId) {
+  const milestone=state.plan.milestones.find(m=>m.id===milestoneId);
+  if(!milestone) return '<p>选择里程碑后，这项待办会关联到整体目标。</p>';
+  const p=Plan.progress(state.tasks),existing=state.tasks.find(t=>t.id===task.id);
+  const related=state.tasks.filter(t=>t.milestoneId===milestoneId && t.id!==task.id);
+  const stage=Plan.progress(related),done=existing?.status==='done';
+  return `<span class="eyebrow">这项待办如何推进项目</span><strong>${esc(state.plan.goal)}</strong><div class="impact-path"><span>${milestoneCode(milestone)} · ${esc(milestone.title)}</span>${icon('arrow')}<span>${esc(task.title||'新待办')}</span></div><div class="impact-numbers"><div><span>${done?'已计入里程碑':'完成后 · 里程碑'}</span><strong>${stage.done+(done?1:0)} / ${stage.total+1}${done?'':` → ${stage.done+1} / ${stage.total+1}`}</strong></div><div><span>${done?'已计入整体进度':'完成后 · 整体任务'}</span><strong>${p.done} / ${p.total+(existing?0:1)}${done?'':` → ${p.done+1} / ${p.total+(existing?0:1)}`}</strong></div></div><p>${esc(milestone.outcome)}${existing?'':'（按新增后的任务数计算）'}</p>`;
+}
 function openTask(id, status='todo', prefill) {
-  const t=state.tasks.find(t=>t.id===id) || {title:'',track:filter==='all'?'hardware':filter,status,priority:'normal',due:'',description:'',source:'',...prefill};
-  openDialog(id?'待办详情':'新建待办',`<form id="task-form" data-id="${esc(id||'')}">${field('任务名称',`<input name="title" required maxlength="160" value="${esc(t.title)}" placeholder="这件事，具体要完成什么？">`)}<div class="form-grid">${field('工作线与负责人',selectTrack(t.track))}${field('任务状态',`<select name="status">${Object.entries(statuses).map(([k,v])=>`<option value="${k}" ${k===t.status?'selected':''}>${v}</option>`).join('')}</select>`)}${field('优先级',`<select name="priority"><option value="normal">普通</option><option value="high" ${t.priority==='high'?'selected':''}>优先推进</option></select>`)}${field('截止日期（可选）',`<input name="due" type="date" value="${esc(t.due)}">`)}</div>${field('说明与验收标准',`<textarea name="description" rows="4" maxlength="12000" placeholder="补充背景、依赖或完成条件…">${esc(t.description)}</textarea>`)}${t.source?`<button type="button" class="text-button source-button" data-action="document" data-id="${t.source}">${icon('file')}查看来源文档</button>`:''}${formEnd(id?'保存修改':'创建待办')}`);
+  const t=state.tasks.find(t=>t.id===id) || {title:'',track:filter==='all'?'hardware':filter,status,priority:'normal',due:'',description:'',source:'',outcome:'',milestoneId:state.plan.milestones.some(m=>m.id===stageFilter)?stageFilter:Plan.currentMilestone(state)?.id||'delivery',...prefill};
+  openDialog(id?'待办详情':'新建待办',`<form id="task-form" data-id="${esc(id||'')}">${field('任务名称',`<input name="title" required maxlength="160" value="${esc(t.title)}" placeholder="这件事，具体要完成什么？">`)}<div class="form-grid">${field('工作线与负责人',selectTrack(t.track))}${field('关联里程碑',`<select name="milestoneId" id="task-milestone" required><option value="" ${!t.milestoneId?'selected':''} disabled>选择整体里程碑</option>${state.plan.milestones.map(m=>`<option value="${m.id}" ${m.id===t.milestoneId?'selected':''}>${milestoneCode(m)} · ${esc(m.title)}</option>`).join('')}</select>`)}${field('任务状态',`<select name="status">${Object.entries(statuses).map(([k,v])=>`<option value="${k}" ${k===t.status?'selected':''}>${v}</option>`).join('')}</select>`)}${field('截止日期（可选）',`<input name="due" type="date" value="${esc(t.due)}">`)}</div>${field('验收产出',`<input name="outcome" value="${esc(t.outcome)}" required maxlength="300" placeholder="完成后交付什么？例如试装记录、回归结果…">`)}<section class="task-impact" id="task-impact">${impactPreview(t,t.milestoneId)}</section><div class="form-grid">${field('优先级',`<select name="priority"><option value="normal">普通</option><option value="high" ${t.priority==='high'?'selected':''}>优先推进</option></select>`)}<label class="task-focus-field"><input type="checkbox" name="inFocus" ${id&&isFocus(t)?'checked':''}>列为本工作线当前重点<span>每条线最多 3 项</span></label></div>${field('补充说明',`<textarea name="description" rows="3" maxlength="12000" placeholder="补充背景、依赖或完成条件…">${esc(t.description)}</textarea>`)}${t.source?`<button type="button" class="text-button source-button" data-action="document" data-id="${t.source}">${icon('file')}查看来源文档</button>`:''}${formEnd(id?'保存修改':'创建待办')}`);
+}
+function openFocus(track) {
+  const focus=state.focus[track];
+  openDialog(`${state.owners[track]} · ${tracks[track].name}当前重点`,`<p class="dialog-description">用一句话写清楚本轮要交付什么，再关联最多 3 项关键待办。完成任务后，整体进度会一起更新。</p><form id="focus-form" data-track="${track}">${field('当前重点',`<input name="goal" value="${esc(focus.goal)}" required maxlength="160">`)}<fieldset class="focus-picker"><legend>关联重点待办（最多 3 项）</legend>${state.tasks.filter(t=>t.track===track).map(t=>`<label><input type="checkbox" name="taskIds" value="${esc(t.id)}" ${focus.taskIds.includes(t.id)?'checked':''}><span><strong>${esc(t.title)}</strong><small>${milestoneCode(milestoneOf(t))} · ${esc(milestoneOf(t)?.title||'待关联')} · ${statuses[t.status]}</small></span></label>`).join('') || '<p class="muted small">这条工作线暂无待办，先创建任务后再关联。</p>'}</fieldset>${formEnd('保存当前重点')}`);
+}
+function openPlan() {
+  openDialog('整体目标与里程碑',`<p class="dialog-description">里程碑进度由关联任务计算。调整名称和验收标准会保留已有任务关联。</p><form id="plan-form">${field('本轮整体目标',`<input name="goal" value="${esc(state.plan.goal)}" maxlength="160" required>`)}${state.plan.milestones.map((m,i)=>`<section class="plan-editor"><span class="eyebrow">M0${i+1}</span>${field('里程碑名称',`<input name="title-${m.id}" value="${esc(m.title)}" maxlength="40" required>`)}${field('阶段验收标准',`<textarea name="outcome-${m.id}" rows="2" maxlength="300" required>${esc(m.outcome)}</textarea>`)}</section>`).join('')}${formEnd('保存整体计划')}`);
 }
 function openEntry(kind,id) {
   const config={idea:['ideas','记录灵感'],update:['updates','发布更新'],release:['releases','记录迭代']}[kind];
@@ -178,7 +245,11 @@ document.addEventListener('click',async(event)=>{
   const {action,id}=el.dataset;
   if(action==='close') dialog.close();
   if(action==='filter') go(route(),id);
-  if(action==='track-tasks') {taskStatus='all';go('tasks',id);}
+  if(action==='track-tasks') {taskStatus='all';go('tasks',id,'all',false);}
+  if(action==='milestone-tasks') {taskStatus='all';go('tasks','all',id,false);}
+  if(action==='focus-tasks') {taskStatus='all';go('tasks',id,'all',true);}
+  if(action==='edit-focus') openFocus(id);
+  if(action==='edit-plan') openPlan();
   if(action==='team') openTeam();
   if(action==='search') openSearch();
   if(action==='new-task') openTask(null,el.dataset.status||'todo');
@@ -204,13 +275,29 @@ document.addEventListener('submit',async event=>{
   event.preventDefault();
   const form=event.target, values=Object.fromEntries(new FormData(form));
   Object.keys(values).forEach(k=>values[k]=values[k].trim());
-  if(Object.entries(values).some(([k,v])=>!v&&['title','hardware','software','template','version'].includes(k))) { $('.form-error',form).textContent='请填写完整，不能只输入空格。';return; }
+  if(Object.entries(values).some(([k,v])=>!v&&(['title','hardware','software','template','version','goal','outcome'].includes(k)||k.startsWith('title-')||k.startsWith('outcome-')))) { $('.form-error',form).textContent='请填写完整，不能只输入空格。';return; }
   let ok=false;
   if(form.id==='team-form') ok=await save(next=>{next.owners=values;},'三位负责人已更新');
   if(form.id==='task-form') {
     const existing=state.tasks.find(t=>t.id===form.dataset.id);
+    const inFocus=values.inFocus==='on'; delete values.inFocus;
     const item={...values,id:existing?.id||uid('TASK'),source:existing?.source||''};
-    ok=await save(next=>{if(existing) next.tasks=next.tasks.map(t=>t.id===item.id?item:t);else next.tasks.unshift(item);activity(next,`${existing?'更新':'新建'}待办：${item.title}`,item.track,item.description);},existing?'待办已更新':'待办已创建');
+    if(inFocus && state.focus[item.track].taskIds.filter(id=>id!==item.id).length>=3) { $('.form-error',form).textContent='每条线最多 3 项当前重点，请先调整重点或取消此勾选。';return; }
+    ok=await save(next=>{
+      if(existing) next.tasks=next.tasks.map(t=>t.id===item.id?item:t);else next.tasks.unshift(item);
+      Object.values(next.focus).forEach(f=>f.taskIds=f.taskIds.filter(id=>id!==item.id));
+      if(inFocus) next.focus[item.track].taskIds.push(item.id);
+      activity(next,`${existing?'更新':'新建'}待办：${item.title}`,item.track,item.outcome);
+    },existing?'待办及整体进度已更新':'待办已关联整体里程碑');
+  }
+  if(form.id==='focus-form') {
+    const ids=new FormData(form).getAll('taskIds');
+    if(ids.length>3) {$('.form-error',form).textContent='最多选择 3 项关键待办，让当前重点保持明确。';return;}
+    const track=form.dataset.track;
+    ok=await save(next=>{next.focus[track]={goal:values.goal,taskIds:ids};activity(next,'调整当前重点：'+values.goal,track);},'当前重点已更新');
+  }
+  if(form.id==='plan-form') {
+    ok=await save(next=>{next.plan={goal:values.goal,milestones:next.plan.milestones.map(m=>({...m,title:values['title-'+m.id],outcome:values['outcome-'+m.id]}))};},'整体目标与里程碑已更新');
   }
   if(form.id==='entry-form') {
     const kind=form.dataset.kind, key={idea:'ideas',update:'updates',release:'releases'}[kind];
@@ -221,7 +308,15 @@ document.addEventListener('submit',async event=>{
   }
   if(ok) dialog.close();
 });
-document.addEventListener('change',event=>{if(event.target.id==='status-filter'){taskStatus=event.target.value;render();}});
+document.addEventListener('change',event=>{
+  if(event.target.id==='status-filter'){taskStatus=event.target.value;render();}
+  if(event.target.id==='milestone-filter') go('tasks',filter,event.target.value,focusOnly);
+  if(event.target.id==='focus-filter') go('tasks',filter,stageFilter,event.target.checked);
+  if(event.target.id==='task-milestone') {
+    const form=event.target.form,existing=state.tasks.find(t=>t.id===form.dataset.id);
+    $('#task-impact').innerHTML=impactPreview(existing||{title:form.elements.title.value},event.target.value);
+  }
+});
 document.addEventListener('input',event=>{if(event.target.id==='global-search'){searchQuery=event.target.value;renderSearch();}});
 document.addEventListener('keydown',event=>{if((event.metaKey||event.ctrlKey)&&event.key==='k'){event.preventDefault();if(state)openSearch();}});
 $('#menu-button').addEventListener('click',()=>{const open=$('#sidebar').classList.toggle('mobile-open');$('#menu-button').setAttribute('aria-expanded',String(open));});
@@ -233,4 +328,4 @@ document.addEventListener('click',event=>{
 document.addEventListener('keydown',event=>{if(event.key==='Escape') closeMenu();});
 dialog.addEventListener('click',event=>{if(event.target===dialog){const b=dialog.getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)dialog.close();}});
 window.addEventListener('hashchange',()=>{if(state){render();window.scrollTo(0,0);}});
-Promise.all([api('/api/state'),api('/api/documents')]).then(([s,d])=>{state=s;documents=d;render();}).catch(error=>{$('#main').innerHTML=`<div class="empty-state"><h1>暂时无法打开工作空间</h1><p>${esc(error.message)}</p><button class="button primary" id="retry">重新加载</button></div>`;$('#retry').onclick=()=>location.reload();});
+Promise.all([api('/api/state'),api('/api/documents'),Plan.ready]).then(([s,d,defaults])=>{state=Plan.upgrade(s,defaults);documents=d;render();}).catch(error=>{$('#main').innerHTML=`<div class="empty-state"><h1>暂时无法打开工作空间</h1><p>${esc(error.message)}</p><button class="button primary" id="retry">重新加载</button></div>`;$('#retry').onclick=()=>location.reload();});

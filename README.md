@@ -4,6 +4,12 @@ Six tabs: 总进度、协作待办、更新与文件、产品灵感池、迭代�
 
 Owners: 硬件 mokee / 软件 静亚 / 模版 新子。
 
+Planning v2: each owner has an editable current focus with up to three linked tasks.
+Each task has an acceptance outcome and milestone; task completion updates workstream,
+milestone and overall task-count progress. Initial planning is a suggestion, not live device status.
+Existing v1 browser records migrate without replacing customized tasks or owners.
+The first save writes a separate v2 key and preserves the original v1 data.
+
 This branch is an isolated static deployment of `demos/project-dashboard/`.
 Only the dashboard UI, its seed records, and eight allowlisted document snapshots are published.
 There are no photos, model files, credentials, backend services, or local runtime data.
