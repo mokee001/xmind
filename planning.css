@@ -1,4 +1,10 @@
 /* Planning view: keep the existing Echoo palette and navigation. */
+.file-entry .sidebar,.file-entry .topbar,.file-entry .workspace-footer {display:none}
+.file-entry .workspace {margin:0}.file-entry main {min-height:100dvh;display:grid;place-items:center;padding:24px}
+.entry-card {width:100%;max-width:570px;padding:38px}.entry-card h1 {font-size:26px;margin:14px 0;letter-spacing:-.4px}
+.entry-card>p {font-size:14px;line-height:1.8;color:#737e8d}.entry-actions {display:flex;flex-wrap:wrap;gap:12px;margin:26px 0 20px}
+.entry-actions .button {margin:0}.entry-card>small {display:block;font-size:11px;line-height:1.8;color:#85909f}
+@media(max-width:430px){.entry-card{padding:26px 22px}.entry-card h1{font-size:23px}.entry-actions{flex-direction:column}.entry-actions .button{justify-content:center}.file-entry main{padding:18px}}
 .goal-panel {display:flex;align-items:center;justify-content:space-between;gap:32px;padding:28px 30px}
 .goal-copy {min-width:0}.goal-copy .eyebrow {font-size:10px;letter-spacing:1.1px;color:#7d8795}
 .goal-copy h2 {font-size:25px;font-weight:600;margin:9px 0 13px;line-height:1.4}

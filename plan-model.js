@@ -56,7 +56,7 @@
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else {
     const base = new URL('./', document.currentScript.src);
-    api.ready = fetch(new URL('plan-defaults.json',base)).then(response=>{
+    api.ready = location.protocol === 'file:' ? Promise.resolve(null) : fetch(new URL('plan-defaults.json',base)).then(response=>{
       if(!response.ok) throw new Error('无法读取项目计划，请刷新重试');
       return response.json();
     });

@@ -328,4 +328,17 @@ document.addEventListener('click',event=>{
 document.addEventListener('keydown',event=>{if(event.key==='Escape') closeMenu();});
 dialog.addEventListener('click',event=>{if(event.target===dialog){const b=dialog.getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)dialog.close();}});
 window.addEventListener('hashchange',()=>{if(state){render();window.scrollTo(0,0);}});
-Promise.all([api('/api/state'),api('/api/documents'),Plan.ready]).then(([s,d,defaults])=>{state=Plan.upgrade(s,defaults);documents=d;render();}).catch(error=>{$('#main').innerHTML=`<div class="empty-state"><h1>暂时无法打开工作空间</h1><p>${esc(error.message)}</p><button class="button primary" id="retry">重新加载</button></div>`;$('#retry').onclick=()=>location.reload();});
+if (location.protocol === 'file:') {
+  document.body.classList.add('file-entry');
+  document.title = '打开 Echoo 看板';
+  const hash = '#' + route();
+  $('#main').innerHTML = `<section class="entry-card panel"><span class="eyebrow">ECHOO WORKSPACE</span><h1>从这里打开看板</h1><p>当前打开的是本地页面文件。请选择下方入口，查看和编辑项目看板。</p><div class="entry-actions"><a class="button primary" href="http://127.0.0.1:8098/${hash}">打开本机看板 ${icon('arrow')}</a><a class="button secondary" href="https://mokee001.github.io/xmind/${hash}">打开线上看板 ${icon('arrow')}</a></div><small>本机看板需保持本地服务运行；两种入口的数据分别保存。</small></section>`;
+} else {
+  Promise.all([api('/api/state'),api('/api/documents'),Plan.ready]).then(([s,d,defaults])=>{state=Plan.upgrade(s,defaults);documents=d;render();}).catch(error=>{
+    const message = /failed to fetch|load failed|networkerror/i.test(error.message)
+      ? (window.echooStaticStorage ? '未能读取看板，请检查网络连接后重试。' : '未能连接本机看板，请确认本地服务正在运行后重试。')
+      : error.message;
+    $('#main').innerHTML=`<div class="empty-state"><h1>暂时无法打开工作空间</h1><p>${esc(message)}</p><button class="button primary" id="retry">重新加载</button></div>`;
+    $('#retry').onclick=()=>location.reload();
+  });
+}
